@@ -1,12 +1,1 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="20px" height="20px">
-  <path d="m.5,1.5a1,1 0 0 1 1,-1h17a1,1 0 0 1 1,1v17a1,1 0 0 1 -1,1h-17a1,1 0 0 1 -1,-1z" fill="#fff" stroke="#6e6e6e"/>
-  <path d="m4,4h12v12h-12zm6,3l-3,3l6,2z" fill="#ece"/>
-  <path d="m4,2a2,2 0 1 1 -.001,0z
-    m12,0a2,2 0 1 1 -.001,0z
-    m0,12a2,2 0 1 1 -.001,0z
-    m-12,0a2,2 0 1 1 -.001,0z
-    m6,-8a1,1 0 1 1 -.001,0z
-    m-3,3a1,1 0 1 1 -.001,0z
-    m6,2a1,1 0 1 1 -.001,0z" fill="#000000"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" version="1.1"><path fill="#fff" stroke="#6e6e6e" d="m.5,1.5a1,1 0 0 1 1,-1h17a1,1 0 0 1 1,1v17a1,1 0 0 1 -1,1h-17a1,1 0 0 1 -1,-1z"/><path fill="#ece" d="m4,4h12v12h-12zm6,3l-3,3l6,2z"/><path fill="#000" d="m4,2a2,2 0 1 1 -.001,0z m12,0a2,2 0 1 1 -.001,0z m0,12a2,2 0 1 1 -.001,0z m-12,0a2,2 0 1 1 -.001,0z m6,-8a1,1 0 1 1 -.001,0z m-3,3a1,1 0 1 1 -.001,0z m6,2a1,1 0 1 1 -.001,0z"/></svg>

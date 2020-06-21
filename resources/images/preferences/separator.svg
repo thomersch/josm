@@ -1,5 +1,1 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="24px" height="24px">
-  <path d="m11.5,3v18" stroke="#666666"/>
-  <path d="m12.5,4v18" stroke="#4c4c4c" opacity=".5"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" version="1.1"><path stroke="#666" d="m11.5,3v18"/><path stroke="#4c4c4c" d="m12.5,4v18" opacity=".5"/></svg>
