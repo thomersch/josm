@@ -33,9 +33,15 @@ jobs:
             os: windows-latest
     name: Java ${{ matrix.java }} on ${{ matrix.os }} with headless=${{ matrix.headless }}
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout
+        uses: actions/checkout@v2
         with:
-          fetch-depth: 32
+          fetch-depth: 64
+      - name: Cache
+        uses: actions/cache@v2.0.0
+        with:
+          path:  ~/.ivy2/cache/
+          key: ${{ runner.os }}-ivy2-${{ hashFiles('~/ivy*.xml') }}
       - name: Setup java
         uses: actions/setup-java@v1.3.0
         with:
@@ -50,12 +56,13 @@ jobs:
       - name: Build with Ant, headless ${{ matrix.headless }}
         run: |
           ANT_HOME=${{ env.ant_version }}
-          ANT="${{ env.ant_version }}/bin/ant -DnoJavaFX=true test-unit-hardfail"
-         # #if [ "${{ matrix.headless }}" == "true" ]; then
-         #   $ANT -Dtest.headless=true
-         # else
-         #   xvfb-run $ANT -Dtest.headless=false
-         # fi
+          #ANT="${{ env.ant_version }}/bin/ant -DnoJavaFX=true test-unit-hardfail"
+          ANT="${{ env.ant_version }}/bin/ant dist"
+          if [ "${{ matrix.headless }}" == "true" ]; then
+            $ANT -Dtest.headless=true
+          else
+            xvfb-run $ANT -Dtest.headless=false
+          fi
       - name: Dump errors if failed
         if: ${{ failure() }}
         run: "grep -L ', Failures: 0, Skipped: ' test/report/*.txt | xargs cat"
@@ -77,8 +84,7 @@ jobs:
         run: |
           ANT_HOME=${{ env.ant_version }}
           $ANT_HOME/bin/ant dist
-          REVISION=${{ env.josm_revision }}
-          ./native/macosx/macos-jpackage.sh $REVISION
+          ./native/macosx/macos-jpackage.sh ${{ env.josm_revision }}
       - name: Upload JOSM.app for macOS
         if: ${{ runner.os == 'macos' && always() }}
         uses: actions/upload-artifact@v2
