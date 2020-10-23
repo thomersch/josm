@@ -45,7 +45,7 @@ if [[ $IMPORT_AND_UNLOCK_KEYCHAIN == 1 ]]; then
 
     if [ -z "$CERT_MACOS_PW" ]
     then
-        echo "CERT_MACOS_P12 must be set in the environment. Won't sign app."
+        echo "CERT_MACOS_PW must be set in the environment. Won't sign app."
         exit 1
     fi
 
@@ -72,7 +72,8 @@ codesign -vvv --timestamp --options runtime --deep --force --sign "$SIGNING_KEY_
     app/JOSM.app/Contents/MacOS/JOSM \
     app/JOSM.app/Contents/runtime/Contents/Home/lib/*.jar \
     app/JOSM.app/Contents/runtime/Contents/Home/lib/*.dylib \
-    app/JOSM.app/Contents/runtime/Contents/MacOS/libjli.dylib
+    app/JOSM.app/Contents/runtime/Contents/Home/lib/server/*.dylib \
+    app/JOSM.app/Contents/runtime/Contents/MacOS/libjli.dylib \
 
 codesign -vvv --timestamp --entitlements native/macosx/josm.entitlements --options runtime --force --sign "$SIGNING_KEY_NAME" app/JOSM.app
 
