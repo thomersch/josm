@@ -30,8 +30,6 @@ jobs:
             os: macos-latest
           - java: 11
             os: macos-latest
-          - java: 15
-            os: macos-latest
           - headless: "false"
             os: macos-latest
           - headless: "false"
