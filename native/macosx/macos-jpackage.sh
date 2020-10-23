@@ -73,6 +73,8 @@ codesign -vvv --timestamp --options runtime --deep --force --sign "$SIGNING_KEY_
     app/JOSM.app/Contents/runtime/Contents/Home/lib/*.jar \
     app/JOSM.app/Contents/runtime/Contents/Home/lib/*.dylib \
     app/JOSM.app/Contents/runtime/Contents/Home/lib/server/*.dylib \
+    app/JOSM.app/Contents/runtime/Contents/Home/lib/jspawnhelper \
+    app/JOSM.app/Contents/runtime/Contents/Home/lib/modules \
     app/JOSM.app/Contents/runtime/Contents/MacOS/libjli.dylib \
 
 codesign -vvv --timestamp --entitlements native/macosx/josm.entitlements --options runtime --force --sign "$SIGNING_KEY_NAME" app/JOSM.app
