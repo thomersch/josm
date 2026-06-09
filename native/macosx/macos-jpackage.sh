@@ -163,6 +163,21 @@ if [ -n "${2}" ]; then
         --entitlements "$(dirname "${BASH_SOURCE[0]}")/josm.entitlements" \
         --verbose=4 "${1}"
     }
+    # After lipo merges two single-arch JDKs into fat binaries, the original
+    # per-arch signatures on individual dylibs/executables inside the runtime
+    # become invalid. codesign on the bundle alone does not re-sign these files,
+    # so we must sign each Mach-O binary explicitly before sealing the bundles.
+    while IFS= read -r -d '' binary; do
+      if file "$binary" | grep -q 'Mach-O'; then
+        codesign --sign "FOSSGIS e.V." \
+          --force \
+          --keychain "${KEYCHAINPATH}" \
+          --timestamp \
+          --options runtime \
+          --entitlements "$(dirname "${BASH_SOURCE[0]}")/josm.entitlements" \
+          "$binary"
+      fi
+    done < <(find "app/JOSM.app/Contents/runtime" -type f -print0)
     do_codesign app/JOSM.app/Contents/runtime "com.oracle.java.de.openstreetmap.josm"
     do_codesign app/JOSM.app/ "de.openstreetmap.josm"
   fi
