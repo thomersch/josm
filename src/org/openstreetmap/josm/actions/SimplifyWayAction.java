@@ -17,6 +17,8 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import javax.swing.BorderFactory;
@@ -36,6 +38,8 @@ import org.openstreetmap.josm.command.DeleteCommand;
 import org.openstreetmap.josm.command.SequenceCommand;
 import org.openstreetmap.josm.data.SystemOfMeasurement;
 import org.openstreetmap.josm.data.UndoRedoHandler;
+import org.openstreetmap.josm.data.coor.EastNorth;
+import org.openstreetmap.josm.data.osm.DataSelectionListener;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
@@ -46,6 +50,7 @@ import org.openstreetmap.josm.gui.HelpAwareOptionPane;
 import org.openstreetmap.josm.gui.HelpAwareOptionPane.ButtonSpec;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.Notification;
+import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.spi.preferences.IPreferences;
 import org.openstreetmap.josm.tools.GBC;
@@ -128,23 +133,38 @@ public class SimplifyWayAction extends JosmAction {
      * @since 16566
      */
     public static double askSimplifyWays(List<Way> ways, String text, boolean auto) {
-        IPreferences s = Config.getPref();
-        String key = "simplify-way." + (auto ? "auto." : "");
-        String keyRemember = key + "remember";
-        String keyError = key + "max-error";
+        return askSimplifyWays(ways, () -> text, null, auto);
+    }
 
-        String r = s.get(keyRemember, "ask");
+    /**
+     * Asks the user for max-err value used to simplify ways, if not remembered before
+     * @param ways the ways that are being simplified (to show estimated number of nodes to be removed)
+     * @param textSupplier the text being shown (called when the DataSet selection changes)
+     * @param auto whether it's called automatically (conversion) or by the user
+     * @param listener The dataset selection update listener
+     * @return the max-err value or -1 if canceled
+     */
+    private static double askSimplifyWays(List<Way> ways, Supplier<String> textSupplier, SimplifyWayDataSelectionListener listener,
+                                          boolean auto) {
+        final IPreferences s = Config.getPref();
+        final String key = "simplify-way." + (auto ? "auto." : "");
+        final String keyRemember = key + "remember";
+        final String keyError = key + "max-error";
+
+        final String r = s.get(keyRemember, "ask");
         if (auto && "no".equals(r)) {
             return -1;
         } else if ("yes".equals(r)) {
             return s.getDouble(keyError, 3.0);
         }
 
-        JPanel p = new JPanel(new GridBagLayout());
-        p.add(new JLabel("<html><body style=\"width: 375px;\">" + text + "<br><br>" +
+        final JPanel p = new JPanel(new GridBagLayout());
+        final Supplier<String> actualTextSupplier = () -> "<html><body style=\"width: 375px;\">" + textSupplier.get() + "<br><br>" +
                 tr("This reduces unnecessary nodes along the way and is especially recommended if GPS tracks were recorded by time "
-                 + "(e.g. one point per second) or when the accuracy was low (reduces \"zigzag\" tracks).")
-                + "</body></html>"), GBC.eol());
+                        + "(e.g. one point per second) or when the accuracy was low (reduces \"zigzag\" tracks).")
+                + "</body></html>";
+        final JLabel textLabel = new JLabel(actualTextSupplier.get());
+        p.add(textLabel, GBC.eol());
         p.setBorder(BorderFactory.createEmptyBorder(5, 10, 10, 5));
         JPanel q = new JPanel(new GridBagLayout());
         q.add(new JLabel(tr("Maximum error (meters): ")));
@@ -156,6 +176,19 @@ public class SimplifyWayAction extends JosmAction {
 
         JLabel nodesToRemove = new JLabel();
         SimplifyChangeListener l = new SimplifyChangeListener(nodesToRemove, errorModel, ways);
+        final Runnable changeCleanup = () -> {
+            if (l.lastCommand != null && l.lastCommand.equals(UndoRedoHandler.getInstance().getLastCommand())) {
+                UndoRedoHandler.getInstance().undo();
+                l.lastCommand = null;
+            }
+        };
+        if (listener != null) {
+            listener.addConsumer(ignored -> {
+                textLabel.setText(actualTextSupplier.get());
+                changeCleanup.run();
+                l.stateChanged(null);
+            });
+        }
         if (!ways.isEmpty()) {
             errorModel.addChangeListener(l);
             l.stateChanged(null);
@@ -181,10 +214,7 @@ public class SimplifyWayAction extends JosmAction {
 
         int ret = ed.showDialog().getValue();
         double val = (double) n.getValue();
-        if (l.lastCommand != null && l.lastCommand.equals(UndoRedoHandler.getInstance().getLastCommand())) {
-            UndoRedoHandler.getInstance().undo();
-            l.lastCommand = null;
-        }
+        changeCleanup.run();
         if (ret == 1) {
             s.putDouble(keyError, val);
             if (c.isSelected()) {
@@ -201,11 +231,12 @@ public class SimplifyWayAction extends JosmAction {
 
     @Override
     public void actionPerformed(ActionEvent e) {
-        DataSet ds = getLayerManager().getEditDataSet();
-        ds.update(() -> {
-            List<Way> ways = ds.getSelectedWays().stream()
-                    .filter(p -> !p.isIncomplete())
-                    .collect(Collectors.toList());
+        final DataSet ds = getLayerManager().getEditDataSet();
+        final List<Way> ways = new ArrayList<>();
+        final SimplifyWayDataSelectionListener listener = new SimplifyWayDataSelectionListener(ways);
+        ds.addSelectionListener(listener);
+        try {
+            listener.updateWayList(ds);
             if (ways.isEmpty()) {
                 alertSelectAtLeastOneWay();
                 return;
@@ -213,18 +244,20 @@ public class SimplifyWayAction extends JosmAction {
                 return;
             }
 
-            String lengthstr = SystemOfMeasurement.getSystemOfMeasurement().getDistText(
+            final Supplier<String> lengthStr = () -> SystemOfMeasurement.getSystemOfMeasurement().getDistText(
                     ways.stream().mapToDouble(Way::getLength).sum());
 
-            double err = askSimplifyWays(ways, trn(
-                    "You are about to simplify {0} way with a total length of {1}.",
-                    "You are about to simplify {0} ways with a total length of {1}.",
-                    ways.size(), ways.size(), lengthstr), false);
+            final double err = askSimplifyWays(ways, () -> trn(
+                                "You are about to simplify {0} way with a total length of {1}.",
+                                "You are about to simplify {0} ways with a total length of {1}.",
+                                ways.size(), ways.size(), lengthStr.get()), listener, false);
 
             if (err > 0) {
                 simplifyWays(ways, err);
             }
-        });
+        } finally {
+            ds.removeSelectionListener(listener);
+        }
     }
 
     /**
@@ -247,8 +280,7 @@ public class SimplifyWayAction extends JosmAction {
             isRequired = frequency > 1;
         }
         if (!isRequired) {
-            List<OsmPrimitive> parents = new LinkedList<>();
-            parents.addAll(node.getReferrers());
+            List<OsmPrimitive> parents = new LinkedList<>(node.getReferrers());
             parents.remove(way);
             isRequired = !parents.isEmpty();
         }
@@ -308,42 +340,24 @@ public class SimplifyWayAction extends JosmAction {
      * @since 16566 (private)
      */
     private static SequenceCommand buildSimplifyWaysCommand(List<Way> ways, double threshold) {
-        Collection<Command> allCommands = ways.stream()
-                .map(way -> createSimplifyCommand(way, threshold))
+        List<Command> allCommands = ways.stream()
+                .map(way -> createSimplifyCommand(way, threshold, false))
                 .filter(Objects::nonNull)
                 .collect(StreamUtils.toUnmodifiableList());
         if (allCommands.isEmpty())
             return null;
+        final List<OsmPrimitive> deletedPrimitives = allCommands.stream()
+                .map(Command::getChildren)
+                .flatMap(Collection::stream)
+                .filter(DeleteCommand.class::isInstance)
+                .map(DeleteCommand.class::cast)
+                .map(DeleteCommand::getParticipatingPrimitives)
+                .flatMap(Collection::stream)
+                .collect(Collectors.toList());
+        allCommands.get(0).getAffectedDataSet().clearSelection(deletedPrimitives);
         return new SequenceCommand(
                 trn("Simplify {0} way", "Simplify {0} ways", allCommands.size(), allCommands.size()),
                 allCommands);
-    }
-
-    /**
-     * Creates the SequenceCommand to simplify a way with default threshold.
-     *
-     * @param w the way to simplify
-     * @return The sequence of commands to run
-     * @since 6411
-     * @deprecated Replaced by {@link #createSimplifyCommand(Way)}. You can also use {@link #simplifyWays(List, double)} directly.
-     */
-    @Deprecated
-    public final SequenceCommand simplifyWay(Way w) {
-        return createSimplifyCommand(w);
-    }
-
-    /**
-     * Creates the SequenceCommand to simplify a way with a given threshold.
-     *
-     * @param w the way to simplify
-     * @param threshold the max error threshold
-     * @return The sequence of commands to run
-     * @since 6411
-     * @deprecated Replaced by {@link #createSimplifyCommand(Way, double)}. You can also use {@link #simplifyWays(List, double)} directly.
-     */
-    @Deprecated
-    public static SequenceCommand simplifyWay(Way w, double threshold) {
-        return createSimplifyCommand(w, threshold);
     }
 
     /**
@@ -366,6 +380,18 @@ public class SimplifyWayAction extends JosmAction {
      * @since 15419
      */
     public static SequenceCommand createSimplifyCommand(Way w, double threshold) {
+        return createSimplifyCommand(w, threshold, true);
+    }
+
+    /**
+     * Creates the SequenceCommand to simplify a way with a given threshold.
+     *
+     * @param w the way to simplify
+     * @param threshold the max error threshold
+     * @param deselect {@code true} if we want to deselect the deleted nodes
+     * @return The sequence of commands to run
+     */
+    private static SequenceCommand createSimplifyCommand(Way w, double threshold, boolean deselect) {
         int lower = 0;
         int i = 0;
 
@@ -412,14 +438,16 @@ public class SimplifyWayAction extends JosmAction {
         Collection<Command> cmds = new LinkedList<>();
         cmds.add(new ChangeNodesCommand(w, newNodes));
         cmds.add(new DeleteCommand(w.getDataSet(), delNodes));
-        w.getDataSet().clearSelection(delNodes);
+        if (deselect) {
+            w.getDataSet().clearSelection(delNodes);
+        }
         return new SequenceCommand(
                 trn("Simplify Way (remove {0} node)", "Simplify Way (remove {0} nodes)", delNodes.size(), delNodes.size()), cmds);
     }
 
     /**
      * Builds the simplified list of nodes for a way segment given by a lower index <code>from</code>
-     * and an upper index <code>to</code>
+     * and an upper index <code>to</code>. Uses the Douglas-Peucker-Algorithm.
      *
      * @param wnew the way to simplify
      * @param from the lower index
@@ -431,24 +459,46 @@ public class SimplifyWayAction extends JosmAction {
 
         Node fromN = wnew.get(from);
         Node toN = wnew.get(to);
-
+        EastNorth p1 = fromN.getEastNorth();
+        EastNorth p2 = toN.getEastNorth();
         // Get max xte
         int imax = -1;
         double xtemax = 0;
         for (int i = from + 1; i < to; i++) {
             Node n = wnew.get(i);
+            EastNorth p = n.getEastNorth();
+            double ldx = p2.getX() - p1.getX();
+            double ldy = p2.getY() - p1.getY();
+            double offset;
+            //segment zero length
+            if (ldx == 0 && ldy == 0)
+                offset = 0;
+            else {
+                double pdx = p.getX() - p1.getX();
+                double pdy = p.getY() - p1.getY();
+                offset = (pdx * ldx + pdy * ldy) / (ldx * ldx + ldy * ldy);
+            }
+            final double distRad;
             // CHECKSTYLE.OFF: SingleSpaceSeparator
-            double xte = Math.abs(Ellipsoid.WGS84.a
-                    * xtd(fromN.lat() * Math.PI / 180, fromN.lon() * Math.PI / 180, toN.lat() * Math.PI / 180,
-                            toN.lon() * Math.PI / 180,     n.lat() * Math.PI / 180,   n.lon() * Math.PI / 180));
+            if (offset <= 0) {
+                distRad = dist(fromN.lat() * Math.PI / 180, fromN.lon() * Math.PI / 180,
+                                   n.lat() * Math.PI / 180,     n.lon() * Math.PI / 180);
+            } else if (offset >= 1) {
+                distRad = dist(toN.lat() * Math.PI / 180, toN.lon() * Math.PI / 180,
+                                 n.lat() * Math.PI / 180,   n.lon() * Math.PI / 180);
+            } else {
+                distRad = xtd(fromN.lat() * Math.PI / 180, fromN.lon() * Math.PI / 180,
+                                toN.lat() * Math.PI / 180,   toN.lon() * Math.PI / 180,
+                                  n.lat() * Math.PI / 180,     n.lon() * Math.PI / 180);
+            }
             // CHECKSTYLE.ON: SingleSpaceSeparator
+            double xte = Math.abs(distRad);
             if (xte > xtemax) {
                 xtemax = xte;
                 imax = i;
             }
         }
-
-        if (imax != -1 && xtemax >= threshold) {
+        if (imax != -1 && Ellipsoid.WGS84.a * xtemax >= threshold) {
             // Segment cannot be simplified - try shorter segments
             buildSimplifiedNodeList(wnew, from, imax, threshold, simplifiedNodes);
             buildSimplifiedNodeList(wnew, imax, to, threshold, simplifiedNodes);
@@ -520,6 +570,39 @@ public class SimplifyWayAction extends JosmAction {
             if (lastCommand != null) {
                 UndoRedoHandler.getInstance().add(lastCommand);
             }
+        }
+    }
+
+    private static final class SimplifyWayDataSelectionListener implements DataSelectionListener {
+        private final List<Way> wayList;
+        private Consumer<List<Way>> consumer;
+
+        /**
+         * Create a new selection listener for {@link SimplifyWayAction}
+         * @param wayList The <i>modifiable</i> list to update on selection changes
+         */
+        SimplifyWayDataSelectionListener(List<Way> wayList) {
+            this.wayList = wayList;
+        }
+
+        @Override
+        public void selectionChanged(SelectionChangeEvent event) {
+            updateWayList(event.getSource());
+        }
+
+        void updateWayList(DataSet dataSet) {
+            final List<Way> newWays = dataSet.getSelectedWays().stream()
+                    .filter(p -> !p.isIncomplete())
+                    .collect(Collectors.toList());
+            this.wayList.clear();
+            this.wayList.addAll(newWays);
+            if (this.consumer != null) {
+                GuiHelper.runInEDT(() -> this.consumer.accept(this.wayList));
+            }
+        }
+
+        void addConsumer(Consumer<List<Way>> wayConsumer) {
+            this.consumer = wayConsumer;
         }
     }
 }

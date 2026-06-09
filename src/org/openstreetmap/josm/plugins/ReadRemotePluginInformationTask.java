@@ -203,7 +203,7 @@ public class ReadRemotePluginInformationTask extends PleaseWaitRunnable {
 
     private void handleIOException(final ProgressMonitor monitor, IOException e, String details) {
         final String msg = e.getMessage();
-        if (details == null || details.isEmpty()) {
+        if (Utils.isEmpty(details)) {
             Logging.error(e.getClass().getSimpleName()+": " + msg);
         } else {
             Logging.error(msg + " - Details:\n" + details);
@@ -224,7 +224,7 @@ public class ReadRemotePluginInformationTask extends PleaseWaitRunnable {
                 b.append(part).append('\n');
             }
             panel.add(new JLabel("<html><body width=\"500\"><b>"+b.toString().trim()+"</b></body></html>"), GBC.eol().insets(0, 0, 0, 10));
-            if (details != null && !details.isEmpty()) {
+            if (!Utils.isEmpty(details)) {
                 panel.add(new JLabel(tr("Details:")), GBC.eol().insets(0, 0, 0, 10));
                 JosmTextArea area = new JosmTextArea(details);
                 area.setEditable(false);
@@ -252,7 +252,7 @@ public class ReadRemotePluginInformationTask extends PleaseWaitRunnable {
         }
         File cacheFile = createSiteCacheFile(pluginDir, site);
         getProgressMonitor().subTask(tr("Writing plugin list to local cache ''{0}''", cacheFile.toString()));
-        try (PrintWriter writer = new PrintWriter(cacheFile, StandardCharsets.UTF_8.name())) {
+        try (PrintWriter writer = new PrintWriter(cacheFile, StandardCharsets.UTF_8)) {
             writer.write(list);
             writer.flush();
         } catch (IOException e) {

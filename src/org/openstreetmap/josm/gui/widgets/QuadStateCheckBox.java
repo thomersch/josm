@@ -49,8 +49,7 @@ public class QuadStateCheckBox extends JCheckBox {
         @Override
         public void mousePressed(MouseEvent e) {
             if (SwingUtilities.isLeftMouseButton(e)) {
-                grabFocus();
-                cbModel.nextState();
+                nextState();
             }
         }
     };
@@ -72,8 +71,7 @@ public class QuadStateCheckBox extends JCheckBox {
         map.put("pressed", new AbstractAction() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                grabFocus();
-                cbModel.nextState();
+                nextState();
             }
         });
         map.put("released", null);
@@ -133,6 +131,14 @@ public class QuadStateCheckBox extends JCheckBox {
         return cbModel.getState();
     }
 
+    /**
+     * Rotate to the next allowed state.
+     */
+    public void nextState() {
+        grabFocus();
+        cbModel.nextState();
+    }
+
     @Override
     public void setSelected(boolean b) {
         if (b) {
@@ -145,7 +151,7 @@ public class QuadStateCheckBox extends JCheckBox {
     /**
      * Button model for the {@code QuadStateCheckBox}.
      */
-    private final class QuadStateDecorator implements ButtonModel {
+    private final class QuadStateDecorator extends ToggleButtonModel {
         private final ButtonModel other;
         private String propertyText;
 

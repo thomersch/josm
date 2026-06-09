@@ -9,12 +9,14 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.openstreetmap.josm.command.ChangeMembersCommand;
@@ -52,8 +54,6 @@ public class RelationChecker extends Test implements TaggingPresetListener {
     public static final int ROLE_UNKNOWN     = 1701;
     /** Empty role found when expecting one of ''{0}'' */
     public static final int ROLE_EMPTY       = 1702;
-    /** Role of relation member does not match template expression ''{0}'' in preset {1} */
-    public static final int WRONG_ROLE       = 1708;
     /** Number of ''{0}'' roles too high ({1}) */
     public static final int HIGH_COUNT       = 1704;
     /** Number of ''{0}'' roles too low ({1}) */
@@ -62,12 +62,14 @@ public class RelationChecker extends Test implements TaggingPresetListener {
     public static final int ROLE_MISSING     = 1706;
     /** Relation type is unknown */
     public static final int RELATION_UNKNOWN = 1707;
-    /** Relation is empty */
-    public static final int RELATION_EMPTY   = 1708;
+    /** Role of relation member does not match template expression ''{0}'' in preset {1} */
+    public static final int WRONG_ROLE       = 1708;
     /** Type ''{0}'' of relation member with role ''{1}'' does not match accepted types ''{2}'' in preset {3} */
     public static final int WRONG_TYPE       = 1709;
     /** Relations build circular dependencies */
     public static final int RELATION_LOOP    = 1710;
+    /** Relation is empty */
+    public static final int RELATION_EMPTY   = 1711; // was 1708 up to r18505
     // CHECKSTYLE.ON: SingleSpaceSeparator
 
     // see 19312 comment:17
@@ -106,13 +108,13 @@ public class RelationChecker extends Test implements TaggingPresetListener {
             return;
         }
         for (TaggingPreset p : TaggingPresets.getTaggingPresets()) {
-            if (p.data.stream().anyMatch(i -> i instanceof Roles)) {
+            if (p.data.stream().anyMatch(Roles.class::isInstance)) {
                 relationpresets.add(p);
             }
         }
     }
 
-    private static class RoleInfo {
+    private static final class RoleInfo {
         private int total;
     }
 
@@ -154,7 +156,7 @@ public class RelationChecker extends Test implements TaggingPresetListener {
                     .message(tr("Route scheme is unspecified. Add {0} ({1}=public_transport; {2}=legacy)", "public_transport:version", "2", "1"))
                     .primitives(n)
                     .build());
-        } else if (allroles.isEmpty()) {
+        } else if (n.hasKey("type") && allroles.isEmpty()) {
             errors.add(TestError.builder(this, Severity.OTHER, RELATION_UNKNOWN)
                     .message(tr("Relation type is unknown"))
                     .primitives(n)
@@ -332,7 +334,7 @@ public class RelationChecker extends Test implements TaggingPresetListener {
             if (allroles.keySet().stream().noneMatch(role -> role.isRole(key))) {
                 String templates = allroles.keySet().stream()
                         .map(r -> r.key)
-                        .map(r -> r == null || r.isEmpty() ? tr("<empty>") : r)
+                        .map(r -> Utils.isEmpty(r) ? tr("<empty>") : r)
                         .distinct()
                         .collect(Collectors.joining("/"));
                 List<OsmPrimitive> primitives = new ArrayList<>(n.findRelationMembers(key));
@@ -429,17 +431,20 @@ public class RelationChecker extends Test implements TaggingPresetListener {
     }
 
     private void checkLoop(Relation parent, List<Relation> path) {
-        if (path.contains(parent)) {
+        Set<Relation> pathSet = new HashSet<>(path);
+        if (pathSet.contains(parent)) {
             Iterator<List<Relation>> iter = loops.iterator();
+            Set<Relation> loop = new HashSet<>();
             while (iter.hasNext()) {
-                List<Relation> loop = iter.next();
+                loop.addAll(iter.next());
                 if (loop.size() > path.size() && loop.containsAll(path)) {
                     // remove same loop with irrelevant parent
                     iter.remove();
-                } else if (path.size() >= loop.size() && path.containsAll(loop)) {
+                } else if (path.size() >= loop.size() && pathSet.containsAll(loop)) {
                     // same or smaller loop is already known
                     return;
                 }
+                loop.clear();
             }
             if (path.get(0).equals(parent)) {
                 path.add(parent);

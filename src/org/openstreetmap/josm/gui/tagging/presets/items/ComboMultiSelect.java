@@ -2,10 +2,8 @@
 package org.openstreetmap.josm.gui.tagging.presets.items;
 
 import static org.openstreetmap.josm.tools.I18n.tr;
-import static org.openstreetmap.josm.tools.I18n.trc;
 
 import java.awt.Component;
-import java.awt.Dimension;
 import java.awt.Font;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -13,34 +11,30 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
-import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
-import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.ListCellRenderer;
 
-import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Tag;
+import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetItemGuiSupport;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetSelector;
-import org.openstreetmap.josm.spi.preferences.Config;
+import org.openstreetmap.josm.gui.tagging.presets.TaggingPresets;
+import org.openstreetmap.josm.gui.widgets.JosmListCellRenderer;
+import org.openstreetmap.josm.gui.widgets.OrientationAction;
+import org.openstreetmap.josm.tools.AlphanumComparator;
 import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.Logging;
-import org.openstreetmap.josm.tools.Utils;
 
 /**
  * Abstract superclass for combo box and multi-select list types.
  */
 public abstract class ComboMultiSelect extends KeyedItem {
-
-    private static final Renderer RENDERER = new Renderer();
 
     /**
      * A list of entries.
@@ -92,76 +86,79 @@ public abstract class ComboMultiSelect extends KeyedItem {
     /** whether to use values for search via {@link TaggingPresetSelector} */
     public boolean values_searchable; // NOSONAR
 
-    protected JComponent component;
-    protected final Set<PresetListEntry> presetListEntries = new CopyOnWriteArraySet<>();
-    private boolean initialized;
+    /**
+     * The standard entries in the combobox dropdown or multiselect list. These entries are defined
+     * in {@code defaultpresets.xml} (or in other custom preset files).
+     */
+    protected final List<PresetListEntry> presetListEntries = new ArrayList<>();
+    /** Helps avoid duplicate list entries */
+    protected final Map<String, PresetListEntry> seenValues = new TreeMap<>();
     protected Usage usage;
-    protected Object originalValue;
+    /** Used to see if the user edited the value. */
+    protected String originalValue;
 
-    private static final class Renderer implements ListCellRenderer<PresetListEntry> {
+    /**
+     * A list cell renderer that paints a short text in the current value pane and and a longer text
+     * in the dropdown list.
+     */
+    static class ComboMultiSelectListCellRenderer extends JosmListCellRenderer<PresetListEntry> {
+        int width;
+        private String key;
 
-        private final JLabel lbl = new JLabel();
+        ComboMultiSelectListCellRenderer(Component component, ListCellRenderer<? super PresetListEntry> renderer, int width, String key) {
+            super(component, renderer);
+            this.key = key;
+            setWidth(width);
+        }
+
+        /**
+         * Sets the width to format the dropdown list to
+         *
+         * Note: This is not the width of the list, but the width to which we format any multi-line
+         * label in the list.  We cannot use the list's width because at the time the combobox
+         * measures its items, it is not guaranteed that the list is already sized, the combobox may
+         * not even be layed out yet.  Set this to {@code combobox.getWidth()}
+         *
+         * @param width the width
+         */
+        public void setWidth(int width) {
+            if (width <= 0)
+                width = 200;
+            this.width = width - 20;
+        }
 
         @Override
-        public Component getListCellRendererComponent(JList<? extends PresetListEntry> list, PresetListEntry item, int index,
-                boolean isSelected, boolean cellHasFocus) {
+        public JLabel getListCellRendererComponent(
+            JList<? extends PresetListEntry> list, PresetListEntry value, int index, boolean isSelected, boolean cellHasFocus) {
 
-            if (list == null || item == null) {
-                return lbl;
+            JLabel l = (JLabel) renderer.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+            l.setComponentOrientation(component.getComponentOrientation());
+            if (index != -1) {
+                // index -1 is set when measuring the size of the cell and when painting the
+                // editor-ersatz of a readonly combobox. fixes #6157
+                l.setText(value.getListDisplay(width));
             }
-
-            if (index == -1) {
-                // Take the longest element for the preferred width (#19321)
-                // We do not want the editor to have the maximum height of all entries. Return a dummy with bogus height.
-                IntStream.range(0, list.getModel().getSize())
-                        .mapToObj(i -> getListCellRendererComponent(list, list.getModel().getElementAt(i), i, isSelected, cellHasFocus))
-                        .map(Component::getPreferredSize)
-                        .max(Comparator.comparingInt(dim -> dim.width))
-                        .ifPresent(dim -> lbl.setPreferredSize(new Dimension(dim.width, 10)));
-                return lbl;
+            if (value.getCount() > 0) {
+                l.setFont(l.getFont().deriveFont(Font.ITALIC + Font.BOLD));
             }
-
-            // Only return cached size, item is not shown
-            if (!list.isShowing() && item.preferredWidth != -1 && item.preferredHeight != -1) {
-                lbl.setPreferredSize(new Dimension(item.preferredWidth, item.preferredHeight));
-                return lbl;
-            }
-
-            lbl.setPreferredSize(null);
-
-            if (isSelected) {
-                lbl.setBackground(list.getSelectionBackground());
-                lbl.setForeground(list.getSelectionForeground());
-            } else {
-                lbl.setBackground(list.getBackground());
-                lbl.setForeground(list.getForeground());
-            }
-
-            lbl.setOpaque(true);
-            lbl.setFont(lbl.getFont().deriveFont(Font.PLAIN));
-            lbl.setText("<html>" + item.getListDisplay() + "</html>");
-            lbl.setIcon(item.getIcon());
-            lbl.setEnabled(list.isEnabled());
-
-            // Cache size
-            item.preferredWidth = (short) lbl.getPreferredSize().width;
-            item.preferredHeight = (short) lbl.getPreferredSize().height;
-
-            return lbl;
+            l.setIcon(value.getIcon());
+            l.setToolTipText(value.getToolTipText(key));
+            return l;
         }
     }
 
     /**
      * allow escaped comma in comma separated list:
-     * "A\, B\, C,one\, two" --&gt; ["A, B, C", "one, two"]
+     * "A\, B\, C,one\, two" → ["A, B, C", "one, two"]
      * @param delimiter the delimiter, e.g. a comma. separates the entries and
      *      must be escaped within one entry
      * @param s the string
-     * @return splitted items
+     * @return split items
      */
-    public static String[] splitEscaped(char delimiter, String s) {
+    public static List<String> splitEscaped(char delimiter, String s) {
         if (s == null)
-            return new String[0];
+            return null; // NOSONAR
+
         List<String> result = new ArrayList<>();
         boolean backslash = false;
         StringBuilder item = new StringBuilder();
@@ -182,16 +179,19 @@ public abstract class ComboMultiSelect extends KeyedItem {
         if (item.length() > 0) {
             result.add(item.toString());
         }
-        return result.toArray(new String[0]);
+        return result;
     }
 
-    protected abstract Object getSelectedItem();
-
-    protected abstract void addToPanelAnchor(JPanel p, String def, boolean presetInitiallyMatches);
+    /**
+     * Returns the value selected in the combobox or a synthetic value if a multiselect.
+     *
+     * @return the value
+     */
+    protected abstract PresetListEntry getSelectedItem();
 
     @Override
     public Collection<String> getValues() {
-        initListEntries(false);
+        initListEntries();
         return presetListEntries.stream().map(x -> x.value).collect(Collectors.toSet());
     }
 
@@ -200,213 +200,170 @@ public abstract class ComboMultiSelect extends KeyedItem {
      * @return the values to display
      */
     public Collection<String> getDisplayValues() {
-        initListEntries(false);
+        initListEntries();
         return presetListEntries.stream().map(PresetListEntry::getDisplayValue).collect(Collectors.toList());
     }
 
-    @Override
-    public boolean addToPanel(JPanel p, Collection<OsmPrimitive> sel, boolean presetInitiallyMatches) {
-        initListEntries(true);
-
-        // find out if our key is already used in the selection.
-        usage = determineTextUsage(sel, key);
-        if (!usage.hasUniqueValue() && !usage.unused()) {
-            presetListEntries.add(new PresetListEntry(DIFFERENT));
-        }
-
+    /**
+     * Adds the label to the panel
+     *
+     * @param p the panel
+     * @return the label
+     */
+    protected JLabel addLabel(JPanel p) {
         final JLabel label = new JLabel(tr("{0}:", locale_text));
+        addIcon(label);
         label.setToolTipText(getKeyTooltipText());
         label.setComponentPopupMenu(getPopupMenu());
+        label.applyComponentOrientation(OrientationAction.getDefaultComponentOrientation());
         p.add(label, GBC.std().insets(0, 0, 10, 0));
-        addToPanelAnchor(p, default_, presetInitiallyMatches);
-        label.setLabelFor(component);
-        component.setToolTipText(getKeyTooltipText());
-
-        return true;
+        return label;
     }
 
-    private void initListEntries(boolean cleanup) {
-        if (initialized) {
-            if (cleanup) { // do not cleanup for #getDisplayValues used in Combo#addToPanelAnchor
-                presetListEntries.remove(new PresetListEntry(DIFFERENT)); // possibly added in #addToPanel
-            }
-            return;
-        } else if (presetListEntries.isEmpty()) {
+    protected void initListEntries() {
+        if (presetListEntries.isEmpty()) {
             initListEntriesFromAttributes();
-        } else {
-            if (values != null) {
-                Logging.warn(tr("Warning in tagging preset \"{0}-{1}\": "
-                        + "Ignoring ''{2}'' attribute as ''{3}'' elements are given.",
-                        key, text, "values", "list_entry"));
-            }
-            if (display_values != null || locale_display_values != null) {
-                Logging.warn(tr("Warning in tagging preset \"{0}-{1}\": "
-                        + "Ignoring ''{2}'' attribute as ''{3}'' elements are given.",
-                        key, text, "display_values", "list_entry"));
-            }
-            if (short_descriptions != null || locale_short_descriptions != null) {
-                Logging.warn(tr("Warning in tagging preset \"{0}-{1}\": "
-                        + "Ignoring ''{2}'' attribute as ''{3}'' elements are given.",
-                        key, text, "short_descriptions", "list_entry"));
-            }
-            for (PresetListEntry e : presetListEntries) {
-                if (e.value_context == null) {
-                    e.value_context = values_context;
+        }
+    }
+
+    private List<String> getValuesFromCode(String valuesFrom) {
+        // get the values from a Java function
+        String[] classMethod = valuesFrom.split("#", -1);
+        if (classMethod.length == 2) {
+            try {
+                Method method = Class.forName(classMethod[0]).getMethod(classMethod[1]);
+                // Check method is public static String[] methodName()
+                int mod = method.getModifiers();
+                if (Modifier.isPublic(mod) && Modifier.isStatic(mod)
+                        && method.getReturnType().equals(String[].class) && method.getParameterTypes().length == 0) {
+                    return Arrays.asList((String[]) method.invoke(null));
+                } else {
+                    Logging.error(tr("Broken tagging preset \"{0}-{1}\" - Java method given in ''values_from'' is not \"{2}\"", key, text,
+                            "public static String[] methodName()"));
                 }
+            } catch (ReflectiveOperationException e) {
+                Logging.error(tr("Broken tagging preset \"{0}-{1}\" - Java method given in ''values_from'' threw {2} ({3})", key, text,
+                        e.getClass().getName(), e.getMessage()));
+                Logging.debug(e);
             }
         }
-        initializeLocaleText(null);
-        initialized = true;
+        return null; // NOSONAR
     }
 
-    private void initListEntriesFromAttributes() {
+    /**
+     * Checks if list {@code a} is either null or the same length as list {@code b}.
+     *
+     * @param a The list to check
+     * @param b The other list
+     * @param name The name of the list for error reporting
+     * @return {@code a} if both lists have the same length or {@code null}
+     */
+    private List<String> checkListsSameLength(List<String> a, List<String> b, String name) {
+        if (a != null && a.size() != b.size()) {
+            Logging.error(tr("Broken tagging preset \"{0}-{1}\" - number of items in ''{2}'' must be the same as in ''values''",
+                            key, text, name));
+            Logging.error(tr("Detailed information: {0} <> {1}", a, b));
+            return null; // NOSONAR
+        }
+        return a;
+    }
 
-        String[] valueArray = null;
+    protected void initListEntriesFromAttributes() {
+        List<String> valueList = null;
+        List<String> displayList = null;
+        List<String> localeDisplayList = null;
 
         if (values_from != null) {
-            String[] classMethod = values_from.split("#", -1);
-            if (classMethod.length == 2) {
-                try {
-                    Method method = Class.forName(classMethod[0]).getMethod(classMethod[1]);
-                    // Check method is public static String[] methodName()
-                    int mod = method.getModifiers();
-                    if (Modifier.isPublic(mod) && Modifier.isStatic(mod)
-                            && method.getReturnType().equals(String[].class) && method.getParameterTypes().length == 0) {
-                        valueArray = (String[]) method.invoke(null);
-                    } else {
-                        Logging.error(tr("Broken tagging preset \"{0}-{1}\" - Java method given in ''values_from'' is not \"{2}\"", key, text,
-                                "public static String[] methodName()"));
-                    }
-                } catch (ReflectiveOperationException e) {
-                    Logging.error(tr("Broken tagging preset \"{0}-{1}\" - Java method given in ''values_from'' threw {2} ({3})", key, text,
-                            e.getClass().getName(), e.getMessage()));
-                    Logging.debug(e);
-                }
-            }
+            valueList = getValuesFromCode(values_from);
         }
 
-        if (valueArray == null) {
-            valueArray = splitEscaped(delimiter, values);
-            values = null;
+        if (valueList == null) {
+            // get from {@code values} attribute
+            valueList = splitEscaped(delimiter, values);
+        }
+        if (valueList == null) {
+            return;
         }
 
-        String[] displayArray = valueArray;
         if (!values_no_i18n) {
-            final String displ = Utils.firstNonNull(locale_display_values, display_values);
-            displayArray = displ == null ? valueArray : splitEscaped(delimiter, displ);
+            localeDisplayList = splitEscaped(delimiter, locale_display_values);
+            displayList = splitEscaped(delimiter, display_values);
+        }
+        List<String> localeShortDescriptionsList = splitEscaped(delimiter, locale_short_descriptions);
+        List<String> shortDescriptionsList = splitEscaped(delimiter, short_descriptions);
+
+        displayList = checkListsSameLength(displayList, valueList, "display_values");
+        localeDisplayList = checkListsSameLength(localeDisplayList, valueList, "locale_display_values");
+        shortDescriptionsList = checkListsSameLength(shortDescriptionsList, valueList, "short_descriptions");
+        localeShortDescriptionsList = checkListsSameLength(localeShortDescriptionsList, valueList, "locale_short_descriptions");
+
+        for (int i = 0; i < valueList.size(); i++) {
+            final PresetListEntry e = new PresetListEntry(valueList.get(i), this);
+            if (displayList != null)
+                e.display_value = displayList.get(i);
+            if (localeDisplayList != null)
+                e.locale_display_value = localeDisplayList.get(i);
+            if (shortDescriptionsList != null)
+                e.short_description = shortDescriptionsList.get(i);
+            if (localeShortDescriptionsList != null)
+                e.locale_short_description = localeShortDescriptionsList.get(i);
+            addListEntry(e);
         }
 
-        final String descr = Utils.firstNonNull(locale_short_descriptions, short_descriptions);
-        String[] shortDescriptionsArray = descr == null ? null : splitEscaped(delimiter, descr);
-
-        if (displayArray.length != valueArray.length) {
-            Logging.error(tr("Broken tagging preset \"{0}-{1}\" - number of items in ''display_values'' must be the same as in ''values''",
-                            key, text));
-            Logging.error(tr("Detailed information: {0} <> {1}", Arrays.toString(displayArray), Arrays.toString(valueArray)));
-            displayArray = valueArray;
+        if (values_sort && Boolean.TRUE.equals(TaggingPresets.SORT_MENU.get())) {
+            presetListEntries.sort((a, b) -> AlphanumComparator.getInstance().compare(a.getDisplayValue(), b.getDisplayValue()));
         }
-
-        if (shortDescriptionsArray != null && shortDescriptionsArray.length != valueArray.length) {
-            Logging.error(tr("Broken tagging preset \"{0}-{1}\" - number of items in ''short_descriptions'' must be the same as in ''values''",
-                            key, text));
-            Logging.error(tr("Detailed information: {0} <> {1}", Arrays.toString(shortDescriptionsArray), Arrays.toString(valueArray)));
-            shortDescriptionsArray = null;
-        }
-
-        final List<PresetListEntry> entries = new ArrayList<>(valueArray.length);
-        for (int i = 0; i < valueArray.length; i++) {
-            final PresetListEntry e = new PresetListEntry(valueArray[i]);
-            final String value = locale_display_values != null || values_no_i18n
-                    ? displayArray[i]
-                    : trc(values_context, fixPresetString(displayArray[i]));
-            e.locale_display_value = value == null ? null : value.intern();
-            if (shortDescriptionsArray != null) {
-                final String description = locale_short_descriptions != null
-                        ? shortDescriptionsArray[i]
-                        : tr(fixPresetString(shortDescriptionsArray[i]));
-                e.locale_short_description = description == null ? null : description.intern();
-            }
-
-            entries.add(e);
-        }
-
-        if (values_sort && Config.getPref().getBoolean("taggingpreset.sortvalues", true)) {
-            Collections.sort(entries);
-        }
-
-        addListEntries(entries);
     }
 
-    protected String getDisplayIfNull() {
-        return null;
-    }
+    /**
+     * Returns the initial value to use for this preset.
+     * <p>
+     * The initial value is the value shown in the control when the preset dialog opens. For a
+     * discussion of all the options see the enclosed tickets.
+     *
+     * @param usage The key Usage
+     * @param support The support
+     * @return The initial value to use.
+     *
+     * @see "https://josm.openstreetmap.de/ticket/5564"
+     * @see "https://josm.openstreetmap.de/ticket/12733"
+     * @see "https://josm.openstreetmap.de/ticket/17324"
+     */
+    protected String getInitialValue(Usage usage, TaggingPresetItemGuiSupport support) {
+        String initialValue = null;
+        originalValue = "";
 
-    protected Object getItemToSelect(String def, boolean presetInitiallyMatches, boolean multi) {
-        final Object itemToSelect;
         if (usage.hasUniqueValue()) {
-            // all items have the same value (and there were no unset items)
-            originalValue = multi ? usage.getFirst() : getListEntry(usage.getFirst());
-            itemToSelect = originalValue;
-        } else if (def != null && usage.unused()) {
-            // default is set and all items were unset
-            if (!usage.hadKeys() || PROP_FILL_DEFAULT.get() || isForceUseLastAsDefault()) {
-                // selected osm primitives are untagged or filling default feature is enabled
-                if (multi) {
-                    itemToSelect = def;
-                } else {
-                    PresetListEntry entry = getListEntry(def);
-                    itemToSelect = entry == null ? "" : entry.getDisplayValue();
-                }
+            // all selected primitives have the same not empty value for this key
+            initialValue = usage.getFirst();
+            originalValue = initialValue;
+        } else if (!usage.unused()) {
+            // at least one primitive has a value for this key (but not all have the same one)
+            initialValue = DIFFERENT;
+            originalValue = initialValue;
+        } else if (!usage.hadKeys() || isForceUseLastAsDefault() || Boolean.TRUE.equals(PROP_FILL_DEFAULT.get())) {
+            // at this point no primitive had any value for this key
+            if (!support.isPresetInitiallyMatches() && isUseLastAsDefault() && LAST_VALUES.containsKey(key)) {
+                initialValue = LAST_VALUES.get(key);
             } else {
-                // selected osm primitives are tagged and filling default feature is disabled
-                itemToSelect = "";
+                initialValue = default_;
             }
-            originalValue = multi ? DIFFERENT : getListEntry(DIFFERENT);
-        } else if (usage.unused()) {
-            // all items were unset (and so is default)
-            originalValue = multi ? null : getListEntry("");
-            if (LAST_VALUES.containsKey(key) && isUseLastAsDefault() && (!presetInitiallyMatches || isForceUseLastAsDefault())) {
-                itemToSelect = getListEntry(LAST_VALUES.get(key));
-            } else {
-                itemToSelect = originalValue;
-            }
-        } else {
-            originalValue = multi ? DIFFERENT : getListEntry(DIFFERENT);
-            itemToSelect = originalValue;
         }
-        return itemToSelect;
-    }
-
-    protected String getSelectedValue() {
-        Object obj = getSelectedItem();
-        String display = obj == null ? getDisplayIfNull() : obj.toString();
-
-        if (display == null) {
-            return "";
-        }
-        return presetListEntries.stream()
-                .filter(entry -> Objects.equals(entry.toString(), display))
-                .findFirst()
-                .map(entry -> entry.value)
-                .map(Utils::removeWhiteSpaces)
-                .orElse(display);
+        return initialValue != null ? initialValue : "";
     }
 
     @Override
     public void addCommands(List<Tag> changedTags) {
-        String value = getSelectedValue();
+        String value = getSelectedItem().value;
 
         // no change if same as before
-        if (originalValue == null) {
-            if (value.isEmpty())
-                return;
-        } else if (value.equals(originalValue.toString()))
+        if (value.equals(originalValue))
             return;
+        changedTags.add(new Tag(key, value));
 
         if (isUseLastAsDefault()) {
             LAST_VALUES.put(key, value);
         }
-        changedTags.add(new Tag(key, value));
     }
 
     /**
@@ -423,12 +380,35 @@ public abstract class ComboMultiSelect extends KeyedItem {
         }
     }
 
+    /**
+     * Returns true if the last entered value should be used as default.
+     * <p>
+     * Note: never used in {@code defaultpresets.xml}.
+     *
+     * @return true if the last entered value should be used as default.
+     */
     protected boolean isUseLastAsDefault() {
         return use_last_as_default > 0;
     }
 
+    /**
+     * Returns true if the last entered value should be used as default also on primitives that
+     * already have tags.
+     * <p>
+     * Note: used for {@code addr:*} tags in {@code defaultpresets.xml}.
+     *
+     * @return true if see above
+     */
     protected boolean isForceUseLastAsDefault() {
         return use_last_as_default == 2;
+    }
+
+    /**
+     * Get the entries for this {@link ComboMultiSelect} object
+     * @return The {@link PresetListEntry} values for this object
+     */
+    public List<PresetListEntry> presetListEntries() {
+        return Collections.unmodifiableList(this.presetListEntries);
     }
 
     /**
@@ -437,6 +417,11 @@ public abstract class ComboMultiSelect extends KeyedItem {
      */
     public void addListEntry(PresetListEntry e) {
         presetListEntries.add(e);
+        // we need to fix the entries because the XML Parser
+        // {@link org.openstreetmap.josm.tools.XmlObjectParser.Parser#startElement} has used the
+        // default standard constructor for {@link PresetListEntry} if the list entry was defined
+        // using XML {@code <list_entry>}.
+        e.cms = this;
     }
 
     /**
@@ -447,14 +432,6 @@ public abstract class ComboMultiSelect extends KeyedItem {
         for (PresetListEntry i : e) {
             addListEntry(i);
         }
-    }
-
-    protected PresetListEntry getListEntry(String value) {
-        return presetListEntries.stream().filter(e -> Objects.equals(e.value, value)).findFirst().orElse(null);
-    }
-
-    protected ListCellRenderer<PresetListEntry> getListCellRenderer() {
-        return RENDERER;
     }
 
     @Override

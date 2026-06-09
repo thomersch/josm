@@ -1,40 +1,32 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.tools;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.util.List;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.junit.jupiter.api.Test;
+import org.openstreetmap.josm.testutils.annotations.MemoryManagerLeaks;
 import org.openstreetmap.josm.tools.MemoryManager.MemoryHandle;
 import org.openstreetmap.josm.tools.MemoryManager.NotEnoughMemoryException;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
  * Tests the {@link MemoryManager} class.
  * @author Michael Zangl
  */
+@MemoryManagerLeaks
 public class MemoryManagerTest {
-    /**
-     * Base test environment
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().memoryManagerLeaks();
-
     /**
      * Test {@link MemoryManager#allocateMemory(String, long, java.util.function.Supplier)}
      * @throws NotEnoughMemoryException if there is not enough memory
      */
     @Test
-    public void testUseMemory() throws NotEnoughMemoryException {
+    void testUseMemory() throws NotEnoughMemoryException {
         MemoryManager manager = MemoryManager.getInstance();
         long available = manager.getAvailableMemory();
         assertTrue(available < Runtime.getRuntime().maxMemory());
@@ -58,57 +50,55 @@ public class MemoryManagerTest {
      * Test that {@link MemoryHandle#get()} checks for use after free.
      * @throws NotEnoughMemoryException if there is not enough memory
      */
-    @Test(expected = IllegalStateException.class)
-    public void testUseAfterFree() throws NotEnoughMemoryException {
+    @Test
+    void testUseAfterFree() throws NotEnoughMemoryException {
         MemoryManager manager = MemoryManager.getInstance();
         MemoryHandle<Object> testMemory = manager.allocateMemory("test", 10, Object::new);
         testMemory.free();
-        testMemory.get();
+        assertThrows(IllegalStateException.class, testMemory::get);
     }
 
     /**
      * Test that {@link MemoryHandle#get()} checks for free after free.
      * @throws NotEnoughMemoryException if there is not enough memory
      */
-    @Test(expected = IllegalStateException.class)
-    public void testFreeAfterFree() throws NotEnoughMemoryException {
+    @Test
+    void testFreeAfterFree() throws NotEnoughMemoryException {
         MemoryManager manager = MemoryManager.getInstance();
         MemoryHandle<Object> testMemory = manager.allocateMemory("test", 10, Object::new);
         testMemory.free();
-        testMemory.free();
+        assertThrows(IllegalStateException.class, testMemory::free);
     }
 
     /**
      * Test that too big allocations fail
-     * @throws NotEnoughMemoryException always
      */
-    @Test(expected = NotEnoughMemoryException.class)
-    public void testAllocationFails() throws NotEnoughMemoryException {
+    @Test
+    void testAllocationFails() {
         MemoryManager manager = MemoryManager.getInstance();
         long available = manager.getAvailableMemory();
 
-        manager.allocateMemory("test", available + 1, () -> {
+        assertThrows(NotEnoughMemoryException.class, () -> manager.allocateMemory("test", available + 1, () -> {
             fail("Should not reach");
             return null;
-        });
+        }));
     }
 
     /**
      * Test that allocations with null object fail
-     * @throws NotEnoughMemoryException never
      */
-    @Test(expected = IllegalArgumentException.class)
-    public void testSupplierFails() throws NotEnoughMemoryException {
+    @Test
+    void testSupplierFails() {
         MemoryManager manager = MemoryManager.getInstance();
 
-        manager.allocateMemory("test", 1, () -> null);
+        assertThrows(IllegalArgumentException.class, () -> manager.allocateMemory("test", 1, () -> null));
     }
 
     /**
      * Test {@link MemoryManager#isAvailable(long)}
      */
     @Test
-    public void testIsAvailable() {
+    void testIsAvailable() {
         MemoryManager manager = MemoryManager.getInstance();
         assertTrue(manager.isAvailable(10));
         assertTrue(manager.isAvailable(100));
@@ -117,13 +107,12 @@ public class MemoryManagerTest {
 
     /**
      * Test {@link MemoryManager#isAvailable(long)} for negative number
-     * @throws NotEnoughMemoryException never
      */
-    @Test(expected = IllegalArgumentException.class)
-    public void testIsAvailableFails() throws NotEnoughMemoryException {
+    @Test
+    void testIsAvailableFails() {
         MemoryManager manager = MemoryManager.getInstance();
 
-        manager.isAvailable(-10);
+        assertThrows(IllegalArgumentException.class, () -> manager.isAvailable(-10));
     }
 
     /**
@@ -131,7 +120,7 @@ public class MemoryManagerTest {
      * @throws NotEnoughMemoryException if there is not enough memory
      */
     @Test
-    public void testResetState() throws NotEnoughMemoryException {
+    void testResetState() throws NotEnoughMemoryException {
         MemoryManager manager = MemoryManager.getInstance();
         assertTrue(manager.resetState().isEmpty());
 
@@ -146,13 +135,13 @@ public class MemoryManagerTest {
      * Test {@link MemoryManager#resetState()}
      * @throws NotEnoughMemoryException if there is not enough memory
      */
-    @Test(expected = IllegalStateException.class)
-    public void testResetStateUseAfterFree() throws NotEnoughMemoryException {
+    @Test
+    void testResetStateUseAfterFree() throws NotEnoughMemoryException {
         MemoryManager manager = MemoryManager.getInstance();
         MemoryHandle<Object> testMemory = manager.allocateMemory("test", 10, Object::new);
 
         assertFalse(manager.resetState().isEmpty());
-        testMemory.get();
+        assertThrows(IllegalStateException.class, testMemory::get);
     }
 
     /**
@@ -162,7 +151,7 @@ public class MemoryManagerTest {
     public static void resetState(boolean allowMemoryManagerLeaks) {
         List<MemoryHandle<?>> hadLeaks = MemoryManager.getInstance().resetState();
         if (!allowMemoryManagerLeaks) {
-            assertTrue("Memory manager had leaking memory: " + hadLeaks, hadLeaks.isEmpty());
+            assertTrue(hadLeaks.isEmpty(), "Memory manager had leaking memory: " + hadLeaks);
         }
     }
 }

@@ -31,6 +31,7 @@ import org.openstreetmap.josm.spi.preferences.PreferenceChangedListener;
 import org.openstreetmap.josm.tools.Geometry;
 import org.openstreetmap.josm.tools.Geometry.AreaAndPerimeter;
 import org.openstreetmap.josm.tools.Logging;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * Multipolygon data used to represent complex areas, see <a href="https://wiki.openstreetmap.org/wiki/Relation:multipolygon">wiki</a>.
@@ -66,7 +67,7 @@ public class Multipolygon {
      * <p>The decision is taken based on preference settings, see the four preference keys
      * above.</p>
      */
-    private static class MultipolygonRoleMatcher implements PreferenceChangedListener {
+    private static final class MultipolygonRoleMatcher implements PreferenceChangedListener {
         private final List<String> outerExactRoles = new ArrayList<>();
         private final List<String> outerRolePrefixes = new ArrayList<>();
         private final List<String> innerExactRoles = new ArrayList<>();
@@ -99,19 +100,19 @@ public class Multipolygon {
             if (Config.getPref() == null) return;
             Collection<String> literals;
             literals = Config.getPref().getList(PREF_KEY_OUTER_ROLES);
-            if (literals != null && !literals.isEmpty()) {
+            if (!Utils.isEmpty(literals)) {
                 setNormalized(literals, outerExactRoles);
             }
             literals = Config.getPref().getList(PREF_KEY_OUTER_ROLE_PREFIXES);
-            if (literals != null && !literals.isEmpty()) {
+            if (!Utils.isEmpty(literals)) {
                 setNormalized(literals, outerRolePrefixes);
             }
             literals = Config.getPref().getList(PREF_KEY_INNER_ROLES);
-            if (literals != null && !literals.isEmpty()) {
+            if (!Utils.isEmpty(literals)) {
                 setNormalized(literals, innerExactRoles);
             }
             literals = Config.getPref().getList(PREF_KEY_INNER_ROLE_PREFIXES);
-            if (literals != null && !literals.isEmpty()) {
+            if (!Utils.isEmpty(literals)) {
                 setNormalized(literals, innerRolePrefixes);
             }
         }
@@ -513,10 +514,10 @@ public class Multipolygon {
         for (RelationMember m : r.getMembers()) {
             if (m.getMember().isIncomplete()) {
                 this.incomplete = true;
-            } else if (m.getMember().isDrawable() && m.isWay()) {
+            } else if (!m.getMember().isDeleted() && m.isWay()) {
                 Way w = m.getWay();
 
-                if (w.getNodesCount() < 2) {
+                if (!w.hasOnlyLocatableNodes() || w.getNodesCount() < 2) {
                     continue;
                 }
 

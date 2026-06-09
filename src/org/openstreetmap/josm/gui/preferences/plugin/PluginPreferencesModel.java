@@ -139,15 +139,14 @@ public class PluginPreferencesModel extends ChangeNotifier {
      */
     public List<PluginInformation> getSelectedPlugins() {
         return availablePlugins.stream()
-                .filter(pi -> selectedPluginsMap.get(pi) != null)
-                .filter(selectedPluginsMap::get)
+                .filter(pi -> Boolean.TRUE.equals(selectedPluginsMap.get(pi)))
                 .collect(Collectors.toList());
     }
 
     /**
-     * Replies the list of selected plugin information objects
+     * Replies the set of selected plugin information objects
      *
-     * @return the list of selected plugin information objects
+     * @return the set of selected plugin information objects
      */
     public Set<String> getSelectedPluginNames() {
         return getSelectedPlugins().stream().map(pi -> pi.name).collect(Collectors.toSet());
@@ -162,9 +161,9 @@ public class PluginPreferencesModel extends ChangeNotifier {
     }
 
     /**
-     * Replies the list of plugin informations to display.
+     * Replies the list of plugin information to display.
      *
-     * @return the list of plugin informations to display
+     * @return the list of plugin information to display
      */
     public List<PluginInformation> getDisplayedPlugins() {
         return displayedPlugins;
@@ -264,10 +263,10 @@ public class PluginPreferencesModel extends ChangeNotifier {
     }
 
     /**
-     * Replies the set of plugins which have been added by the user to
+     * Replies the list of plugins which have been added by the user to
      * the set of activated plugins.
      *
-     * @return the set of newly activated plugins
+     * @return the list of newly activated plugins
      */
     public List<PluginInformation> getNewlyActivatedPlugins() {
         List<PluginInformation> ret = new LinkedList<>();
@@ -282,10 +281,10 @@ public class PluginPreferencesModel extends ChangeNotifier {
     }
 
     /**
-     * Replies the set of plugins which have been removed by the user from
+     * Replies the list of plugins which have been removed by the user from
      * the set of deactivated plugins.
      *
-     * @return the set of newly deactivated plugins
+     * @return the list of newly deactivated plugins
      */
     public List<PluginInformation> getNewlyDeactivatedPlugins() {
         return availablePlugins.stream()
@@ -295,9 +294,9 @@ public class PluginPreferencesModel extends ChangeNotifier {
     }
 
     /**
-     * Replies the set of all available plugins.
+     * Replies the list of all available plugins.
      *
-     * @return the set of all available plugins
+     * @return the list of all available plugins
      */
     public List<PluginInformation> getAvailablePlugins() {
         return new LinkedList<>(availablePlugins);

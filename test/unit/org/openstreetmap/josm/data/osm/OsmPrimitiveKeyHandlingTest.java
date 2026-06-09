@@ -1,14 +1,16 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.osm;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import org.junit.Rule;
-import org.junit.Test;
+import java.util.Collections;
+import java.util.HashSet;
+
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.coor.LatLon;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
@@ -16,20 +18,12 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
  * Some unit test cases for basic tag management on {@link OsmPrimitive}. Uses
  * {@link Node} for the tests, {@link OsmPrimitive} is abstract.
  */
-public class OsmPrimitiveKeyHandlingTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+class OsmPrimitiveKeyHandlingTest {
     /**
      * test query and get methods on a node withouth keys
      */
     @Test
-    public void testEmptyNode() {
+    void testEmptyNode() {
         Node n = new Node();
         testKeysSize(n, 0);
         testGetKey(n, "nosuchkey", null);
@@ -43,24 +37,27 @@ public class OsmPrimitiveKeyHandlingTest {
      * Adds a tag to an empty node and test the query and get methods.
      */
     @Test
-    public void testPut() {
+    void testPut() {
         Node n = new Node();
         n.put("akey", "avalue");
         testKeysSize(n, 1);
 
         testGetKey(n, "akey", "avalue");
+        assertEquals(Collections.singleton("akey"), n.keySet());
+        assertNotEquals(HashSet.class, n.keySet().getClass()); // expect Collections.singleton
+
     }
 
     /**
      * Adds two tags to an empty node and test the query and get methods.
      */
     @Test
-    public void testPut2() {
+    void testPut2() {
         Node n = new Node();
         n.put("key.1", "value.1");
         n.put("key.2", "value.2");
-        assertTrue(n.get("key.1").equals("value.1"));
-        assertTrue(n.get("key.2").equals("value.2"));
+        assertEquals("value.1", n.get("key.1"));
+        assertEquals("value.2", n.get("key.2"));
         testKeysSize(n, 2);
         assertTrue(n.hasKeys());
         assertTrue(n.hasKey("key.1"));
@@ -73,7 +70,7 @@ public class OsmPrimitiveKeyHandlingTest {
      */
     @Test
     @SuppressFBWarnings(value = "DM_STRING_CTOR", justification = "test that equals is used and not ==")
-    public void testRemove() {
+    void testRemove() {
         Node n = new Node();
         n.put("key.1", "value.1");
         n.put(new String("key.2"), new String("value.2")); // Test that equals is used and not ==
@@ -105,7 +102,7 @@ public class OsmPrimitiveKeyHandlingTest {
      * Removes all tags from a node.
      */
     @Test
-    public void testRemoveAll() {
+    void testRemoveAll() {
         Node n = new Node();
 
         n.put("key.1", "value.1");
@@ -120,7 +117,7 @@ public class OsmPrimitiveKeyHandlingTest {
      * in different orders.
      */
     @Test
-    public void testHasEqualSemanticAttributes() {
+    void testHasEqualSemanticAttributes() {
         Node n1 = new Node(1);
         n1.setCoor(LatLon.ZERO);
         n1.put("key.1", "value.1");
@@ -138,7 +135,7 @@ public class OsmPrimitiveKeyHandlingTest {
      * Test hasEqualSemanticAttributes on two nodes with different tags.
      */
     @Test
-    public void testHasEqualSemanticAttributes2() {
+    void testHasEqualSemanticAttributes2() {
         Node n1 = new Node(1);
         n1.setCoor(LatLon.ZERO);
         n1.put("key.1", "value.1");
@@ -162,6 +159,7 @@ public class OsmPrimitiveKeyHandlingTest {
     private void testKeysSize(OsmPrimitive p, int expectedSize) {
         assertEquals(expectedSize, p.getKeys().size());
         assertEquals(expectedSize, p.keySet().size());
+        assertEquals(expectedSize, p.keys().count());
         assertEquals(expectedSize, p.getKeys().entrySet().size());
         assertEquals(expectedSize, p.getKeys().keySet().size());
         assertEquals(expectedSize, p.getNumKeys());

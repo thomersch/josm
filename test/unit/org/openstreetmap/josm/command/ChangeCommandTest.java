@@ -1,18 +1,16 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.command;
 
-import static org.junit.Assert.assertArrayEquals;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.command.CommandTest.CommandTestData;
 import org.openstreetmap.josm.data.coor.LatLon;
@@ -24,29 +22,27 @@ import org.openstreetmap.josm.data.osm.Relation;
 import org.openstreetmap.josm.data.osm.User;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
+import org.openstreetmap.josm.testutils.annotations.I18n;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import nl.jqno.equalsverifier.EqualsVerifier;
 import nl.jqno.equalsverifier.Warning;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests of {@link ChangeCommand} class.
  */
-public class ChangeCommandTest {
-
-    /**
-     * We need prefs for nodes.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences().i18n();
+@I18n
+// We need prefs for nodes.
+@BasicPreferences
+class ChangeCommandTest {
     private CommandTestData testData;
 
     /**
      * Set up the test data.
      */
-    @Before
+    @BeforeEach
     public void createTestData() {
         testData = new CommandTestData();
     }
@@ -54,17 +50,17 @@ public class ChangeCommandTest {
     /**
      * Test that empty ways are prevented.
      */
-    @Test(expected = IllegalArgumentException.class)
-    public void testPreventEmptyWays() {
+    @Test
+    void testPreventEmptyWays() {
         Way emptyWay = new Way();
-        new ChangeCommand(testData.existingWay, emptyWay);
+        assertThrows(IllegalArgumentException.class, () -> new ChangeCommand(testData.existingWay, emptyWay));
     }
 
     /**
      * Test {@link ChangeCommand#executeCommand()}
      */
     @Test
-    public void testChange() {
+    void testChange() {
         Node newNode = new Node(5);
         newNode.setCoor(LatLon.NORTH_POLE);
         newNode.put("new", "new");
@@ -72,7 +68,7 @@ public class ChangeCommandTest {
         new ChangeCommand(testData.existingNode, newNode).executeCommand();
 
         assertEquals("new", testData.existingNode.get("new"));
-        assertEquals(null, testData.existingNode.get("existing"));
+        assertNull(testData.existingNode.get("existing"));
         assertEquals(LatLon.NORTH_POLE, testData.existingNode.getCoor());
 
         Way newWay = new Way(10);
@@ -87,19 +83,20 @@ public class ChangeCommandTest {
     /**
      * Test {@link ChangeCommand#executeCommand()} fails if ID is changed
      */
-    @Test(expected = DataIntegrityProblemException.class)
-    public void testChangeIdChange() {
+    @Test
+    void testChangeIdChange() {
         Node newNode = new Node(1);
         newNode.setCoor(LatLon.NORTH_POLE);
 
-        new ChangeCommand(testData.existingNode, newNode).executeCommand();
+        final ChangeCommand changeCommand = new ChangeCommand(testData.existingNode, newNode);
+        assertThrows(DataIntegrityProblemException.class, changeCommand::executeCommand);
     }
 
     /**
      * Test {@link ChangeCommand#undoCommand()}
      */
     @Test
-    public void testUndo() {
+    void testUndo() {
         Node newNode = new Node(5);
         newNode.setCoor(LatLon.NORTH_POLE);
         newNode.put("new", "new");
@@ -120,7 +117,7 @@ public class ChangeCommandTest {
      * Tests {@link ChangeCommand#fillModifiedData(java.util.Collection, java.util.Collection, java.util.Collection)}
      */
     @Test
-    public void testFillModifiedData() {
+    void testFillModifiedData() {
         ArrayList<OsmPrimitive> modified = new ArrayList<>();
         ArrayList<OsmPrimitive> deleted = new ArrayList<>();
         ArrayList<OsmPrimitive> added = new ArrayList<>();
@@ -134,7 +131,7 @@ public class ChangeCommandTest {
      * Test {@link ChangeCommand#getDescriptionText()}
      */
     @Test
-    public void testDescription() {
+    void testDescription() {
         Node node = new Node(LatLon.ZERO);
         node.put("name", "xy");
         Way way = new Way();
@@ -153,7 +150,7 @@ public class ChangeCommandTest {
      * Unit test of methods {@link ChangeCommand#equals} and {@link ChangeCommand#hashCode}.
      */
     @Test
-    public void testEqualsContract() {
+    void testEqualsContract() {
         TestUtils.assumeWorkingEqualsVerifier();
         EqualsVerifier.forClass(ChangeCommand.class).usingGetClass()
             .withPrefabValues(DataSet.class,

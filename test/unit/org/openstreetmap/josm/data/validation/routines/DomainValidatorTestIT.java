@@ -22,7 +22,6 @@ import static org.junit.jupiter.api.Assertions.fail;
 import java.io.BufferedReader;
 import java.io.Closeable;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -34,11 +33,11 @@ import java.net.HttpURLConnection;
 import java.net.IDN;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -46,9 +45,9 @@ import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.junit.jupiter.api.Test;
+import org.openstreetmap.josm.testutils.annotations.HTTPS;
+import org.openstreetmap.josm.testutils.annotations.IntegrationTest;
 import org.openstreetmap.josm.tools.Logging;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -58,15 +57,9 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
  *
  * @version $Revision: 1723861 $
  */
-public class DomainValidatorTestIT {
-
-    /**
-     * Setup rule
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().https();
-
+@HTTPS
+@IntegrationTest
+class DomainValidatorTestIT {
     /**
      * Download and process local copy of http://data.iana.org/TLD/tlds-alpha-by-domain.txt
      * Check if the internal TLD table is up to date
@@ -74,7 +67,7 @@ public class DomainValidatorTestIT {
      * @throws Exception if an error occurs
      */
     @Test
-    public void testIanaTldList() throws Exception {
+    void testIanaTldList() throws Exception {
         // Check the arrays first as this affects later checks
         // Doing this here makes it easier when updating the lists
         boolean OK = true;
@@ -101,7 +94,7 @@ public class DomainValidatorTestIT {
         // if the txt file contains entries not found in the html file, try again in a day or two
         download(htmlFile, "http://www.iana.org/domains/root/db", timestamp);
 
-        try (BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(txtFile), StandardCharsets.UTF_8))) {
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(Files.newInputStream(txtFile.toPath()), StandardCharsets.UTF_8))) {
             String line;
             final String header;
             line = br.readLine(); // header
@@ -116,6 +109,8 @@ public class DomainValidatorTestIT {
             Map<String, String[]> htmlInfo = getHtmlInfo(htmlFile);
             Map<String, String> missingTLD = new TreeMap<>(); // stores entry and comments as String[]
             Map<String, String> missingCC = new TreeMap<>();
+            Map<String, String> allTLD = new TreeMap<>(); // stores entry and comments as String[]
+            Map<String, String> allCC = new TreeMap<>(); // stores entry and comments as String[]
             while ((line = br.readLine()) != null) {
                 if (!line.startsWith("#")) {
                     final String unicodeTld; // only different from asciiTld if that was punycode
@@ -125,11 +120,24 @@ public class DomainValidatorTestIT {
                     } else {
                         unicodeTld = asciiTld;
                     }
-                    if (!dv.isValidTld(asciiTld)) {
-                        String[] info = htmlInfo.get(asciiTld);
-                        if (info != null) {
-                            String type = info[0];
-                            String comment = info[1];
+                    String[] info = htmlInfo.get(asciiTld);
+                    if (info != null) {
+                        String type = info[0];
+                        String comment = info[1].replaceAll("&quot;", "\"").replaceAll("&#x27;", "'").replaceAll("&amp;", "&");
+                        if ("country-code".equals(type)) { // Which list to use?
+                            if (!dv.isValidInfrastructureTld(asciiTld)) {
+                                allCC.put(asciiTld, unicodeTld + " " + comment);
+                                if (generateUnicodeTlds) {
+                                    allCC.put(unicodeTld, asciiTld + " " + comment);
+                                }
+                            }
+                        } else {
+                            allTLD.put(asciiTld, unicodeTld + " " + comment);
+                            if (generateUnicodeTlds) {
+                                allTLD.put(unicodeTld, asciiTld + " " + comment);
+                            }
+                        }
+                        if (!dv.isValidTld(asciiTld)) {
                             if ("country-code".equals(type)) { // Which list to use?
                                 missingCC.put(asciiTld, unicodeTld + " " + comment);
                                 if (generateUnicodeTlds) {
@@ -164,6 +172,12 @@ public class DomainValidatorTestIT {
                     }
                 }
             }
+            allTLD.remove("arpa");
+            String s = allTLD.get("melbourne");
+            if (s != null) /* text too long, shorten a bit */
+                allTLD.replace("melbourne", s.replace("represented by its ", ""));
+            printMap(header, allTLD, "allTLD");
+            printMap(header, allCC, "allCC");
             if (!missingTLD.isEmpty()) {
                 printMap(header, missingTLD, "TLD");
                 fail("missing TLD");
@@ -185,9 +199,7 @@ public class DomainValidatorTestIT {
         if (header != null) {
             Logging.warn("        // Taken from " + header);
         }
-        Iterator<Map.Entry<String, String>> it = map.entrySet().iterator();
-        while (it.hasNext()) {
-            Map.Entry<String, String> me = it.next();
+        for (Map.Entry<String, String> me : map.entrySet()) {
             Logging.warn("        \"" + me.getKey() + "\", // " + me.getValue());
         }
         Logging.warn(System.lineSeparator() + "Done");
@@ -201,7 +213,7 @@ public class DomainValidatorTestIT {
         final Pattern type = Pattern.compile("\\s+<td>([^<]+)</td>");
         final Pattern comment = Pattern.compile("\\s+<td>([^<]+)</td>");
 
-        try (BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(f), StandardCharsets.UTF_8))) {
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(Files.newInputStream(f.toPath()), StandardCharsets.UTF_8))) {
             String line;
             while ((line = br.readLine()) != null) {
                 Matcher m = domain.matcher(line);
@@ -300,7 +312,7 @@ public class DomainValidatorTestIT {
         try {
             File rootCheck = new File(System.getProperty("java.io.tmpdir"), "tld_" + domain + ".html");
             download(rootCheck, tldurl, 0L);
-            in = new BufferedReader(new InputStreamReader(new FileInputStream(rootCheck), StandardCharsets.UTF_8));
+            in = new BufferedReader(new InputStreamReader(Files.newInputStream(rootCheck.toPath()), StandardCharsets.UTF_8));
             String inputLine;
             while ((inputLine = in.readLine()) != null) {
                 if (inputLine.contains("This domain is not present in the root zone at this time.")) {
@@ -347,9 +359,9 @@ public class DomainValidatorTestIT {
 
     private static boolean isInIanaList(String name, String[] array, Set<String> ianaTlds) {
         boolean ok = true;
-        for (int i = 0; i < array.length; i++) {
-            if (!ianaTlds.contains(array[i])) {
-                Logging.error(name + " contains unexpected value: " + array[i]);
+        for (String element : array) {
+            if (!ianaTlds.contains(element)) {
+                Logging.error(name + " contains unexpected value: " + element);
                 ok = false;
             }
         }

@@ -7,9 +7,11 @@ import static org.openstreetmap.josm.tools.I18n.trn;
 
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -20,8 +22,10 @@ import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.DefaultNameFormatter;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.OsmPrimitiveType;
+import org.openstreetmap.josm.data.osm.Tagged;
 import org.openstreetmap.josm.tools.I18n;
 import org.openstreetmap.josm.tools.ImageProvider;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * Command that manipulate the key/value structure of several objects. Manages deletion,
@@ -72,7 +76,7 @@ public class ChangePropertyCommand extends Command {
      *
      * @param ds The target data set. Must not be {@code null}
      * @param objects the objects to modify. Must not be empty
-     * @param tags the tags to set
+     * @param tags the tags to set. Caller must make sure that the tas are not changed once the command was executed.
      * @since 12726
      */
     public ChangePropertyCommand(DataSet ds, Collection<? extends OsmPrimitive> objects, Map<String, String> tags) {
@@ -85,7 +89,7 @@ public class ChangePropertyCommand extends Command {
      * Creates a command to change multiple tags of multiple objects
      *
      * @param objects the objects to modify. Must not be empty, and objects must belong to a data set
-     * @param tags the tags to set
+     * @param tags the tags to set. Caller must make sure that the tas are not changed once the command was executed.
      * @throws NullPointerException if objects is null or contain null item
      * @throws NoSuchElementException if objects is empty
      */
@@ -135,7 +139,7 @@ public class ChangePropertyCommand extends Command {
                 String oldVal = osm.get(tag.getKey());
                 String newVal = tag.getValue();
 
-                if (newVal == null || newVal.isEmpty()) {
+                if (Utils.isEmpty(newVal)) {
                     if (oldVal != null) {
                         // new value is null and tag exists (will delete tag)
                         modified = true;
@@ -169,7 +173,7 @@ public class ChangePropertyCommand extends Command {
                     String oldVal = osm.get(tag.getKey());
                     String newVal = tag.getValue();
 
-                    if (newVal == null || newVal.isEmpty()) {
+                    if (Utils.isEmpty(newVal)) {
                         if (oldVal != null)
                             osm.remove(tag.getKey());
                     } else if (oldVal == null || !newVal.equals(oldVal))
@@ -200,8 +204,8 @@ public class ChangePropertyCommand extends Command {
             OsmPrimitive primitive = objects.get(0);
             String msg;
             Map.Entry<String, String> entry = tags.entrySet().iterator().next();
-            if (entry.getValue() == null || entry.getValue().isEmpty()) {
-                switch(OsmPrimitiveType.from(primitive)) {
+            if (Utils.isEmpty(entry.getValue())) {
+                switch (OsmPrimitiveType.from(primitive)) {
                 case NODE: msg = marktr("Remove \"{0}\" for node ''{1}''"); break;
                 case WAY: msg = marktr("Remove \"{0}\" for way ''{1}''"); break;
                 case RELATION: msg = marktr("Remove \"{0}\" for relation ''{1}''"); break;
@@ -209,7 +213,7 @@ public class ChangePropertyCommand extends Command {
                 }
                 text = tr(msg, entry.getKey(), primitive.getDisplayName(DefaultNameFormatter.getInstance()));
             } else {
-                switch(OsmPrimitiveType.from(primitive)) {
+                switch (OsmPrimitiveType.from(primitive)) {
                 case NODE: msg = marktr("Set {0}={1} for node ''{2}''"); break;
                 case WAY: msg = marktr("Set {0}={1} for way ''{2}''"); break;
                 case RELATION: msg = marktr("Set {0}={1} for relation ''{2}''"); break;
@@ -219,7 +223,7 @@ public class ChangePropertyCommand extends Command {
             }
         } else if (objects.size() > 1 && tags.size() == 1) {
             Map.Entry<String, String> entry = tags.entrySet().iterator().next();
-            if (entry.getValue() == null || entry.getValue().isEmpty()) {
+            if (Utils.isEmpty(entry.getValue())) {
                 /* I18n: plural form for objects, but value < 2 not possible! */
                 text = trn("Remove \"{0}\" for {1} object", "Remove \"{0}\" for {1} objects", objects.size(), entry.getKey(), objects.size());
             } else {
@@ -229,7 +233,7 @@ public class ChangePropertyCommand extends Command {
             }
         } else {
             boolean allNull = this.tags.entrySet().stream()
-                    .allMatch(tag -> tag.getValue() == null || tag.getValue().isEmpty());
+                    .allMatch(tag -> Utils.isEmpty(tag.getValue()));
 
             if (allNull) {
                 /* I18n: plural form detected for objects only (but value < 2 not possible!), try to do your best for tags */
@@ -285,5 +289,36 @@ public class ChangePropertyCommand extends Command {
         ChangePropertyCommand that = (ChangePropertyCommand) obj;
         return Objects.equals(objects, that.objects) &&
                 Objects.equals(tags, that.tags);
+    }
+
+    /**
+     * Calculate the {@link ChangePropertyCommand} that is needed to change the tags in source to be equal to those in target.
+     * @param source the source primitive
+     * @param target the target primitive
+     * @return null if no changes are needed, else a {@link ChangePropertyCommand}
+     * @since 17357
+     */
+    public static Command build(OsmPrimitive source, Tagged target) {
+        Map<String, String> changedTags = new HashMap<>();
+        // find tags which have to be changed or removed
+        for (Entry<String, String> tag : source.getKeys().entrySet()) {
+            String key = tag.getKey();
+            String val = target.get(key);
+            if (!tag.getValue().equals(val))
+                changedTags.put(key, val); // null or a different value
+        }
+        // find tags which exist only in target, they have to be added
+        for (Entry<String, String> tag : target.getKeys().entrySet()) {
+            String key = tag.getKey();
+            if (!source.hasTag(key))
+                changedTags.put(key, tag.getValue());
+        }
+        if (changedTags.isEmpty())
+            return null;
+        if (changedTags.size() == 1) {
+            Entry<String, String> tag = changedTags.entrySet().iterator().next();
+            return new ChangePropertyCommand(Collections.singleton(source), tag.getKey(), tag.getValue());
+        }
+        return new ChangePropertyCommand(Collections.singleton(source), new HashMap<>(changedTags));
     }
 }

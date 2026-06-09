@@ -19,9 +19,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-import javax.json.Json;
-import javax.json.JsonObject;
-import javax.json.JsonReader;
 import javax.swing.ImageIcon;
 
 import org.openstreetmap.josm.data.StructUtils.StructEntry;
@@ -35,8 +32,13 @@ import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.ImageProvider.ImageSizes;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.MultiMap;
+import org.openstreetmap.josm.tools.PlatformManager;
 import org.openstreetmap.josm.tools.StreamUtils;
 import org.openstreetmap.josm.tools.Utils;
+
+import jakarta.json.Json;
+import jakarta.json.JsonObject;
+import jakarta.json.JsonReader;
 
 /**
  * Class that stores info about an image background layer.
@@ -61,7 +63,9 @@ public class ImageryInfo extends
         /** A WMS endpoint entry only stores the WMS server info, without layer, which are chosen later by the user. **/
         WMS_ENDPOINT("wms_endpoint"),
         /** WMTS stores GetCapabilities URL. Does not store any information about the layer **/
-        WMTS("wmts");
+        WMTS("wmts"),
+        /** Mapbox Vector Tiles entry*/
+        MVT("mvt");
 
         private final String typeString;
 
@@ -75,7 +79,7 @@ public class ImageryInfo extends
          * @since 6690
          */
         @Override
-        public final String getTypeString() {
+        public String getTypeString() {
             return typeString;
         }
 
@@ -138,7 +142,7 @@ public class ImageryInfo extends
          * @return the unique string identifying this category
          */
         @Override
-        public final String getCategoryString() {
+        public String getCategoryString() {
             return category;
         }
 
@@ -147,7 +151,7 @@ public class ImageryInfo extends
          * @return the description of this category
          */
         @Override
-        public final String getDescription() {
+        public String getDescription() {
             return description;
         }
 
@@ -158,7 +162,7 @@ public class ImageryInfo extends
          * @since 15049
          */
         @Override
-        public final ImageIcon getIcon(ImageSizes size) {
+        public ImageIcon getIcon(ImageSizes size) {
             return iconCache
                     .computeIfAbsent(size, x -> Collections.synchronizedMap(new EnumMap<>(ImageryCategory.class)))
                     .computeIfAbsent(this, x -> ImageProvider.get("data/imagery", x.category, size));
@@ -201,6 +205,8 @@ public class ImageryInfo extends
             super(asString, separator);
         }
     }
+
+    private static final String[] EMPTY_STRING = new String[0];
 
     private double pixelPerDegree;
     /** maximum zoom level for TMS imagery */
@@ -274,15 +280,15 @@ public class ImageryInfo extends
             if (!i.serverProjections.isEmpty()) {
                 projections = String.join(",", i.serverProjections);
             }
-            if (i.noTileHeaders != null && !i.noTileHeaders.isEmpty()) {
+            if (!Utils.isEmpty(i.noTileHeaders)) {
                 noTileHeaders = new MultiMap<>(i.noTileHeaders);
             }
 
-            if (i.noTileChecksums != null && !i.noTileChecksums.isEmpty()) {
+            if (!Utils.isEmpty(i.noTileChecksums)) {
                 noTileChecksums = new MultiMap<>(i.noTileChecksums);
             }
 
-            if (i.metadataHeaders != null && !i.metadataHeaders.isEmpty()) {
+            if (!Utils.isEmpty(i.metadataHeaders)) {
                 metadataHeaders = i.metadataHeaders;
             }
 
@@ -359,7 +365,7 @@ public class ImageryInfo extends
         this.eulaAcceptanceRequired = eulaAcceptanceRequired;
         if (t != null) {
             this.sourceType = t;
-        } else if (type != null && !type.isEmpty()) {
+        } else if (!Utils.isEmpty(type)) {
             throw new IllegalArgumentException("unknown type: "+type);
         }
     }
@@ -407,7 +413,7 @@ public class ImageryInfo extends
                 }
             }
         }
-        if (e.projections != null && !e.projections.isEmpty()) {
+        if (!Utils.isEmpty(e.projections)) {
             // split generates null element on empty string which gives one element Array[null]
             setServerProjections(Arrays.asList(e.projections.split(",", -1)));
         }
@@ -563,7 +569,7 @@ public class ImageryInfo extends
     /**
      * Check if this object equals another ImageryInfo with respect to the properties
      * that get written to the preference file.
-     *
+     * <p>
      * The field {@link #pixelPerDegree} is ignored.
      *
      * @param other the ImageryInfo object to compare to
@@ -579,14 +585,14 @@ public class ImageryInfo extends
 
         // CHECKSTYLE.OFF: BooleanExpressionComplexity
         return super.equalsPref(realOther) &&
-                Objects.equals(this.bestMarked, realOther.bestMarked) &&
-                Objects.equals(this.overlay, realOther.overlay) &&
-                Objects.equals(this.isGeoreferenceValid, realOther.isGeoreferenceValid) &&
-                Objects.equals(this.defaultMaxZoom, realOther.defaultMaxZoom) &&
-                Objects.equals(this.defaultMinZoom, realOther.defaultMinZoom) &&
+                this.bestMarked == realOther.bestMarked &&
+                this.overlay == realOther.overlay &&
+                this.isGeoreferenceValid == realOther.isGeoreferenceValid &&
+                this.defaultMaxZoom == realOther.defaultMaxZoom &&
+                this.defaultMinZoom == realOther.defaultMinZoom &&
                 Objects.equals(this.serverProjections, realOther.serverProjections) &&
-                Objects.equals(this.transparent, realOther.transparent) &&
-                Objects.equals(this.minimumTileExpire, realOther.minimumTileExpire);
+                this.transparent == realOther.transparent &&
+                this.minimumTileExpire == realOther.minimumTileExpire;
         // CHECKSTYLE.ON: BooleanExpressionComplexity
     }
 
@@ -654,7 +660,7 @@ public class ImageryInfo extends
         defaultMaxZoom = 0;
         defaultMinZoom = 0;
         for (ImageryType type : ImageryType.values()) {
-            Matcher m = Pattern.compile(type.getTypeString()+"(?:\\[(?:(\\d+)[,-])?(\\d+)\\])?:(.*)").matcher(url);
+            Matcher m = Pattern.compile(type.getTypeString()+"(?:\\[(?:(\\d+)[,-])?(\\d+)])?:(.*)").matcher(url);
             if (m.matches()) {
                 this.url = m.group(3);
                 this.sourceType = type;
@@ -669,7 +675,7 @@ public class ImageryInfo extends
         }
 
         if (serverProjections.isEmpty()) {
-            Matcher m = Pattern.compile(".*\\{PROJ\\(([^)}]+)\\)\\}.*").matcher(url.toUpperCase(Locale.ENGLISH));
+            Matcher m = Pattern.compile(".*\\{PROJ\\(([^)}]+)\\)}.*").matcher(url.toUpperCase(Locale.ENGLISH));
             if (m.matches()) {
                 setServerProjections(Arrays.asList(m.group(1).split(",", -1)));
             }
@@ -702,7 +708,6 @@ public class ImageryInfo extends
         return this.defaultMinZoom;
     }
 
-
     /**
      * Returns a tool tip text for display.
      * @return The text
@@ -710,34 +715,39 @@ public class ImageryInfo extends
      */
     @Override
     public String getToolTipText() {
+        boolean htmlSupported = PlatformManager.getPlatform().isHtmlSupportedInMenuTooltips();
         StringBuilder res = new StringBuilder(getName());
         boolean html = false;
         String dateStr = getDate();
-        if (dateStr != null && !dateStr.isEmpty()) {
-            res.append("<br>").append(tr("Date of imagery: {0}", dateStr));
-            html = true;
+        if (!Utils.isEmpty(dateStr)) {
+            html = addNewLineInTooltip(res, tr("Date of imagery: {0}", dateStr), htmlSupported);
         }
         if (category != null && category.getDescription() != null) {
-            res.append("<br>").append(tr("Imagery category: {0}", category.getDescription()));
-            html = true;
+            html = addNewLineInTooltip(res, tr("Imagery category: {0}", category.getDescription()), htmlSupported);
         }
         if (bestMarked) {
-            res.append("<br>").append(tr("This imagery is marked as best in this region in other editors."));
-            html = true;
+            html = addNewLineInTooltip(res, tr("This imagery is marked as best in this region in other editors."), htmlSupported);
         }
         if (overlay) {
-            res.append("<br>").append(tr("This imagery is an overlay."));
-            html = true;
+            html = addNewLineInTooltip(res, tr("This imagery is an overlay."), htmlSupported);
         }
         String desc = getDescription();
-        if (desc != null && !desc.isEmpty()) {
-            res.append("<br>").append(Utils.escapeReservedCharactersHTML(desc));
-            html = true;
+        if (!Utils.isEmpty(desc)) {
+            html = addNewLineInTooltip(res, desc, htmlSupported);
         }
         if (html) {
             res.insert(0, "<html>").append("</html>");
         }
         return res.toString();
+    }
+
+    private static boolean addNewLineInTooltip(StringBuilder res, String line, boolean htmlSupported) {
+        if (htmlSupported) {
+            res.append("<br>").append(Utils.escapeReservedCharactersHTML(line));
+        } else {
+            res.append('\n').append(line);
+        }
+        return htmlSupported;
     }
 
     /**
@@ -772,7 +782,7 @@ public class ImageryInfo extends
 
     /**
      * Gets a unique toolbar key to store this layer as toolbar item
-     * @return The kay.
+     * @return The key.
      */
     public String getToolbarName() {
         String res = name;
@@ -954,6 +964,49 @@ public class ImageryInfo extends
             }
             return getOriginalName();
         }
+    }
+
+    /**
+     * Check to see if this info is valid (the XSD is overly permissive due to limitations of the XSD syntax).
+     * @return {@code true} if this info is valid
+     * @see ImageryInfo#getMissingFields()
+     * @since 18989
+     */
+    public boolean isValid() {
+        return this.getName() != null &&
+                this.getId() != null &&
+                this.getSourceType() != null &&
+                this.getUrl() != null &&
+                this.getImageryCategory() != null;
+    }
+
+    /**
+     * Get the missing fields for this info
+     * @return The missing fields, or an empty array
+     * @see ImageryInfo#isValid()
+     * @since 18989
+     */
+    public String[] getMissingFields() {
+        if (this.isValid()) {
+            return EMPTY_STRING;
+        }
+        List<String> missingFields = new ArrayList<>();
+        if (this.getName() == null) {
+            missingFields.add("name");
+        }
+        if (this.getId() == null) {
+            missingFields.add("id");
+        }
+        if (this.getSourceType() == null) {
+            missingFields.add("type");
+        }
+        if (this.getUrl() == null) {
+            missingFields.add("url");
+        }
+        if (this.getImageryCategory() == null) {
+            missingFields.add("category");
+        }
+        return missingFields.toArray(new String[0]);
     }
 
     /**

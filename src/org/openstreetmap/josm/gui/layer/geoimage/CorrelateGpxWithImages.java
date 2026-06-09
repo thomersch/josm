@@ -5,9 +5,7 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 import static org.openstreetmap.josm.tools.I18n.trn;
 
 import java.awt.BorderLayout;
-import java.awt.Component;
 import java.awt.Cursor;
-import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GraphicsEnvironment;
@@ -21,103 +19,84 @@ import java.awt.event.ItemEvent;
 import java.awt.event.ItemListener;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.beans.PropertyChangeEvent;
+import java.beans.PropertyChangeListener;
 import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.text.DateFormat;
 import java.text.ParseException;
-import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.Date;
-import java.util.Dictionary;
-import java.util.Hashtable;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.TimeZone;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
+import java.util.function.Consumer;
 
 import javax.swing.AbstractAction;
-import javax.swing.AbstractListModel;
 import javax.swing.BorderFactory;
+import javax.swing.ButtonGroup;
 import javax.swing.DefaultComboBoxModel;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
-import javax.swing.JComponent;
-import javax.swing.JFileChooser;
 import javax.swing.JLabel;
-import javax.swing.JList;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
-import javax.swing.JScrollPane;
+import javax.swing.JRadioButton;
 import javax.swing.JSeparator;
-import javax.swing.JSlider;
-import javax.swing.JSpinner;
-import javax.swing.ListSelectionModel;
-import javax.swing.MutableComboBoxModel;
-import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingConstants;
-import javax.swing.border.Border;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 
-import org.openstreetmap.josm.actions.DiskAccessAction;
-import org.openstreetmap.josm.actions.ExtensionFileFilter;
+import org.openstreetmap.josm.actions.ExpertToggleAction;
+import org.openstreetmap.josm.actions.ExpertToggleAction.ExpertModeChangeListener;
 import org.openstreetmap.josm.data.gpx.GpxData;
+import org.openstreetmap.josm.data.gpx.GpxData.GpxDataChangeEvent;
+import org.openstreetmap.josm.data.gpx.GpxData.GpxDataChangeListener;
+import org.openstreetmap.josm.data.gpx.GpxDataContainer;
 import org.openstreetmap.josm.data.gpx.GpxImageCorrelation;
-import org.openstreetmap.josm.data.gpx.GpxImageEntry;
+import org.openstreetmap.josm.data.gpx.GpxImageCorrelationSettings;
+import org.openstreetmap.josm.data.gpx.GpxImageDatumSettings;
 import org.openstreetmap.josm.data.gpx.GpxTimeOffset;
 import org.openstreetmap.josm.data.gpx.GpxTimezone;
+import org.openstreetmap.josm.data.gpx.TimeSource;
 import org.openstreetmap.josm.data.gpx.WayPoint;
 import org.openstreetmap.josm.data.osm.visitor.BoundingXYVisitor;
 import org.openstreetmap.josm.gui.ExtendedDialog;
 import org.openstreetmap.josm.gui.MainApplication;
-import org.openstreetmap.josm.gui.io.importexport.GpxImporter;
-import org.openstreetmap.josm.gui.io.importexport.JpgImporter;
-import org.openstreetmap.josm.gui.io.importexport.NMEAImporter;
-import org.openstreetmap.josm.gui.io.importexport.RtkLibImporter;
-import org.openstreetmap.josm.gui.layer.GpxLayer;
+import org.openstreetmap.josm.gui.layer.AbstractModifiableLayer;
 import org.openstreetmap.josm.gui.layer.Layer;
 import org.openstreetmap.josm.gui.layer.LayerManager.LayerAddEvent;
 import org.openstreetmap.josm.gui.layer.LayerManager.LayerChangeListener;
 import org.openstreetmap.josm.gui.layer.LayerManager.LayerOrderChangeEvent;
 import org.openstreetmap.josm.gui.layer.LayerManager.LayerRemoveEvent;
-import org.openstreetmap.josm.gui.widgets.AbstractFileChooser;
-import org.openstreetmap.josm.gui.widgets.FileChooserManager;
+import org.openstreetmap.josm.gui.layer.geoimage.AdjustTimezoneAndOffsetDialog.AdjustListener;
+import org.openstreetmap.josm.gui.layer.geoimage.SynchronizeTimeFromPhotoDialog.TimeZoneItem;
+import org.openstreetmap.josm.gui.layer.gpx.GpxDataHelper;
 import org.openstreetmap.josm.gui.widgets.JosmComboBox;
+import org.openstreetmap.josm.gui.widgets.JosmComboBoxModel;
 import org.openstreetmap.josm.gui.widgets.JosmTextField;
-import org.openstreetmap.josm.io.Compression;
-import org.openstreetmap.josm.io.GpxReader;
-import org.openstreetmap.josm.io.IGpxReader;
-import org.openstreetmap.josm.io.nmea.NmeaReader;
 import org.openstreetmap.josm.spi.preferences.Config;
-import org.openstreetmap.josm.spi.preferences.IPreferences;
+import org.openstreetmap.josm.tools.Destroyable;
 import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.ImageProvider;
-import org.openstreetmap.josm.tools.JosmRuntimeException;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.Pair;
-import org.openstreetmap.josm.tools.date.DateUtils;
-import org.xml.sax.SAXException;
 
 /**
  * This class displays the window to select the GPX file and the offset (timezone + delta).
  * Then it correlates the images of the layer with that GPX file.
  * @since 2566
  */
-public class CorrelateGpxWithImages extends AbstractAction {
+public class CorrelateGpxWithImages extends AbstractAction implements ExpertModeChangeListener, Destroyable {
 
-    private static final List<GpxData> loadedGpxData = new ArrayList<>();
+    private static JosmComboBoxModel<GpxDataWrapper> gpxModel;
+    private static boolean forceTags;
+    private static TimeSource imgTimeSource;
 
     private final transient GeoImageLayer yLayer;
+    private transient CorrelationSupportLayer supportLayer;
     private transient GpxTimezone timezone;
     private transient GpxTimeOffset delta;
-    private static boolean forceTags;
 
     /**
      * Constructs a new {@code CorrelateGpxWithImages} action.
@@ -127,7 +106,7 @@ public class CorrelateGpxWithImages extends AbstractAction {
         super(tr("Correlate to GPX"));
         new ImageProvider("dialogs/geoimage/gpx2img").getResource().attachImageIcon(this, true);
         this.yLayer = layer;
-        MainApplication.getLayerManager().addLayerChangeListener(new GpxLayerAddedListener());
+        ExpertToggleAction.addExpertModeChangeListener(this);
     }
 
     private final class SyncDialogWindowListener extends WindowAdapter {
@@ -180,10 +159,11 @@ public class CorrelateGpxWithImages extends AbstractAction {
                 break;
             case CANCEL:
                 if (yLayer != null) {
-                    for (ImageEntry ie : yLayer.getImageData().getImages()) {
-                        ie.discardTmp();
-                    }
+                    yLayer.discardTmp();
                     yLayer.updateBufferAndRepaint();
+                }
+                if (Config.getPref().getBoolean("geoimage.supportlayer.delete_on_close", false)) {
+                    removeSupportLayer();
                 }
                 break;
             case AGAIN:
@@ -193,6 +173,7 @@ public class CorrelateGpxWithImages extends AbstractAction {
                 Config.getPref().put("geoimage.timezone", timezone.formatTimezone());
                 Config.getPref().put("geoimage.delta", delta.formatOffset());
                 Config.getPref().putBoolean("geoimage.showThumbs", yLayer.useThumbs);
+                Config.getPref().put("geoimage.datum", tfDatum.getText());
 
                 yLayer.useThumbs = cbShowThumbs.isSelected();
                 yLayer.startLoadThumbs();
@@ -216,21 +197,28 @@ public class CorrelateGpxWithImages extends AbstractAction {
                     MainApplication.getMap().mapView.zoomTo(bbox);
                 }
 
-                for (ImageEntry ie : yLayer.getImageData().getImages()) {
-                    ie.applyTmp();
-                }
-
+                yLayer.applyTmp();
                 yLayer.updateBufferAndRepaint();
+                if (Config.getPref().getBoolean("geoimage.supportlayer.delete_on_close", true)) {
+                    removeSupportLayer();
+                }
 
                 break;
             default:
-                throw new IllegalStateException();
+                throw new IllegalStateException(Integer.toString(result));
             }
         }
     }
 
+    private void removeSupportLayer() {
+        if (supportLayer != null) {
+            MainApplication.getLayerManager().removeLayer(supportLayer);
+            supportLayer = null;
+        }
+    }
+
     private static class GpxDataWrapper {
-        private final String name;
+        private String name;
         private final GpxData data;
         private final File file;
 
@@ -240,291 +228,100 @@ public class CorrelateGpxWithImages extends AbstractAction {
             this.file = file;
         }
 
+        void setName(String name) {
+            this.name = name;
+            forEachLayer(CorrelateGpxWithImages::repaintCombobox);
+        }
+
         @Override
         public String toString() {
             return name;
         }
     }
 
+    private static class NoGpxDataWrapper extends GpxDataWrapper {
+        NoGpxDataWrapper() {
+            super(null, null, null);
+        }
+
+        @Override
+        public String toString() {
+            return tr("<No GPX track loaded yet>");
+        }
+    }
+
     private ExtendedDialog syncDialog;
-    private MutableComboBoxModel<GpxDataWrapper> gpxModel;
     private JPanel outerPanel;
+    private JPanel expertPanel;
     private JosmComboBox<GpxDataWrapper> cbGpx;
+    private JButton buttonSupport;
     private JosmTextField tfTimezone;
     private JosmTextField tfOffset;
+    private JRadioButton rbTimeFromCamera;
+    private JRadioButton rbTimeFromGps;
     private JCheckBox cbExifImg;
     private JCheckBox cbTaggedImg;
     private JCheckBox cbShowThumbs;
+    private JSeparator sepExtendedTags;
+    private JLabel labelExtTags;
+    private JLabel labelDatum;
     private JLabel statusBarText;
+    private JSeparator sepDirectionPosition;
+    private ImageDirectionPositionPanel pDirectionPosition;
+    private JCheckBox cbAddGpsDatum;
+    private JosmTextField tfDatum;
 
     // remember the last number of matched photos
     private int lastNumMatched;
 
-    /** This class is called when the user doesn't find the GPX file he needs in the files that have
+    /**
+     * This class is called when the user doesn't find the GPX file he needs in the files that have
      * been loaded yet. It displays a FileChooser dialog to select the GPX file to be loaded.
      */
-    private class LoadGpxDataActionListener implements ActionListener {
+    private final class LoadGpxDataActionListener implements ActionListener {
 
         @Override
         public void actionPerformed(ActionEvent e) {
-            ExtensionFileFilter gpxFilter = GpxImporter.getFileFilter();
-            AbstractFileChooser fc = new FileChooserManager(true, null).createFileChooser(false, null,
-                    Arrays.asList(gpxFilter, NMEAImporter.FILE_FILTER, RtkLibImporter.FILE_FILTER), gpxFilter, JFileChooser.FILES_ONLY)
-                    .openFileChooser();
-            if (fc == null)
-                return;
-            File sel = fc.getSelectedFile();
-
-            try {
-                outerPanel.setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
-                for (int i = gpxModel.getSize() - 1; i >= 0; i--) {
-                    GpxDataWrapper wrapper = gpxModel.getElementAt(i);
-                    if (sel.equals(wrapper.file)) {
-                        gpxModel.setSelectedItem(wrapper);
-                        if (!sel.getName().equals(wrapper.name)) {
-                            JOptionPane.showMessageDialog(
-                                    MainApplication.getMainFrame(),
-                                    tr("File {0} is loaded yet under the name \"{1}\"", sel.getName(), wrapper.name),
-                                    tr("Error"),
-                                    JOptionPane.ERROR_MESSAGE
-                            );
-                        }
-                        return;
+            File sel = GpxDataHelper.chooseGpxDataFile();
+            if (sel != null) {
+                try {
+                    outerPanel.setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+                    removeDuplicates(sel);
+                    GpxData data = GpxDataHelper.loadGpxData(sel);
+                    if (data != null) {
+                        GpxDataWrapper elem = new GpxDataWrapper(sel.getName(), data, sel);
+                        gpxModel.addElement(elem);
+                        gpxModel.setSelectedItem(elem);
+                        statusBarUpdater.matchAndUpdateStatusBar();
                     }
+                } finally {
+                    outerPanel.setCursor(Cursor.getDefaultCursor());
                 }
-                GpxData data = null;
-                try (InputStream iStream = Compression.getUncompressedFileInputStream(sel)) {
-                    IGpxReader reader = gpxFilter.accept(sel) ? new GpxReader(iStream) : new NmeaReader(iStream);
-                    reader.parse(false);
-                    data = reader.getGpxData();
-                    data.storageFile = sel;
-
-                } catch (SAXException ex) {
-                    Logging.error(ex);
-                    JOptionPane.showMessageDialog(
-                            MainApplication.getMainFrame(),
-                            tr("Error while parsing {0}", sel.getName())+": "+ex.getMessage(),
-                            tr("Error"),
-                            JOptionPane.ERROR_MESSAGE
-                    );
-                    return;
-                } catch (IOException ex) {
-                    Logging.error(ex);
-                    JOptionPane.showMessageDialog(
-                            MainApplication.getMainFrame(),
-                            tr("Could not read \"{0}\"", sel.getName())+'\n'+ex.getMessage(),
-                            tr("Error"),
-                            JOptionPane.ERROR_MESSAGE
-                    );
-                    return;
-                }
-
-                loadedGpxData.add(data);
-                if (gpxModel.getElementAt(0).file == null) {
-                    gpxModel.removeElementAt(0);
-                }
-                GpxDataWrapper elem = new GpxDataWrapper(sel.getName(), data, sel);
-                gpxModel.addElement(elem);
-                gpxModel.setSelectedItem(elem);
-            } finally {
-                outerPanel.setCursor(Cursor.getDefaultCursor());
             }
         }
     }
 
-    private class AdvancedSettingsActionListener implements ActionListener {
-
-        private class CheckBoxActionListener implements ActionListener {
-            private final JComponent[] comps;
-
-            CheckBoxActionListener(JComponent... c) {
-                comps = Objects.requireNonNull(c);
-            }
-
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                setEnabled((JCheckBox) e.getSource());
-            }
-
-            public void setEnabled(JCheckBox cb) {
-                for (JComponent comp : comps) {
-                    if (comp instanceof JSpinner) {
-                        comp.setEnabled(cb.isSelected());
-                    } else if (comp instanceof JPanel) {
-                        boolean en = cb.isSelected();
-                        for (Component c : comp.getComponents()) {
-                            if (c instanceof JSpinner) {
-                                c.setEnabled(en);
-                            } else {
-                                c.setEnabled(cb.isSelected());
-                                if (en && c instanceof JCheckBox) {
-                                    en = ((JCheckBox) c).isSelected();
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        private void addCheckBoxActionListener(JCheckBox cb, JComponent... c) {
-            CheckBoxActionListener listener = new CheckBoxActionListener(c);
-            cb.addActionListener(listener);
-            listener.setEnabled(cb);
-        }
+    private final class UseSupportLayerActionListener implements ActionListener {
 
         @Override
         public void actionPerformed(ActionEvent e) {
+            Optional.ofNullable(selectedGPX(true)).ifPresent(gpx -> {
+                supportLayer = new CorrelationSupportLayer(gpx.data);
+                supportLayer.getGpxData().addChangeListener(statusBarUpdaterWithRepaint);
+                MainApplication.getLayerManager().addLayer(supportLayer);
+            });
+        }
+    }
 
-            IPreferences s = Config.getPref();
-            JPanel p = new JPanel(new GridBagLayout());
+    private final class AdvancedSettingsActionListener implements ActionListener {
 
-            Border border1 = BorderFactory.createEmptyBorder(0, 20, 0, 0);
-            Border border2 = BorderFactory.createEmptyBorder(10, 0, 5, 0);
-            Border border = BorderFactory.createEmptyBorder(0, 40, 0, 0);
-            FlowLayout layout = new FlowLayout();
-
-            JLabel l = new JLabel(tr("Segment settings"));
-            l.setBorder(BorderFactory.createEmptyBorder(5, 0, 5, 0));
-            p.add(l, GBC.eol());
-            JCheckBox cInterpolSeg = new JCheckBox(tr("Interpolate between segments"), s.getBoolean("geoimage.seg.int", true));
-            cInterpolSeg.setBorder(border1);
-            p.add(cInterpolSeg, GBC.eol());
-
-            JCheckBox cInterpolSegTime = new JCheckBox(tr("only when the segments are less than # minutes apart:"),
-                    s.getBoolean("geoimage.seg.int.time", true));
-            JSpinner sInterpolSegTime = new JSpinner(
-                    new SpinnerNumberModel(s.getInt("geoimage.seg.int.time.val", 60), 0, Integer.MAX_VALUE, 1));
-            ((JSpinner.DefaultEditor) sInterpolSegTime.getEditor()).getTextField().setColumns(3);
-            JPanel pInterpolSegTime = new JPanel(layout);
-            pInterpolSegTime.add(cInterpolSegTime);
-            pInterpolSegTime.add(sInterpolSegTime);
-            pInterpolSegTime.setBorder(border);
-            p.add(pInterpolSegTime, GBC.eol());
-
-            JCheckBox cInterpolSegDist = new JCheckBox(tr("only when the segments are less than # meters apart:"),
-                    s.getBoolean("geoimage.seg.int.dist", true));
-            JSpinner sInterpolSegDist = new JSpinner(
-                    new SpinnerNumberModel(s.getInt("geoimage.seg.int.dist.val", 50), 0, Integer.MAX_VALUE, 1));
-            ((JSpinner.DefaultEditor) sInterpolSegDist.getEditor()).getTextField().setColumns(3);
-            JPanel pInterpolSegDist = new JPanel(layout);
-            pInterpolSegDist.add(cInterpolSegDist);
-            pInterpolSegDist.add(sInterpolSegDist);
-            pInterpolSegDist.setBorder(border);
-            p.add(pInterpolSegDist, GBC.eol());
-
-            JCheckBox cTagSeg = new JCheckBox(tr("Tag images at the closest end of a segment, when not interpolated"),
-                    s.getBoolean("geoimage.seg.tag", true));
-            cTagSeg.setBorder(border1);
-            p.add(cTagSeg, GBC.eol());
-
-            JCheckBox cTagSegTime = new JCheckBox(tr("only within # minutes of the closest trackpoint:"),
-                    s.getBoolean("geoimage.seg.tag.time", true));
-            JSpinner sTagSegTime = new JSpinner(
-                    new SpinnerNumberModel(s.getInt("geoimage.seg.tag.time.val", 2), 0, Integer.MAX_VALUE, 1));
-            ((JSpinner.DefaultEditor) sTagSegTime.getEditor()).getTextField().setColumns(3);
-            JPanel pTagSegTime = new JPanel(layout);
-            pTagSegTime.add(cTagSegTime);
-            pTagSegTime.add(sTagSegTime);
-            pTagSegTime.setBorder(border);
-            p.add(pTagSegTime, GBC.eol());
-
-            l = new JLabel(tr("Track settings (note that multiple tracks can be in one GPX file)"));
-            l.setBorder(border2);
-            p.add(l, GBC.eol());
-            JCheckBox cInterpolTrack = new JCheckBox(tr("Interpolate between tracks"), s.getBoolean("geoimage.trk.int", false));
-            cInterpolTrack.setBorder(border1);
-            p.add(cInterpolTrack, GBC.eol());
-
-            JCheckBox cInterpolTrackTime = new JCheckBox(tr("only when the tracks are less than # minutes apart:"),
-                    s.getBoolean("geoimage.trk.int.time", false));
-            JSpinner sInterpolTrackTime = new JSpinner(
-                    new SpinnerNumberModel(s.getInt("geoimage.trk.int.time.val", 60), 0, Integer.MAX_VALUE, 1));
-            ((JSpinner.DefaultEditor) sInterpolTrackTime.getEditor()).getTextField().setColumns(3);
-            JPanel pInterpolTrackTime = new JPanel(layout);
-            pInterpolTrackTime.add(cInterpolTrackTime);
-            pInterpolTrackTime.add(sInterpolTrackTime);
-            pInterpolTrackTime.setBorder(border);
-            p.add(pInterpolTrackTime, GBC.eol());
-
-            JCheckBox cInterpolTrackDist = new JCheckBox(tr("only when the tracks are less than # meters apart:"),
-                    s.getBoolean("geoimage.trk.int.dist", false));
-            JSpinner sInterpolTrackDist = new JSpinner(
-                    new SpinnerNumberModel(s.getInt("geoimage.trk.int.dist.val", 50), 0, Integer.MAX_VALUE, 1));
-            ((JSpinner.DefaultEditor) sInterpolTrackDist.getEditor()).getTextField().setColumns(3);
-            JPanel pInterpolTrackDist = new JPanel(layout);
-            pInterpolTrackDist.add(cInterpolTrackDist);
-            pInterpolTrackDist.add(sInterpolTrackDist);
-            pInterpolTrackDist.setBorder(border);
-            p.add(pInterpolTrackDist, GBC.eol());
-
-            JCheckBox cTagTrack = new JCheckBox("<html>" +
-                    tr("Tag images at the closest end of a track, when not interpolated<br>" +
-                    "(also applies before the first and after the last track)") + "</html>",
-                    s.getBoolean("geoimage.trk.tag", true));
-            cTagTrack.setBorder(border1);
-            p.add(cTagTrack, GBC.eol());
-
-            JCheckBox cTagTrackTime = new JCheckBox(tr("only within # minutes of the closest trackpoint:"),
-                    s.getBoolean("geoimage.trk.tag.time", true));
-            JSpinner sTagTrackTime = new JSpinner(
-                    new SpinnerNumberModel(s.getInt("geoimage.trk.tag.time.val", 2), 0, Integer.MAX_VALUE, 1));
-            ((JSpinner.DefaultEditor) sTagTrackTime.getEditor()).getTextField().setColumns(3);
-            JPanel pTagTrackTime = new JPanel(layout);
-            pTagTrackTime.add(cTagTrackTime);
-            pTagTrackTime.add(sTagTrackTime);
-            pTagTrackTime.setBorder(border);
-            p.add(pTagTrackTime, GBC.eol());
-
-            l = new JLabel(tr("Advanced"));
-            l.setBorder(border2);
-            p.add(l, GBC.eol());
-            JCheckBox cForce = new JCheckBox("<html>" +
-                    tr("Force tagging of all pictures (temporarily overrides the settings above).") + "<br>" +
-                    tr("This option will not be saved permanently.") + "</html>", forceTags);
-            cForce.setBorder(BorderFactory.createEmptyBorder(0, 20, 10, 0));
-            p.add(cForce, GBC.eol());
-
-            addCheckBoxActionListener(cInterpolSegTime, sInterpolSegTime);
-            addCheckBoxActionListener(cInterpolSegDist, sInterpolSegDist);
-            addCheckBoxActionListener(cInterpolSeg, pInterpolSegTime, pInterpolSegDist);
-
-            addCheckBoxActionListener(cTagSegTime, sTagSegTime);
-            addCheckBoxActionListener(cTagSeg, pTagSegTime);
-
-            addCheckBoxActionListener(cInterpolTrackTime, sInterpolTrackTime);
-            addCheckBoxActionListener(cInterpolTrackDist, sInterpolTrackDist);
-            addCheckBoxActionListener(cInterpolTrack, pInterpolTrackTime, pInterpolTrackDist);
-
-            addCheckBoxActionListener(cTagTrackTime, sTagTrackTime);
-            addCheckBoxActionListener(cTagTrack, pTagTrackTime);
-
-
-            ExtendedDialog ed = new ExtendedDialog(MainApplication.getMainFrame(), tr("Advanced settings"), tr("OK"), tr("Cancel"))
-                            .setButtonIcons("ok", "cancel").setContent(p);
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            AdvancedCorrelationSettingsDialog ed = new AdvancedCorrelationSettingsDialog(MainApplication.getMainFrame(), forceTags);
             if (ed.showDialog().getValue() == 1) {
+                forceTags = ed.isForceTaggingSelected(); // This setting is not supposed to be saved permanently
 
-                s.putBoolean("geoimage.seg.int", cInterpolSeg.isSelected());
-                s.putBoolean("geoimage.seg.int.dist", cInterpolSegDist.isSelected());
-                s.putInt("geoimage.seg.int.dist.val", (int) sInterpolSegDist.getValue());
-                s.putBoolean("geoimage.seg.int.time", cInterpolSegTime.isSelected());
-                s.putInt("geoimage.seg.int.time.val", (int) sInterpolSegTime.getValue());
-                s.putBoolean("geoimage.seg.tag", cTagSeg.isSelected());
-                s.putBoolean("geoimage.seg.tag.time", cTagSegTime.isSelected());
-                s.putInt("geoimage.seg.tag.time.val", (int) sTagSegTime.getValue());
-
-                s.putBoolean("geoimage.trk.int", cInterpolTrack.isSelected());
-                s.putBoolean("geoimage.trk.int.dist", cInterpolTrackDist.isSelected());
-                s.putInt("geoimage.trk.int.dist.val", (int) sInterpolTrackDist.getValue());
-                s.putBoolean("geoimage.trk.int.time", cInterpolTrackTime.isSelected());
-                s.putInt("geoimage.trk.int.time.val", (int) sInterpolTrackTime.getValue());
-                s.putBoolean("geoimage.trk.tag", cTagTrack.isSelected());
-                s.putBoolean("geoimage.trk.tag.time", cTagTrackTime.isSelected());
-                s.putInt("geoimage.trk.tag.time.val", (int) sTagTrackTime.getValue());
-
-                forceTags = cForce.isSelected(); // This setting is not supposed to be saved permanently
-
-                statusBarUpdater.updateStatusBar();
+                statusBarUpdater.matchAndUpdateStatusBar();
                 yLayer.updateBufferAndRepaint();
             }
         }
@@ -536,214 +333,23 @@ public class CorrelateGpxWithImages extends AbstractAction {
      * From that photo, the user can key in the time of the GPS.
      * Then values of timezone and delta are set.
      * @author chris
-     *
      */
-    private class SetOffsetActionListener implements ActionListener {
-        JCheckBox ckDst;
-        ImageDisplay imgDisp;
-        JLabel lbExifTime;
-        JosmTextField tfGpsTime;
-
-        class TimeZoneItem implements Comparable<TimeZoneItem> {
-            private final TimeZone tz;
-            private String rawString;
-            private String dstString;
-
-            TimeZoneItem(TimeZone tz) {
-                this.tz = tz;
-            }
-
-            public String getFormattedString() {
-                if (ckDst.isSelected()) {
-                    return getDstString();
-                } else {
-                    return getRawString();
-                }
-            }
-
-            public String getDstString() {
-                if (dstString == null) {
-                    dstString = formatTimezone(tz.getRawOffset() + tz.getDSTSavings());
-                }
-                return dstString;
-            }
-
-            public String getRawString() {
-                if (rawString == null) {
-                    rawString = formatTimezone(tz.getRawOffset());
-                }
-                return rawString;
-            }
-
-            public String getID() {
-                return tz.getID();
-            }
-
-            @Override
-            public String toString() {
-                return getID() + " (" + getFormattedString() + ')';
-            }
-
-            @Override
-            public int compareTo(TimeZoneItem o) {
-                return getID().compareTo(o.getID());
-            }
-
-            private String formatTimezone(int offset) {
-                return new GpxTimezone((double) offset / TimeUnit.HOURS.toMillis(1)).formatTimezone();
-            }
-        }
+    private final class SetOffsetActionListener implements ActionListener {
 
         @Override
         public void actionPerformed(ActionEvent e) {
-            SimpleDateFormat dateFormat = (SimpleDateFormat) DateUtils.getDateTimeFormat(DateFormat.SHORT, DateFormat.MEDIUM);
-
-            JPanel panel = new JPanel(new BorderLayout());
-            panel.add(new JLabel(tr("<html>Take a photo of your GPS receiver while it displays the time.<br>"
-                    + "Display that photo here.<br>"
-                    + "And then, simply capture the time you read on the photo and select a timezone<hr></html>")),
-                    BorderLayout.NORTH);
-
-            imgDisp = new ImageDisplay();
-            imgDisp.setPreferredSize(new Dimension(300, 225));
-            panel.add(imgDisp, BorderLayout.CENTER);
-
-            JPanel panelTf = new JPanel(new GridBagLayout());
-
-            GridBagConstraints gc = new GridBagConstraints();
-            gc.gridx = gc.gridy = 0;
-            gc.gridwidth = gc.gridheight = 1;
-            gc.weightx = gc.weighty = 0.0;
-            gc.fill = GridBagConstraints.NONE;
-            gc.anchor = GridBagConstraints.WEST;
-            panelTf.add(new JLabel(tr("Photo time (from exif):")), gc);
-
-            lbExifTime = new JLabel();
-            gc.gridx = 1;
-            gc.weightx = 1.0;
-            gc.fill = GridBagConstraints.HORIZONTAL;
-            gc.gridwidth = 2;
-            panelTf.add(lbExifTime, gc);
-
-            gc.gridx = 0;
-            gc.gridy = 1;
-            gc.gridwidth = gc.gridheight = 1;
-            gc.weightx = gc.weighty = 0.0;
-            gc.fill = GridBagConstraints.NONE;
-            gc.anchor = GridBagConstraints.WEST;
-            panelTf.add(new JLabel(tr("Gps time (read from the above photo): ")), gc);
-
-            tfGpsTime = new JosmTextField(12);
-            tfGpsTime.setEnabled(false);
-            tfGpsTime.setMinimumSize(new Dimension(155, tfGpsTime.getMinimumSize().height));
-            gc.gridx = 1;
-            gc.weightx = 1.0;
-            gc.fill = GridBagConstraints.HORIZONTAL;
-            panelTf.add(tfGpsTime, gc);
-
-            gc.gridx = 2;
-            gc.weightx = 0.2;
-            panelTf.add(new JLabel(" ["+dateFormat.toLocalizedPattern()+']'), gc);
-
-            gc.gridx = 0;
-            gc.gridy = 2;
-            gc.gridwidth = gc.gridheight = 1;
-            gc.weightx = gc.weighty = 0.0;
-            gc.fill = GridBagConstraints.NONE;
-            gc.anchor = GridBagConstraints.WEST;
-            panelTf.add(new JLabel(tr("Photo taken in the timezone of: ")), gc);
-
-            ckDst = new JCheckBox(tr("Use daylight saving time (where applicable)"), Config.getPref().getBoolean("geoimage.timezoneid.dst"));
-
-            String[] tmp = TimeZone.getAvailableIDs();
-            List<TimeZoneItem> vtTimezones = new ArrayList<>(tmp.length);
-
-            String defTzStr = Config.getPref().get("geoimage.timezoneid", "");
-            if (defTzStr.isEmpty()) {
-                defTzStr = TimeZone.getDefault().getID();
-            }
-            TimeZoneItem defTzItem = null;
-
-            for (String tzStr : tmp) {
-                TimeZoneItem tz = new TimeZoneItem(TimeZone.getTimeZone(tzStr));
-                vtTimezones.add(tz);
-                if (defTzStr.equals(tzStr)) {
-                    defTzItem = tz;
-                }
-            }
-
-            Collections.sort(vtTimezones);
-
-            JosmComboBox<TimeZoneItem> cbTimezones = new JosmComboBox<>(vtTimezones.toArray(new TimeZoneItem[0]));
-
-            if (defTzItem != null) {
-                cbTimezones.setSelectedItem(defTzItem);
-            }
-
-            gc.gridx = 1;
-            gc.weightx = 1.0;
-            gc.gridwidth = 2;
-            gc.fill = GridBagConstraints.HORIZONTAL;
-            panelTf.add(cbTimezones, gc);
-
-            gc.gridy = 3;
-            panelTf.add(ckDst, gc);
-
-            ckDst.addActionListener(x -> cbTimezones.repaint());
-
-            panel.add(panelTf, BorderLayout.SOUTH);
-
-            JPanel panelLst = new JPanel(new BorderLayout());
-
-            JList<String> imgList = new JList<>(new AbstractListModel<String>() {
-                @Override
-                public String getElementAt(int i) {
-                    return yLayer.getImageData().getImages().get(i).getFile().getName();
-                }
-
-                @Override
-                public int getSize() {
-                    return yLayer.getImageData().getImages().size();
-                }
-            });
-            imgList.getSelectionModel().setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-            imgList.getSelectionModel().addListSelectionListener(evt -> {
-                int index = imgList.getSelectedIndex();
-                ImageEntry img = yLayer.getImageData().getImages().get(index);
-                updateExifComponents(img);
-            });
-            panelLst.add(new JScrollPane(imgList), BorderLayout.CENTER);
-
-            JButton openButton = new JButton(tr("Open another photo"));
-            openButton.addActionListener(ae -> {
-                AbstractFileChooser fc = DiskAccessAction.createAndOpenFileChooser(true, false, null,
-                        JpgImporter.FILE_FILTER_WITH_FOLDERS, JFileChooser.FILES_ONLY, "geoimage.lastdirectory");
-                if (fc == null)
-                    return;
-                ImageEntry entry = new ImageEntry(fc.getSelectedFile());
-                entry.extractExif();
-                updateExifComponents(entry);
-            });
-            panelLst.add(openButton, BorderLayout.PAGE_END);
-
-            panel.add(panelLst, BorderLayout.LINE_START);
-
             boolean isOk = false;
             while (!isOk) {
-                int answer = JOptionPane.showConfirmDialog(
-                        MainApplication.getMainFrame(), panel,
-                        tr("Synchronize time from a photo of the GPS receiver"),
-                        JOptionPane.OK_CANCEL_OPTION,
-                        JOptionPane.QUESTION_MESSAGE
-                );
-                if (answer != JOptionPane.OK_OPTION)
+                SynchronizeTimeFromPhotoDialog ed = new SynchronizeTimeFromPhotoDialog(
+                        MainApplication.getMainFrame(), yLayer.getImageData().getImages());
+                int answer = ed.showDialog().getValue();
+                if (answer != 1)
                     return;
 
                 long delta;
 
                 try {
-                    delta = dateFormat.parse(lbExifTime.getText()).getTime()
-                          - dateFormat.parse(tfGpsTime.getText()).getTime();
+                    delta = ed.getDelta();
                 } catch (ParseException ex) {
                     JOptionPane.showMessageDialog(MainApplication.getMainFrame(), tr("Error while parsing the date.\n"
                             + "Please use the requested format"),
@@ -751,58 +357,63 @@ public class CorrelateGpxWithImages extends AbstractAction {
                     continue;
                 }
 
-                TimeZoneItem selectedTz = (TimeZoneItem) cbTimezones.getSelectedItem();
+                TimeZoneItem selectedTz = ed.getTimeZoneItem();
 
                 Config.getPref().put("geoimage.timezoneid", selectedTz.getID());
-                Config.getPref().putBoolean("geoimage.timezoneid.dst", ckDst.isSelected());
+                Config.getPref().putBoolean("geoimage.timezoneid.dst", ed.isDstSelected());
                 tfOffset.setText(GpxTimeOffset.milliseconds(delta).formatOffset());
                 tfTimezone.setText(selectedTz.getFormattedString());
 
                 isOk = true;
-
             }
-            statusBarUpdater.updateStatusBar();
+            statusBarUpdater.matchAndUpdateStatusBar();
             yLayer.updateBufferAndRepaint();
-        }
-
-        void updateExifComponents(ImageEntry img) {
-            imgDisp.setImage(img);
-            Date date = img.getExifTime();
-            if (date != null) {
-                DateFormat df = DateUtils.getDateTimeFormat(DateFormat.SHORT, DateFormat.MEDIUM);
-                df.setTimeZone(DateUtils.UTC); // EXIF data does not contain timezone information and is read as UTC
-                lbExifTime.setText(df.format(date));
-                tfGpsTime.setText(df.format(date));
-                tfGpsTime.setCaretPosition(tfGpsTime.getText().length());
-                tfGpsTime.setEnabled(true);
-                tfGpsTime.requestFocus();
-            } else {
-                lbExifTime.setText(tr("No date"));
-                tfGpsTime.setText("");
-                tfGpsTime.setEnabled(false);
-            }
         }
     }
 
-    private class GpxLayerAddedListener implements LayerChangeListener {
+    private static final class GpxLayerAddedListener implements LayerChangeListener {
         @Override
         public void layerAdded(LayerAddEvent e) {
-            if (syncDialog != null && syncDialog.isVisible()) {
-                Layer layer = e.getAddedLayer();
-                if (layer instanceof GpxLayer) {
-                    GpxLayer gpx = (GpxLayer) layer;
-                    GpxDataWrapper gdw = new GpxDataWrapper(gpx.getName(), gpx.data, gpx.data.storageFile);
-                    if (gpxModel.getElementAt(0).file == null) {
-                        gpxModel.removeElementAt(0);
+            Layer layer = e.getAddedLayer();
+            if (layer instanceof GpxDataContainer) {
+                GpxData gpx = ((GpxDataContainer) layer).getGpxData();
+                File file = gpx.storageFile;
+                removeDuplicates(file);
+                GpxDataWrapper gdw = new GpxDataWrapper(layer.getName(), gpx, file);
+                layer.addPropertyChangeListener(new GpxLayerRenamedListener(gdw));
+                gpxModel.addElement(gdw);
+                forEachLayer(correlateAction -> {
+                    correlateAction.repaintCombobox();
+                    if (layer.equals(correlateAction.supportLayer)) {
+                        correlateAction.buttonSupport.setEnabled(false);
                     }
-                    gpxModel.addElement(gdw);
-                }
+                });
             }
         }
 
         @Override
         public void layerRemoving(LayerRemoveEvent e) {
-            // Not used
+            Layer layer = e.getRemovedLayer();
+            if (layer instanceof GpxDataContainer) {
+                GpxData removedGpxData = ((GpxDataContainer) layer).getGpxData();
+                for (int i = gpxModel.getSize() - 1; i >= 0; i--) {
+                    GpxData data = gpxModel.getElementAt(i).data;
+                    // removedGpxData can be null if gpx layer has been destroyed before this listener
+                    if (data.equals(removedGpxData) || (removedGpxData == null && data.isEmpty())) {
+                        gpxModel.removeElementAt(i);
+                        forEachLayer(correlateAction -> {
+                            correlateAction.repaintCombobox();
+                            if (layer.equals(correlateAction.supportLayer)) {
+                                correlateAction.supportLayer.getGpxData()
+                                    .removeChangeListener(correlateAction.statusBarUpdaterWithRepaint);
+                                correlateAction.supportLayer = null;
+                                correlateAction.buttonSupport.setEnabled(true);
+                            }
+                        });
+                        break;
+                    }
+                }
+            }
         }
 
         @Override
@@ -811,32 +422,80 @@ public class CorrelateGpxWithImages extends AbstractAction {
         }
     }
 
-    @Override
-    public void actionPerformed(ActionEvent ae) {
-        // Construct the list of loaded GPX tracks
-        gpxModel = new DefaultComboBoxModel<>();
-        GpxDataWrapper defaultItem = null;
-        for (GpxLayer cur : MainApplication.getLayerManager().getLayersOfType(GpxLayer.class).stream()
-                .filter(GpxLayer::isLocalFile).collect(Collectors.toList())) {
-            GpxDataWrapper gdw = new GpxDataWrapper(cur.getName(), cur.data, cur.data.storageFile);
-            gpxModel.addElement(gdw);
-            if (cur == yLayer.gpxLayer || (defaultItem == null && gdw.file != null)) {
-                defaultItem = gdw;
+    private static class GpxLayerRenamedListener implements PropertyChangeListener {
+        private final GpxDataWrapper gdw;
+        GpxLayerRenamedListener(GpxDataWrapper gdw) {
+            this.gdw = gdw;
+        }
+
+        @Override
+        public void propertyChange(PropertyChangeEvent e) {
+            if (Layer.NAME_PROP.equals(e.getPropertyName())) {
+                gdw.setName(e.getNewValue().toString());
             }
         }
-        for (GpxData data : loadedGpxData) {
-            GpxDataWrapper gdw = new GpxDataWrapper(data.storageFile.getName(), data, data.storageFile);
-            gpxModel.addElement(gdw);
-            if (defaultItem == null && gdw.file != null) { // select first GPX track associated to a file
-                defaultItem = gdw;
+    }
+
+    /**
+     * Construct the list of loaded GPX tracks
+     * @param nogdw Data wrapper with no GPX data
+     */
+    private void constructGpxModel(NoGpxDataWrapper nogdw) {
+        gpxModel = new JosmComboBoxModel<>();
+        GpxDataWrapper defaultItem = null;
+        for (AbstractModifiableLayer cur : MainApplication.getLayerManager().getLayersOfType(AbstractModifiableLayer.class)) {
+            if (cur instanceof GpxDataContainer) {
+                GpxData data = ((GpxDataContainer) cur).getGpxData();
+                GpxDataWrapper gdw = new GpxDataWrapper(cur.getName(), data, data.storageFile);
+                cur.addPropertyChangeListener(new GpxLayerRenamedListener(gdw));
+                gpxModel.addElement(gdw);
+                if (data.equals(yLayer.gpxData) || defaultItem == null) {
+                    defaultItem = gdw;
+                }
             }
         }
 
-        GpxDataWrapper nogdw = new GpxDataWrapper(tr("<No GPX track loaded yet>"), null, null);
         if (gpxModel.getSize() == 0) {
             gpxModel.addElement(nogdw);
         } else if (defaultItem != null) {
             gpxModel.setSelectedItem(defaultItem);
+        }
+        MainApplication.getLayerManager().addLayerChangeListener(new GpxLayerAddedListener());
+    }
+
+    static GpxTimezone loadTimezone() {
+        try {
+            String tz = Config.getPref().get("geoimage.timezone");
+            if (!tz.isEmpty()) {
+                return GpxTimezone.parseTimezone(tz);
+            } else {
+                return new GpxTimezone(TimeUnit.MILLISECONDS.toMinutes(TimeZone.getDefault().getRawOffset()) / 60.); //hours is double
+            }
+        } catch (ParseException e) {
+            Logging.trace(e);
+            return GpxTimezone.ZERO;
+        }
+    }
+
+    static GpxTimeOffset loadDelta() {
+        try {
+            return GpxTimeOffset.parseOffset(Config.getPref().get("geoimage.delta", "0"));
+        } catch (ParseException e) {
+            Logging.trace(e);
+            return GpxTimeOffset.ZERO;
+        }
+    }
+
+    static String loadGpsDatum() {
+        return Config.getPref().get("geoimage.datum", "WGS-84");
+    }
+
+    // CHECKSTYLE.OFF: ExecutableStatementCount
+    @Override
+    public void actionPerformed(ActionEvent ae) {
+        NoGpxDataWrapper nogdw = new NoGpxDataWrapper();
+        if (gpxModel == null) {
+            constructGpxModel(nogdw);
         }
 
         JPanel panelCb = new JPanel();
@@ -852,32 +511,29 @@ public class CorrelateGpxWithImages extends AbstractAction {
         buttonOpen.addActionListener(new LoadGpxDataActionListener());
         panelCb.add(buttonOpen);
 
+        buttonSupport = new JButton(tr("Use support layer"));
+        buttonSupport.addActionListener(new UseSupportLayerActionListener());
+        panelCb.add(buttonSupport);
+
         JPanel panelTf = new JPanel(new GridBagLayout());
 
-        try {
-            String tz = Config.getPref().get("geoimage.timezone");
-            if (!tz.isEmpty()) {
-                timezone = GpxTimezone.parseTimezone(tz);
-            } else {
-                timezone = new GpxTimezone(TimeUnit.MILLISECONDS.toMinutes(TimeZone.getDefault().getRawOffset()) / 60.); //hours is double
-            }
-        } catch (ParseException e) {
-            timezone = GpxTimezone.ZERO;
-            Logging.trace(e);
-        }
+        timezone = loadTimezone();
 
         tfTimezone = new JosmTextField(10);
         tfTimezone.setText(timezone.formatTimezone());
 
-        try {
-            delta = GpxTimeOffset.parseOffset(Config.getPref().get("geoimage.delta", "0"));
-        } catch (ParseException e) {
-            delta = GpxTimeOffset.ZERO;
-            Logging.trace(e);
-        }
+        delta = loadDelta();
 
         tfOffset = new JosmTextField(10);
         tfOffset.setText(delta.formatOffset());
+
+        // Image Time/Clock source choice 
+        rbTimeFromCamera = new JRadioButton(tr("Camera clock"));
+        rbTimeFromCamera.setSelected(true);
+        rbTimeFromGps = new JRadioButton(tr("Camera GPS clock"));        
+        ButtonGroup timeSourceGroup = new ButtonGroup();
+        timeSourceGroup.add(rbTimeFromCamera);
+        timeSourceGroup.add(rbTimeFromGps);
 
         JButton buttonViewGpsPhoto = new JButton(tr("<html>Use photo of an accurate clock,<br>e.g. GPS receiver display</html>"));
         buttonViewGpsPhoto.setIcon(ImageProvider.get("clock"));
@@ -895,9 +551,9 @@ public class CorrelateGpxWithImages extends AbstractAction {
 
         JLabel labelPosition = new JLabel(tr("Override position for: "));
 
-        int numAll = getSortedImgList(true, true).size();
-        int numExif = numAll - getSortedImgList(false, true).size();
-        int numTagged = numAll - getSortedImgList(true, false).size();
+        int numAll = yLayer.getSortedImgList(true, true, imgTimeSource).size();
+        int numExif = numAll - yLayer.getSortedImgList(false, true, imgTimeSource).size();
+        int numTagged = numAll - yLayer.getSortedImgList(true, false, imgTimeSource).size();
 
         cbExifImg = new JCheckBox(tr("Images with geo location in exif data ({0}/{1})", numExif, numAll));
         cbExifImg.setEnabled(numExif != 0);
@@ -912,50 +568,30 @@ public class CorrelateGpxWithImages extends AbstractAction {
         cbShowThumbs.setEnabled(!yLayer.thumbsLoaded);
 
         int y = 0;
-        GBC gbc = GBC.eol();
-        gbc.gridx = 0;
-        gbc.gridy = y++;
-        panelTf.add(panelCb, gbc);
+        panelTf.add(panelCb, GBC.eol().grid(0, y++));
 
-        gbc = GBC.eol().fill(GBC.HORIZONTAL).insets(0, 0, 0, 12);
-        gbc.gridx = 0;
-        gbc.gridy = y++;
+        GBC gbc = GBC.eol().grid(0, y++).fill(GridBagConstraints.HORIZONTAL).insets(0, 0, 0, 12);
         panelTf.add(new JSeparator(SwingConstants.HORIZONTAL), gbc);
 
-        gbc = GBC.std();
-        gbc.gridx = 0;
-        gbc.gridy = y;
-        panelTf.add(new JLabel(tr("Timezone: ")), gbc);
+        panelTf.add(new JLabel(tr("Timezone: ")), GBC.std(0, y));
 
-        gbc = GBC.std().fill(GBC.HORIZONTAL);
-        gbc.gridx = 1;
-        gbc.gridy = y++;
+        gbc = GBC.std(1, y++).fill(GridBagConstraints.HORIZONTAL);
         gbc.weightx = 1.;
         panelTf.add(tfTimezone, gbc);
 
-        gbc = GBC.std();
-        gbc.gridx = 0;
-        gbc.gridy = y;
+        gbc = GBC.std(0, y);
         panelTf.add(new JLabel(tr("Offset:")), gbc);
 
-        gbc = GBC.std().fill(GBC.HORIZONTAL);
-        gbc.gridx = 1;
-        gbc.gridy = y++;
+        gbc = GBC.std(1, y++).fill(GridBagConstraints.HORIZONTAL);
         gbc.weightx = 1.;
         panelTf.add(tfOffset, gbc);
 
-        gbc = GBC.std().insets(5, 5, 5, 5);
-        gbc.gridx = 2;
-        gbc.gridy = y-2;
-        gbc.gridheight = 2;
-        gbc.gridwidth = 2;
+        gbc = GBC.std(2, y-2).insets(5, 5, 5, 5).span(2, 2);
         gbc.fill = GridBagConstraints.BOTH;
         gbc.weightx = 0.5;
         panelTf.add(buttonViewGpsPhoto, gbc);
 
-        gbc = GBC.std().fill(GBC.BOTH).insets(5, 5, 5, 5);
-        gbc.gridx = 1;
-        gbc.gridy = y++;
+        gbc = GBC.std(1, y++).fill(GridBagConstraints.BOTH).insets(5, 5, 5, 5);
         gbc.weightx = 0.5;
         panelTf.add(buttonAdvanced, gbc);
 
@@ -965,52 +601,100 @@ public class CorrelateGpxWithImages extends AbstractAction {
         gbc.gridx = 3;
         panelTf.add(buttonAdjust, gbc);
 
-        gbc = GBC.eol().fill(GBC.HORIZONTAL).insets(0, 12, 0, 0);
+        // Image time source choice
+        gbc = GBC.eol();
         gbc.gridx = 0;
         gbc.gridy = y++;
+        panelTf.add(new JLabel(tr("Image time source:")), gbc);
+
+        gbc = GBC.eol();
+        gbc.gridx = 1;
+        gbc.gridy = y++;
+        panelTf.add(rbTimeFromCamera, gbc);
+
+        gbc = GBC.eol();
+        gbc.gridx = 1;
+        gbc.gridy = y++;
+        panelTf.add(rbTimeFromGps, gbc);
+
+        gbc = GBC.eol().grid(0, y++).fill(GridBagConstraints.HORIZONTAL).insets(0, 12, 0, 0);
         panelTf.add(new JSeparator(SwingConstants.HORIZONTAL), gbc);
+        panelTf.add(labelPosition, GBC.eol().grid(0, y++));
+        panelTf.add(cbExifImg, GBC.eol().grid(1, y++));
+        panelTf.add(cbTaggedImg, GBC.eol().grid(1, y++));
+        panelTf.add(cbShowThumbs, GBC.eol().grid(0, y++));
 
-        gbc = GBC.eol();
-        gbc.gridx = 0;
+        //Image direction and position offset GUI
+        gbc = GBC.eol().fill(GridBagConstraints.HORIZONTAL).insets(0, 12, 0, 0);
+        sepDirectionPosition = new JSeparator(SwingConstants.HORIZONTAL);
         gbc.gridy = y++;
-        panelTf.add(labelPosition, gbc);
+        panelTf.add(sepDirectionPosition, gbc);
 
         gbc = GBC.eol();
-        gbc.gridx = 1;
+        gbc.gridwidth = 3;
         gbc.gridy = y++;
-        panelTf.add(cbExifImg, gbc);
+        pDirectionPosition = ImageDirectionPositionPanel.forGpxTrace();
+        panelTf.add(pDirectionPosition, gbc);
 
-        gbc = GBC.eol();
-        gbc.gridx = 1;
+        //Extended tags GUI panel
+        expertPanel = new JPanel(new GridBagLayout());
+        gbc = GBC.eol().grid(0, 0).fill(GridBagConstraints.HORIZONTAL).insets(0, 12, 0, 0);
+        sepExtendedTags = new JSeparator(SwingConstants.HORIZONTAL);
+        expertPanel.add(sepExtendedTags, gbc);
+
+        labelExtTags = new JLabel(tr("Extended tags"));
+        cbAddGpsDatum = new JCheckBox(tr("Set datum for images coordinates"));
+        cbAddGpsDatum.addActionListener(e -> tfDatum.setEnabled(!tfDatum.isEnabled()));
+
+        labelDatum = new JLabel(tr("Datum: "));
+        //TODO An AutoCompComboBox would be nice to list the recent datum values. I don't have the skill to add it.
+        tfDatum = new JosmTextField(loadGpsDatum(), 8);
+        tfDatum.setToolTipText(tr("<html>Enter the datum for your images coordinates. Default value is WGS-84.<br>" + 
+                                "For RTK it could be your local CRS epsg code.<br>(e.g. EPSG:9782 for France mainland.)</html>"));
+        tfDatum.setEnabled(false);
+
+        expertPanel.add(labelExtTags, GBC.eol().grid(0, 1));
+        expertPanel.add(cbAddGpsDatum, GBC.eol().grid(0, 2));
+        expertPanel.add(labelDatum, GBC.std(1, 3));
+        expertPanel.add(tfDatum, GBC.eol().grid(2, 3));
+
+        //Add expertPanel to panelTf
+        gbc = GBC.eol().fill(GridBagConstraints.HORIZONTAL).insets(0, 12, 0, 0);
         gbc.gridy = y++;
-        panelTf.add(cbTaggedImg, gbc);
-
-        gbc = GBC.eol();
-        gbc.gridx = 0;
-        gbc.gridy = y;
-        panelTf.add(cbShowThumbs, gbc);
-
-        final JPanel statusBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
-        statusBar.setBorder(BorderFactory.createLoweredBevelBorder());
+        panelTf.add(expertPanel, gbc);
+        
+        final JPanel statusPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 10));
+        statusPanel.setBorder(BorderFactory.createLoweredBevelBorder());
         statusBarText = new JLabel(" ");
-        statusBarText.setFont(statusBarText.getFont().deriveFont(Font.PLAIN, 8));
-        statusBar.add(statusBarText);
+        statusBarText.setFont(statusBarText.getFont().deriveFont(Font.PLAIN, 12));
+        statusPanel.add(statusBarText);
 
+        gbc = GBC.eol().fill(GridBagConstraints.HORIZONTAL).insets(20, 12, 20, 0);
+        gbc.gridy = y;
+        panelTf.add(statusPanel, gbc);
+
+        expertChanged(ExpertToggleAction.isExpert());
+
+        RepaintTheMapListener repaintTheMap = new RepaintTheMapListener(yLayer);
+        pDirectionPosition.addFocusListenerOnComponent(repaintTheMap);
         tfTimezone.addFocusListener(repaintTheMap);
         tfOffset.addFocusListener(repaintTheMap);
 
         tfTimezone.getDocument().addDocumentListener(statusBarUpdater);
         tfOffset.getDocument().addDocumentListener(statusBarUpdater);
+        rbTimeFromCamera.addItemListener(statusBarUpdaterWithRepaint);
+        rbTimeFromGps.addItemListener(statusBarUpdaterWithRepaint);
         cbExifImg.addItemListener(statusBarUpdaterWithRepaint);
         cbTaggedImg.addItemListener(statusBarUpdaterWithRepaint);
-
-        statusBarUpdater.updateStatusBar();
-        yLayer.updateBufferAndRepaint();
+        cbAddGpsDatum.addItemListener(statusBarUpdaterWithRepaint);
+        tfDatum.getDocument().addDocumentListener(statusBarUpdater);
+        pDirectionPosition.addChangeListenerOnComponents(statusBarUpdaterWithRepaint);
+        pDirectionPosition.addItemListenerOnComponents(statusBarUpdaterWithRepaint);
 
         outerPanel = new JPanel(new BorderLayout());
-        outerPanel.add(statusBar, BorderLayout.PAGE_END);
 
         if (!GraphicsEnvironment.isHeadless()) {
+            forEachLayer(CorrelateGpxWithImages::closeDialog);
             syncDialog = new ExtendedDialog(
                     MainApplication.getMainFrame(),
                     tr("Correlate images with GPX track"),
@@ -1025,13 +709,56 @@ public class CorrelateGpxWithImages extends AbstractAction {
             syncDialog.pack();
             syncDialog.addWindowListener(new SyncDialogWindowListener());
             syncDialog.showDialog();
+
+            statusBarUpdater.matchAndUpdateStatusBar();
+            yLayer.updateBufferAndRepaint();
         }
+    }
+    // CHECKSTYLE.ON: ExecutableStatementCount
+
+    public GpxImageDatumSettings getSettings() {
+        return new GpxImageDatumSettings(
+            cbAddGpsDatum.isSelected(),
+            tfDatum.getText());
+    }
+
+    @Override
+    public void expertChanged(boolean isExpert) {
+        if (buttonSupport != null) {
+            buttonSupport.setVisible(isExpert);
+        }
+        if (sepDirectionPosition != null) {
+            sepDirectionPosition.setVisible(isExpert);
+        }
+        if (pDirectionPosition != null) {
+            pDirectionPosition.setVisible(isExpert);
+        }
+        if (expertPanel != null) {
+            expertPanel.setVisible(isExpert);
+        }
+        if (syncDialog != null) {
+            syncDialog.pack();
+        }
+    }
+
+    private static void removeDuplicates(File file) {
+        for (int i = gpxModel.getSize() - 1; i >= 0; i--) {
+            GpxDataWrapper wrapper = gpxModel.getElementAt(i);
+            if (wrapper instanceof NoGpxDataWrapper || (file != null && file.equals(wrapper.file))) {
+                gpxModel.removeElement(wrapper);
+            }
+        }
+    }
+
+    private static void forEachLayer(Consumer<CorrelateGpxWithImages> action) {
+        MainApplication.getLayerManager().getLayersOfType(GeoImageLayer.class)
+                .forEach(geo -> action.accept(geo.getGpxCorrelateAction()));
     }
 
     private final transient StatusBarUpdater statusBarUpdater = new StatusBarUpdater(false);
     private final transient StatusBarUpdater statusBarUpdaterWithRepaint = new StatusBarUpdater(true);
 
-    private class StatusBarUpdater implements DocumentListener, ItemListener, ActionListener {
+    private class StatusBarUpdater implements DocumentListener, ItemListener, ChangeListener, ActionListener, GpxDataChangeListener {
         private final boolean doRepaint;
 
         StatusBarUpdater(boolean doRepaint) {
@@ -1039,38 +766,50 @@ public class CorrelateGpxWithImages extends AbstractAction {
         }
 
         @Override
-        public void insertUpdate(DocumentEvent ev) {
-            updateStatusBar();
+        public void insertUpdate(DocumentEvent e) {
+            matchAndUpdateStatusBar();
         }
 
         @Override
-        public void removeUpdate(DocumentEvent ev) {
-            updateStatusBar();
+        public void removeUpdate(DocumentEvent e) {
+            matchAndUpdateStatusBar();
         }
 
         @Override
-        public void changedUpdate(DocumentEvent ev) {
+        public void changedUpdate(DocumentEvent e) {
             // Do nothing
         }
 
         @Override
         public void itemStateChanged(ItemEvent e) {
-            updateStatusBar();
+            matchAndUpdateStatusBar();
+        }
+
+        @Override
+        public void stateChanged(ChangeEvent e) {
+            matchAndUpdateStatusBar();
         }
 
         @Override
         public void actionPerformed(ActionEvent e) {
-            updateStatusBar();
+            matchAndUpdateStatusBar();
         }
 
-        public void updateStatusBar() {
-            statusBarText.setText(statusText());
-            if (doRepaint) {
-                yLayer.updateBufferAndRepaint();
+        @Override
+        public void gpxDataChanged(GpxDataChangeEvent e) {
+            matchAndUpdateStatusBar();
+        }
+
+        public void matchAndUpdateStatusBar() {
+            if (syncDialog != null && syncDialog.isVisible()) {
+                statusBarText.setText(matchAndGetStatusText());
+                if (doRepaint) {
+                    yLayer.updateBufferAndRepaint();
+                }
             }
         }
 
-        private String statusText() {
+        private String matchAndGetStatusText() {
             try {
                 timezone = GpxTimezone.parseTimezone(tfTimezone.getText().trim());
                 delta = GpxTimeOffset.parseOffset(tfOffset.getText().trim());
@@ -1078,36 +817,50 @@ public class CorrelateGpxWithImages extends AbstractAction {
                 return e.getMessage();
             }
 
-            // The selection of images we are about to correlate may have changed.
-            // So reset all images.
-            for (ImageEntry ie: yLayer.getImageData().getImages()) {
-                ie.discardTmp();
+            // Set image time source from the radio button status
+            if (rbTimeFromGps.isSelected()) {
+                imgTimeSource = TimeSource.EXIFGPSTIME;
+            } else {
+                imgTimeSource = TimeSource.EXIFCAMTIME;
             }
 
+            // The selection of images we are about to correlate may have changed.
+            // So reset all images.
+            yLayer.discardTmp();
+
+            //Get how many images are present in the layer
+            int totalImg = yLayer.getImages().size();
+            
             // Construct a list of images that have a date, and sort them on the date.
             List<ImageEntry> dateImgLst = getSortedImgList();
             // Create a temporary copy for each image
-            for (ImageEntry ie : dateImgLst) {
-                ie.createTmp();
-                ie.getTmp().setPos(null);
-            }
+            dateImgLst.forEach(ie -> ie.createTmp().unflagNewGpsData());
 
             GpxDataWrapper selGpx = selectedGPX(false);
             if (selGpx == null)
                 return tr("No gpx selected");
 
             final long offsetMs = ((long) (timezone.getHours() * TimeUnit.HOURS.toMillis(1))) + delta.getMilliseconds(); // in milliseconds
-            lastNumMatched = GpxImageCorrelation.matchGpxTrack(dateImgLst, selGpx.data, offsetMs, forceTags);
+            lastNumMatched = GpxImageCorrelation.matchGpxTrack(dateImgLst, selGpx.data,
+                    pDirectionPosition.isVisible() ?
+                            new GpxImageCorrelationSettings(offsetMs, forceTags, imgTimeSource, pDirectionPosition.getSettings(),
+                                                            new GpxImageDatumSettings(cbAddGpsDatum.isSelected(), tfDatum.getText())) :
+                            new GpxImageCorrelationSettings(offsetMs, forceTags));
 
             return trn("<html>Matched <b>{0}</b> of <b>{1}</b> photo to GPX track.</html>",
                     "<html>Matched <b>{0}</b> of <b>{1}</b> photos to GPX track.</html>",
-                    dateImgLst.size(), lastNumMatched, dateImgLst.size());
+                    totalImg, lastNumMatched, totalImg);
         }
     }
 
-    private final transient RepaintTheMapListener repaintTheMap = new RepaintTheMapListener();
+    static class RepaintTheMapListener implements FocusListener {
 
-    private class RepaintTheMapListener implements FocusListener {
+        private final GeoImageLayer yLayer;
+
+        RepaintTheMapListener(GeoImageLayer yLayer) {
+            this.yLayer = Objects.requireNonNull(yLayer);
+        }
+
         @Override
         public void focusGained(FocusEvent e) { // do nothing
         }
@@ -1121,130 +874,65 @@ public class CorrelateGpxWithImages extends AbstractAction {
     /**
      * Presents dialog with sliders for manual adjust.
      */
-    private class AdjustActionListener implements ActionListener {
+    private final class AdjustActionListener implements ActionListener {
 
         @Override
-        public void actionPerformed(ActionEvent arg0) {
+        public void actionPerformed(ActionEvent e) {
 
             final GpxTimeOffset offset = GpxTimeOffset.milliseconds(
                     delta.getMilliseconds() + Math.round(timezone.getHours() * TimeUnit.HOURS.toMillis(1)));
             final int dayOffset = offset.getDayOffset();
             final Pair<GpxTimezone, GpxTimeOffset> timezoneOffsetPair = offset.withoutDayOffset().splitOutTimezone();
 
-            // Info Labels
-            final JLabel lblMatches = new JLabel();
-
-            // Timezone Slider
-            // The slider allows to switch timezon from -12:00 to 12:00 in 30 minutes steps. Therefore the range is -24 to 24.
-            final JLabel lblTimezone = new JLabel();
-            final JSlider sldTimezone = new JSlider(-24, 24, 0);
-            sldTimezone.setPaintLabels(true);
-            Dictionary<Integer, JLabel> labelTable = new Hashtable<>();
-            // CHECKSTYLE.OFF: ParenPad
-            for (int i = -12; i <= 12; i += 6) {
-                labelTable.put(i * 2, new JLabel(new GpxTimezone(i).formatTimezone()));
-            }
-            // CHECKSTYLE.ON: ParenPad
-            sldTimezone.setLabelTable(labelTable);
-
-            // Minutes Slider
-            final JLabel lblMinutes = new JLabel();
-            final JSlider sldMinutes = new JSlider(-15, 15, 0);
-            sldMinutes.setPaintLabels(true);
-            sldMinutes.setMajorTickSpacing(5);
-
-            // Seconds slider
-            final JLabel lblSeconds = new JLabel();
-            final JSlider sldSeconds = new JSlider(-600, 600, 0);
-            sldSeconds.setPaintLabels(true);
-            labelTable = new Hashtable<>();
-            // CHECKSTYLE.OFF: ParenPad
-            for (int i = -60; i <= 60; i += 30) {
-                labelTable.put(i * 10, new JLabel(GpxTimeOffset.seconds(i).formatOffset()));
-            }
-            // CHECKSTYLE.ON: ParenPad
-            sldSeconds.setLabelTable(labelTable);
-            sldSeconds.setMajorTickSpacing(300);
-
             // This is called whenever one of the sliders is moved.
-            // It updates the labels and also calls the "match photos" code
-            class SliderListener implements ChangeListener {
-                @Override
-                public void stateChanged(ChangeEvent e) {
-                    timezone = new GpxTimezone(sldTimezone.getValue() / 2.);
+            // It calls the "match photos" code
+            AdjustListener listener = (tz, min, sec) -> {
+                timezone = tz;
 
-                    lblTimezone.setText(tr("Timezone: {0}", timezone.formatTimezone()));
-                    lblMinutes.setText(tr("Minutes: {0}", sldMinutes.getValue()));
-                    lblSeconds.setText(tr("Seconds: {0}", GpxTimeOffset.milliseconds(100L * sldSeconds.getValue()).formatOffset()));
+                delta = GpxTimeOffset.milliseconds(100L * sec
+                        + TimeUnit.MINUTES.toMillis(min)
+                        + TimeUnit.DAYS.toMillis(dayOffset));
 
-                    delta = GpxTimeOffset.milliseconds(100L * sldSeconds.getValue()
-                            + TimeUnit.MINUTES.toMillis(sldMinutes.getValue())
-                            + TimeUnit.DAYS.toMillis(dayOffset));
+                tfTimezone.getDocument().removeDocumentListener(statusBarUpdater);
+                tfOffset.getDocument().removeDocumentListener(statusBarUpdater);
 
-                    tfTimezone.getDocument().removeDocumentListener(statusBarUpdater);
-                    tfOffset.getDocument().removeDocumentListener(statusBarUpdater);
+                tfTimezone.setText(timezone.formatTimezone());
+                tfOffset.setText(delta.formatOffset());
 
-                    tfTimezone.setText(timezone.formatTimezone());
-                    tfOffset.setText(delta.formatOffset());
+                tfTimezone.getDocument().addDocumentListener(statusBarUpdater);
+                tfOffset.getDocument().addDocumentListener(statusBarUpdater);
 
-                    tfTimezone.getDocument().addDocumentListener(statusBarUpdater);
-                    tfOffset.getDocument().addDocumentListener(statusBarUpdater);
+                statusBarUpdater.matchAndUpdateStatusBar();
+                yLayer.updateBufferAndRepaint();
 
-                    lblMatches.setText(statusBarText.getText() + "<br>" + trn("(Time difference of {0} day)",
-                            "Time difference of {0} days", Math.abs(dayOffset), Math.abs(dayOffset)));
-
-                    statusBarUpdater.updateStatusBar();
-                    yLayer.updateBufferAndRepaint();
-                }
-            }
-
-            // Put everything together
-            JPanel p = new JPanel(new GridBagLayout());
-            p.setPreferredSize(new Dimension(400, 230));
-            p.add(lblMatches, GBC.eol().fill());
-            p.add(lblTimezone, GBC.eol().fill());
-            p.add(sldTimezone, GBC.eol().fill().insets(0, 0, 0, 10));
-            p.add(lblMinutes, GBC.eol().fill());
-            p.add(sldMinutes, GBC.eol().fill().insets(0, 0, 0, 10));
-            p.add(lblSeconds, GBC.eol().fill());
-            p.add(sldSeconds, GBC.eol().fill());
-
-            // If there's an error in the calculation the found values
-            // will be off range for the sliders. Catch this error
-            // and inform the user about it.
-            try {
-                sldTimezone.setValue((int) (timezoneOffsetPair.a.getHours() * 2));
-                sldMinutes.setValue((int) (timezoneOffsetPair.b.getSeconds() / 60));
-                final long deciSeconds = timezoneOffsetPair.b.getMilliseconds() / 100;
-                sldSeconds.setValue((int) (deciSeconds % 600));
-            } catch (JosmRuntimeException | IllegalArgumentException | IllegalStateException e) {
-                Logging.warn(e);
-                JOptionPane.showMessageDialog(MainApplication.getMainFrame(),
-                        tr("An error occurred while trying to match the photos to the GPX track."
-                                +" You can adjust the sliders to manually match the photos."),
-                                tr("Matching photos to track failed"),
-                                JOptionPane.WARNING_MESSAGE);
-            }
-
-            // Call the sliderListener once manually so labels get adjusted
-            new SliderListener().stateChanged(null);
-            // Listeners added here, otherwise it tries to match three times
-            // (when setting the default values)
-            sldTimezone.addChangeListener(new SliderListener());
-            sldMinutes.addChangeListener(new SliderListener());
-            sldSeconds.addChangeListener(new SliderListener());
+                return statusBarText.getText();
+            };
 
             // There is no way to cancel this dialog, all changes get applied
             // immediately. Therefore "Close" is marked with an "OK" icon.
             // Settings are only saved temporarily to the layer.
-            new ExtendedDialog(MainApplication.getMainFrame(),
-                    tr("Adjust timezone and offset"),
-                    tr("Close")).
-                    setContent(p).setButtonIcons("ok").showDialog();
+            new AdjustTimezoneAndOffsetDialog(MainApplication.getMainFrame(),
+                    timezoneOffsetPair.a, timezoneOffsetPair.b, dayOffset)
+            .adjustListener(listener).showDialog();
         }
     }
 
     static class NoGpxTimestamps extends Exception {
+    }
+
+    void closeDialog() {
+        if (syncDialog != null) {
+            syncDialog.setVisible(false);
+            new SyncDialogWindowListener().windowDeactivated(null);
+            syncDialog.dispose();
+            syncDialog = null;
+        }
+    }
+
+    void repaintCombobox() {
+        if (cbGpx != null) {
+            cbGpx.repaint();
+        }
     }
 
     /**
@@ -1259,7 +947,7 @@ public class CorrelateGpxWithImages extends AbstractAction {
     static Pair<GpxTimezone, GpxTimeOffset> autoGuess(List<ImageEntry> imgs, GpxData gpx) throws NoGpxTimestamps {
 
         // Init variables
-        long firstExifDate = imgs.get(0).getExifTime().getTime();
+        long firstExifDate = imgs.get(0).getExifInstant().toEpochMilli();
 
         // Finds first GPX point
         long firstGPXDate = gpx.tracks.stream()
@@ -1273,10 +961,10 @@ public class CorrelateGpxWithImages extends AbstractAction {
         return GpxTimeOffset.milliseconds(firstExifDate - firstGPXDate).splitOutTimezone();
     }
 
-    private class AutoGuessActionListener implements ActionListener {
+    private final class AutoGuessActionListener implements ActionListener {
 
         @Override
-        public void actionPerformed(ActionEvent arg0) {
+        public void actionPerformed(ActionEvent e) {
             GpxDataWrapper gpxW = selectedGPX(true);
             if (gpxW == null)
                 return;
@@ -1312,35 +1000,19 @@ public class CorrelateGpxWithImages extends AbstractAction {
             tfTimezone.getDocument().addDocumentListener(statusBarUpdater);
             tfOffset.getDocument().addDocumentListener(statusBarUpdater);
 
-            statusBarUpdater.updateStatusBar();
+            statusBarUpdater.matchAndUpdateStatusBar();
             yLayer.updateBufferAndRepaint();
         }
     }
 
     private List<ImageEntry> getSortedImgList() {
-        return getSortedImgList(cbExifImg.isSelected(), cbTaggedImg.isSelected());
+        return yLayer.getSortedImgList(cbExifImg.isSelected(), cbTaggedImg.isSelected(), imgTimeSource);
     }
 
-    /**
-     * Returns a list of images that fulfill the given criteria.
-     * Default setting is to return untagged images, but may be overwritten.
-     * @param exif also returns images with exif-gps info
-     * @param tagged also returns tagged images
-     * @return matching images
-     */
-    private List<ImageEntry> getSortedImgList(boolean exif, boolean tagged) {
-        return yLayer.getImageData().getImages().stream()
-                .filter(GpxImageEntry::hasExifTime)
-                .filter(e -> e.getExifCoor() == null || exif)
-                .filter(e -> tagged || !e.isTagged() || e.getExifCoor() != null)
-                .sorted(Comparator.comparing(ImageEntry::getExifTime))
-                .collect(Collectors.toList());
-    }
-
-    private GpxDataWrapper selectedGPX(boolean complain) {
+    private static GpxDataWrapper selectedGPX(boolean complain) {
         Object item = gpxModel.getSelectedItem();
 
-        if (item == null || ((GpxDataWrapper) item).file == null) {
+        if (item == null || ((GpxDataWrapper) item).data == null) {
             if (complain) {
                 JOptionPane.showMessageDialog(MainApplication.getMainFrame(), tr("You should select a GPX track"),
                         tr("No selected GPX track"), JOptionPane.ERROR_MESSAGE);
@@ -1350,4 +1022,25 @@ public class CorrelateGpxWithImages extends AbstractAction {
         return (GpxDataWrapper) item;
     }
 
+    @Override
+    public void destroy() {
+        ExpertToggleAction.removeExpertModeChangeListener(this);
+        if (cbGpx != null) {
+            // Force the JCombobox to remove its eventListener from the static GpxDataWrapper
+            cbGpx.setModel(new DefaultComboBoxModel<>());
+            cbGpx = null;
+        }
+
+        closeDialog();
+
+        outerPanel = null;
+        tfTimezone = null;
+        tfOffset = null;
+        cbExifImg = null;
+        cbTaggedImg = null;
+        cbShowThumbs = null;
+        statusBarText = null;
+        sepDirectionPosition = null;
+        pDirectionPosition = null;
+    }
 }

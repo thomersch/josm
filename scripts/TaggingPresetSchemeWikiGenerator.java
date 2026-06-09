@@ -22,7 +22,8 @@ import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
 /**
- * This script generates the wiki content for https://josm.openstreetmap.de/wiki/TaggingPresets#Attributes
+ * This script generates the wiki content for <a href="https://josm.openstreetmap.de/wiki/TaggingPresets#Attributes">
+ * TaggingPresets#Attributes</a>
  */
 public final class TaggingPresetSchemeWikiGenerator {
 
@@ -33,7 +34,7 @@ public final class TaggingPresetSchemeWikiGenerator {
         // Hide public constructor for utility class
     }
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) throws IOException, ParserConfigurationException, SAXException, XPathExpressionException {
         document = parseTaggingPresetSchema();
         xPath = XPathFactory.newInstance().newXPath();
         xPath.setNamespaceContext(new TaggingNamespaceContext());
@@ -62,7 +63,7 @@ public final class TaggingPresetSchemeWikiGenerator {
                         node.getTextContent().trim()));
     }
 
-    private static class TaggingNamespaceContext implements NamespaceContext {
+    private static final class TaggingNamespaceContext implements NamespaceContext {
         @Override
         public String getNamespaceURI(String prefix) {
             switch (prefix) {

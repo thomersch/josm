@@ -12,9 +12,9 @@ import java.awt.event.ActionEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.Comparator;
-import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -53,6 +53,8 @@ import org.openstreetmap.josm.gui.util.WindowGeometry;
 import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.OpenBrowser;
+import org.openstreetmap.josm.tools.Utils;
+import org.openstreetmap.josm.tools.date.Interval;
 
 /**
  * allows the user to choose which of the downloaded tracks should be displayed.
@@ -87,7 +89,7 @@ public class ChooseTrackVisibilityAction extends AbstractAction {
             Map<String, Object> attr = trk.getAttributes();
             String name = (String) Optional.ofNullable(attr.get(GpxConstants.GPX_NAME)).orElse("");
             String desc = (String) Optional.ofNullable(attr.get(GpxConstants.GPX_DESC)).orElse("");
-            Date[] time = GpxData.getMinMaxTimeForTrack(trk);
+            Interval time = GpxData.getMinMaxTimeForTrack(trk).orElse(null);
             String url = (String) Optional.ofNullable(attr.get("url")).orElse("");
             tracks[i] = new Object[]{name, desc, time, trk.length(), url, trk};
             i++;
@@ -112,15 +114,17 @@ public class ChooseTrackVisibilityAction extends AbstractAction {
                 options[0]
         );
         switch (answer) {
-        case 0:
+        case JOptionPane.OK_OPTION:
             tracks.forEach(t -> t.setColor(c.getColor()));
             GPXSettingsPanel.putLayerPrefLocal(layer, "colormode", "0"); //set Colormode to none
             break;
-        case 1:
+        case JOptionPane.NO_OPTION:
             return;
-        case 2:
+        case JOptionPane.CANCEL_OPTION:
             tracks.forEach(t -> t.setColor(null));
             break;
+        default:
+            throw new InvalidArgumentException("Unknown choice: " + answer);
         }
         table.repaint();
     }
@@ -139,7 +143,7 @@ public class ChooseTrackVisibilityAction extends AbstractAction {
         TableRowSorter<DefaultTableModel> rowSorter = new TableRowSorter<>();
         t.setRowSorter(rowSorter);
         rowSorter.setModel(model);
-        rowSorter.setComparator(2, Comparator.comparing((Date[] d) -> d == null ? Long.MIN_VALUE : d[0].getTime()));
+        rowSorter.setComparator(2, Comparator.comparing((Interval d) -> d == null ? Instant.MIN : d.getStart()));
         rowSorter.setComparator(3, Comparator.comparingDouble(length -> (double) length));
         // default column widths
         t.getColumnModel().getColumn(0).setPreferredWidth(220);
@@ -149,8 +153,8 @@ public class ChooseTrackVisibilityAction extends AbstractAction {
             @Override
             public Component getTableCellRendererComponent(
                     JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
-                if (value instanceof Date[]) {
-                    value = GpxLayer.formatTimespan(((Date[]) value));
+                if (value instanceof Interval) {
+                    value = ((Interval) value).format();
                 }
                 return super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
             }
@@ -179,7 +183,7 @@ public class ChooseTrackVisibilityAction extends AbstractAction {
                 }
                 int row = t.rowAtPoint(e.getPoint());
                 String url = (String) t.getValueAt(row, col);
-                if (url == null || url.isEmpty()) {
+                if (Utils.isEmpty(url)) {
                     return;
                 }
                 OpenBrowser.displayUrl(url);
@@ -325,7 +329,8 @@ public class ChooseTrackVisibilityAction extends AbstractAction {
             Component c = super.prepareRenderer(renderer, row, col);
             if (c instanceof JComponent) {
                 JComponent jc = (JComponent) c;
-                jc.setToolTipText(String.valueOf(getValueAt(row, col)));
+                Object value = getValueAt(row, col);
+                jc.setToolTipText(String.valueOf(value));
                 if (content.length > row
                         && content[row].length > 5
                         && content[row][5] instanceof IGpxTrack) {

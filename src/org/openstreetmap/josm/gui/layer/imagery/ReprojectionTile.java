@@ -4,12 +4,15 @@ package org.openstreetmap.josm.gui.layer.imagery;
 import java.awt.Dimension;
 import java.awt.geom.Point2D;
 import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.io.InputStream;
 
 import org.openstreetmap.gui.jmapviewer.Tile;
 import org.openstreetmap.gui.jmapviewer.interfaces.TileSource;
 import org.openstreetmap.josm.data.ProjectionBounds;
 import org.openstreetmap.josm.data.coor.EastNorth;
 import org.openstreetmap.josm.data.imagery.CoordinateConversion;
+import org.openstreetmap.josm.data.imagery.vectortile.VectorTile;
 import org.openstreetmap.josm.data.projection.Projection;
 import org.openstreetmap.josm.data.projection.ProjectionRegistry;
 import org.openstreetmap.josm.data.projection.Projections;
@@ -25,19 +28,30 @@ import org.openstreetmap.josm.tools.bugreport.BugReport;
  */
 public class ReprojectionTile extends Tile {
 
+    private final Tile tile;
     protected TileAnchor anchor;
     private double nativeScale;
     protected boolean maxZoomReached;
 
     /**
      * Constructs a new {@code ReprojectionTile}.
-     * @param source sourec tile
+     * @param source source tile
      * @param xtile X coordinate
      * @param ytile Y coordinate
      * @param zoom zoom level
      */
     public ReprojectionTile(TileSource source, int xtile, int ytile, int zoom) {
         super(source, xtile, ytile, zoom);
+        this.tile = null;
+    }
+
+    /**
+     * Create a reprojection tile for a specific tile
+     * @param tile The tile to use
+     */
+    public ReprojectionTile(Tile tile) {
+        super(tile.getTileSource(), tile.getXtile(), tile.getYtile(), tile.getZoom());
+        this.tile = tile;
     }
 
     /**
@@ -51,7 +65,7 @@ public class ReprojectionTile extends Tile {
 
     /**
      * Get the scale that was used for reprojecting the tile.
-     *
+     * <p>
      * This is not necessarily the mapview scale, but may be
      * adjusted to avoid excessively large cache image.
      * @return the scale that was used for reprojecting the tile
@@ -63,7 +77,7 @@ public class ReprojectionTile extends Tile {
     /**
      * Check if it is necessary to refresh the cache to match the current mapview
      * scale and get optimized image quality.
-     *
+     * <p>
      * When the maximum zoom is exceeded, this method will generally return false.
      * @param currentScale the current mapview scale
      * @return true if the tile should be reprojected again from the source image.
@@ -72,6 +86,15 @@ public class ReprojectionTile extends Tile {
         if (Utils.equalsEpsilon(nativeScale, currentScale))
             return false;
         return !maxZoomReached || currentScale >= nativeScale;
+    }
+
+    @Override
+    public void loadImage(InputStream inputStream) throws IOException {
+        if (this.tile instanceof VectorTile) {
+            this.tile.loadImage(inputStream);
+        } else {
+            super.loadImage(inputStream);
+        }
     }
 
     @Override
@@ -114,12 +137,10 @@ public class ReprojectionTile extends Tile {
         }
         double scaleMapView = MainApplication.getMap().mapView.getScale();
         ImageWarp.Interpolation interpolation;
-        switch (Config.getPref().get("imagery.warp.pixel-interpolation", "bilinear")) {
-            case "nearest_neighbor":
-                interpolation = ImageWarp.Interpolation.NEAREST_NEIGHBOR;
-                break;
-            default:
-                interpolation = ImageWarp.Interpolation.BILINEAR;
+        if (Config.getPref().get("imagery.warp.pixel-interpolation", "bilinear").equals("nearest_neighbor")) {
+            interpolation = ImageWarp.Interpolation.NEAREST_NEIGHBOR;
+        } else {
+            interpolation = ImageWarp.Interpolation.BILINEAR;
         }
 
         Projection projCurrent = ProjectionRegistry.getProjection();
@@ -137,15 +158,15 @@ public class ReprojectionTile extends Tile {
         double scale = scaleFix == null ? scaleMapView : (scaleMapView * scaleFix);
         ProjectionBounds pbTargetAligned = pbMarginAndAlign(pbTarget, scale, margin);
 
-        ImageWarp.PointTransform pointTransform = pt -> {
-            EastNorth target = new EastNorth(pbTargetAligned.minEast + pt.getX() * scale,
-                    pbTargetAligned.maxNorth - pt.getY() * scale);
+        ImageWarp.PointTransform pointTransform = (x, y) -> {
+            EastNorth target = new EastNorth(pbTargetAligned.minEast + x * scale,
+                    pbTargetAligned.maxNorth - y * scale);
             EastNorth sourceEN = projServer.latlon2eastNorth(projCurrent.eastNorth2latlon(target));
-            double x = source.getTileSize() *
+            double x2 = source.getTileSize() *
                     (sourceEN.east() - pbServer.minEast) / (pbServer.maxEast - pbServer.minEast);
-            double y = source.getTileSize() *
+            double y2 = source.getTileSize() *
                     (pbServer.maxNorth - sourceEN.north()) / (pbServer.maxNorth - pbServer.minNorth);
-            return new Point2D.Double(x, y);
+            return new Point2D.Double(x2, y2);
         };
 
         // pixel coordinates of tile origin and opposite tile corner inside the target image
@@ -178,7 +199,8 @@ public class ReprojectionTile extends Tile {
         } catch (NegativeArraySizeException | IllegalArgumentException e) {
             // See #19746 + #17387 - https://bugs.openjdk.java.net/browse/JDK-4690476
             throw BugReport.intercept(e).put("targetDim", targetDim).put("key", getKey())
-                .put("projCurrent", projCurrent).put("projServer", projServer).put("pbServer", pbServer);
+                .put("projCurrent", projCurrent).put("projServer", projServer).put("pbServer", pbServer)
+                .put("pbTarget", pbTarget).put("pbTargetAligned", pbTargetAligned).put("scale", scale);
         }
     }
 
@@ -200,7 +222,7 @@ public class ReprojectionTile extends Tile {
 
     /**
      * Make sure, the image is not scaled up too much.
-     *
+     * <p>
      * This would not give any significant improvement in image quality and may
      * exceed the user's memory. The correction factor is a power of 2.
      * @param lenOrig tile size of original image

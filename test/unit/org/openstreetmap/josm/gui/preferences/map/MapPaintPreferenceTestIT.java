@@ -1,19 +1,19 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.preferences.map;
 
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assume.assumeFalse;
-import static org.junit.Assume.assumeTrue;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
-import org.junit.BeforeClass;
-import org.junit.ClassRule;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized.Parameters;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.preferences.sources.ExtendedSourceEntry;
 import org.openstreetmap.josm.gui.mappaint.MapPaintStyles;
@@ -24,30 +24,23 @@ import org.openstreetmap.josm.gui.mappaint.mapcss.Instruction;
 import org.openstreetmap.josm.gui.mappaint.mapcss.Instruction.AssignmentInstruction;
 import org.openstreetmap.josm.gui.mappaint.mapcss.MapCSSRule;
 import org.openstreetmap.josm.gui.mappaint.mapcss.MapCSSStyleSource;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-import org.openstreetmap.josm.testutils.ParallelParameterized;
+import org.openstreetmap.josm.gui.preferences.AbstractExtendedSourceEntryTestCase;
+import org.openstreetmap.josm.testutils.annotations.HTTPS;
+import org.openstreetmap.josm.testutils.annotations.IntegrationTest;
 import org.openstreetmap.josm.tools.ImageProvider;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
  * Integration tests of {@link MapPaintPreference} class.
  */
-@RunWith(ParallelParameterized.class)
-public class MapPaintPreferenceTestIT extends AbstractExtendedSourceEntryTestCase {
-
-    /**
-     * Setup rule
-     */
-    @ClassRule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public static JOSMTestRules test = new JOSMTestRules().https().timeout(15000*60).parameters();
-
+@HTTPS
+@IntegrationTest
+@Timeout(value = 15, unit = TimeUnit.MINUTES)
+class MapPaintPreferenceTestIT extends AbstractExtendedSourceEntryTestCase {
     /**
      * Setup test
      * @throws IOException in case of I/O error
      */
-    @BeforeClass
+    @BeforeAll
     public static void beforeClass() throws IOException {
         errorsToIgnore.addAll(TestUtils.getIgnoredErrorMessages(MapPaintPreferenceTestIT.class));
     }
@@ -57,29 +50,21 @@ public class MapPaintPreferenceTestIT extends AbstractExtendedSourceEntryTestCas
      * @return list of map paint styles to test
      * @throws Exception if an error occurs
      */
-    @Parameters(name = "{0} - {1}")
     public static List<Object[]> data() throws Exception {
         ImageProvider.clearCache();
         return getTestParameters(new MapPaintPreference.MapPaintSourceEditor().loadAndGetAvailableSources());
     }
 
     /**
-     * Constructs a new {@code MapPaintPreferenceTestIT}
+     * Test that map paint style is valid.
      * @param displayName displayed name
      * @param url URL
      * @param source source entry to test
      */
-    public MapPaintPreferenceTestIT(String displayName, String url, ExtendedSourceEntry source) {
-        super(source);
-    }
-
-    /**
-     * Test that map paint style is valid.
-     * @throws Exception in case of error
-     */
-    @Test
-    public void testStyleValidity() throws Exception {
-        assumeFalse(isIgnoredSubstring(source.url));
+    @ParameterizedTest(name = "{0} - {1}")
+    @MethodSource("data")
+    void testStyleValidity(String displayName, String url, ExtendedSourceEntry source) {
+        assumeFalse(isIgnoredSubstring(source, source.url));
         StyleSource style = MapPaintStyles.addStyle(source);
         if (style instanceof MapCSSStyleSource) {
             // Force loading of all icons to detect missing ones
@@ -99,15 +84,20 @@ public class MapPaintPreferenceTestIT extends AbstractExtendedSourceEntryTestCas
             }
         }
 
+        List<String> ignoredErrors = new ArrayList<>();
         List<Throwable> errors = new ArrayList<>(style.getErrors());
-        errors.stream().map(Throwable::getMessage).filter(this::isIgnoredSubstring).forEach(ignoredErrors::add);
+        errors.stream().map(Throwable::getMessage).filter(s -> isIgnoredSubstring(source, s)).forEach(ignoredErrors::add);
         errors.removeIf(e -> ignoredErrors.contains(e.getMessage()));
 
         List<String> warnings = new ArrayList<>(style.getWarnings());
-        warnings.stream().filter(this::isIgnoredSubstring).forEach(ignoredErrors::add);
+        warnings.stream().filter(s -> isIgnoredSubstring(source, s)).forEach(ignoredErrors::add);
         warnings.removeAll(ignoredErrors);
 
-        assertTrue(errors.toString() + '\n' + warnings.toString(), errors.isEmpty() && warnings.isEmpty());
-        assumeTrue(ignoredErrors.toString(), ignoredErrors.isEmpty());
+        // #16567 - Shouldn't be necessary to print displayName if Ant worked properly
+        // See https://josm.openstreetmap.de/ticket/16567#comment:53
+        // See https://bz.apache.org/bugzilla/show_bug.cgi?id=64564
+        // See https://github.com/apache/ant/pull/121
+        assertTrue(errors.isEmpty() && warnings.isEmpty(), displayName + " => " + errors + '\n' + warnings);
+        assumeTrue(ignoredErrors.isEmpty(), ignoredErrors.toString());
     }
 }

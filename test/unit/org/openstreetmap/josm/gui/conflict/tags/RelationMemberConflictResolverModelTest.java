@@ -1,38 +1,30 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.conflict.tags;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-import org.junit.Rule;
-import org.junit.Test;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.Relation;
 import org.openstreetmap.josm.data.osm.RelationMember;
 import org.openstreetmap.josm.data.osm.Way;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests of {@link RelationMemberConflictResolverModel} class.
  */
-public class RelationMemberConflictResolverModelTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+// Only needed for OSM primitives
+@BasicPreferences
+class RelationMemberConflictResolverModelTest {
     List<Way> buildTestDataSet() {
         final DataSet ds = new DataSet();
         final Node n1 = new Node(new LatLon(1, 1));
@@ -57,7 +49,7 @@ public class RelationMemberConflictResolverModelTest {
     }
 
     @Test
-    public void testSameRoles() throws Exception {
+    void testSameRoles() throws Exception {
         final List<Way> ways = buildTestDataSet();
         final Relation r = new Relation();
         r.addMember(new RelationMember("foo", ways.get(0)));
@@ -75,7 +67,7 @@ public class RelationMemberConflictResolverModelTest {
     }
 
     @Test
-    public void testDifferentRoles() throws Exception {
+    void testDifferentRoles() throws Exception {
         final List<Way> ways = buildTestDataSet();
         final Relation r = new Relation();
         r.addMember(new RelationMember("foo", ways.get(0)));
@@ -88,7 +80,7 @@ public class RelationMemberConflictResolverModelTest {
     }
 
     @Test
-    public void testDifferentPresence() throws Exception {
+    void testDifferentPresence() throws Exception {
         final List<Way> ways = buildTestDataSet();
         final Relation r = new Relation();
         r.addMember(new RelationMember("foo", ways.get(0)));
@@ -100,7 +92,7 @@ public class RelationMemberConflictResolverModelTest {
     }
 
     @Test
-    public void testEveryMemberIsPresentTwice() throws Exception {
+    void testEveryMemberIsPresentTwice() throws Exception {
         final List<Way> ways = buildTestDataSet();
         final Relation r = new Relation();
         r.addMember(new RelationMember("foo", ways.get(0)));

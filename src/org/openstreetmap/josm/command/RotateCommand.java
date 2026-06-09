@@ -25,18 +25,20 @@ public class RotateCommand extends TransformNodesCommand {
     /**
      * angle of rotation starting click to pivot
      */
-    private final double startAngle;
+    private double startAngle;
 
     /**
      * computed rotation angle between starting click and current mouse pos
      */
     private double rotationAngle;
 
+    private double deltaAngle;
+
     /**
      * Creates a RotateCommand.
      * Assign the initial object set, compute pivot point and initial rotation angle.
      * @param objects objects to fetch nodes from
-     * @param currentEN cuurent eats/north
+     * @param currentEN current east/north
      */
     public RotateCommand(Collection<? extends OsmPrimitive> objects, EastNorth currentEN) {
         super(objects);
@@ -50,7 +52,7 @@ public class RotateCommand extends TransformNodesCommand {
 
     /**
      * Get angle between the horizontal axis and the line formed by the pivot and given point.
-     * @param currentEN cuurent eats/north
+     * @param currentEN current east/north
      * @return angle between the horizontal axis and the line formed by the pivot and given point
      **/
     protected final double getAngle(EastNorth currentEN) {
@@ -65,8 +67,19 @@ public class RotateCommand extends TransformNodesCommand {
     @Override
     public final void handleEvent(EastNorth currentEN) {
         double currentAngle = getAngle(currentEN);
-        rotationAngle = currentAngle - startAngle;
+        rotationAngle = currentAngle - startAngle + deltaAngle;
         transformNodes();
+    }
+
+    /**
+     * Handle a repeated rotation action where the mouse was moved to a different position
+     * see #24695
+     * @param startEN start cursor position of a repeated rotation
+     * @since 19566
+     */
+    public void handleUpdate(EastNorth startEN) {
+        deltaAngle = rotationAngle;
+        startAngle = getAngle(startEN);
     }
 
     /**
@@ -75,6 +88,14 @@ public class RotateCommand extends TransformNodesCommand {
      */
     protected void setRotationAngle(double rotationAngle) {
         this.rotationAngle = rotationAngle;
+    }
+
+    /**
+     * Returns the rotation angle.
+     * @return The rotation angle
+     */
+    public double getRotationAngle() {
+        return rotationAngle;
     }
 
     /**
@@ -103,7 +124,7 @@ public class RotateCommand extends TransformNodesCommand {
 
     @Override
     public int hashCode() {
-        return Objects.hash(super.hashCode(), pivot, startAngle, rotationAngle);
+        return Objects.hash(super.hashCode(), pivot, startAngle, rotationAngle, deltaAngle);
     }
 
     @Override
@@ -114,6 +135,7 @@ public class RotateCommand extends TransformNodesCommand {
         RotateCommand that = (RotateCommand) obj;
         return Double.compare(that.startAngle, startAngle) == 0 &&
                 Double.compare(that.rotationAngle, rotationAngle) == 0 &&
-                Objects.equals(pivot, that.pivot);
+                Objects.equals(pivot, that.pivot) &&
+                Objects.equals(deltaAngle, that.deltaAngle);
     }
 }

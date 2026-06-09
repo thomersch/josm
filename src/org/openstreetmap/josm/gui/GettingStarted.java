@@ -6,6 +6,10 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 import java.awt.BorderLayout;
 import java.awt.EventQueue;
 import java.awt.Graphics;
+import java.awt.Point;
+import java.awt.event.MouseMotionListener;
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseListener;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.regex.Matcher;
@@ -14,14 +18,18 @@ import java.util.regex.Pattern;
 import javax.swing.JComponent;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.HyperlinkEvent;
 import javax.swing.event.HyperlinkListener;
+import javax.swing.event.MouseInputListener;
 
+import org.openstreetmap.josm.actions.DownloadAction;
 import org.openstreetmap.josm.actions.DownloadPrimitiveAction;
 import org.openstreetmap.josm.actions.HistoryInfoAction;
 import org.openstreetmap.josm.data.Version;
+import org.openstreetmap.josm.gui.animation.AnimationExtension;
 import org.openstreetmap.josm.gui.animation.AnimationExtensionManager;
 import org.openstreetmap.josm.gui.datatransfer.OpenTransferHandler;
 import org.openstreetmap.josm.gui.dialogs.MenuItemSearchDialog;
@@ -46,7 +54,7 @@ import org.openstreetmap.josm.tools.WikiReader;
  * It downloads and displays the so called <em>message of the day</em>, which
  * contains news about recent major changes, warning in case of outdated versions, etc.
  */
-public final class GettingStarted extends JPanel implements ProxyPreferenceListener {
+public final class GettingStarted extends JPanel implements ProxyPreferenceListener, MouseInputListener {
 
     private final LinkGeneral lg;
     private String content = "";
@@ -56,10 +64,14 @@ public final class GettingStarted extends JPanel implements ProxyPreferenceListe
     private static final String STYLE = "<style type=\"text/css\">\n"
             + "body {font-family: sans-serif; font-weight: bold; }\n"
             + "h1 {text-align: center; }\n"
-            + "a {color: " + JosmEditorPane.getLinkColor("#316ed9") + "; }\n"
+            + "a {color: " + JosmEditorPane.getLinkColor() + "; }\n"
             + ".icon {font-size: 0; }\n"
             + "</style>\n";
 
+    /**
+     * A subclass of {@link JosmEditorPane} which replaces links with something clickable (uses {@link OpenBrowser})
+     * @since 623
+     */
     public static class LinkGeneral extends JosmEditorPane implements HyperlinkListener {
 
         /**
@@ -138,14 +150,21 @@ public final class GettingStarted extends JPanel implements ProxyPreferenceListe
         lg = new LinkGeneral("<html>" + STYLE + "<h1>" + "JOSM - " + tr("Java OpenStreetMap Editor")
                 + "</h1><h2 align=\"center\">" + tr("Downloading \"Message of the day\"") + "</h2></html>");
         // clear the build-in command ctrl+shift+O, ctrl+space, ctrl+H because it is used as shortcut in JOSM
+        lg.getInputMap(JComponent.WHEN_FOCUSED).put(DownloadAction.SHORTCUT.getKeyStroke(), "none");
         lg.getInputMap(JComponent.WHEN_FOCUSED).put(DownloadPrimitiveAction.SHORTCUT.getKeyStroke(), "none");
         lg.getInputMap(JComponent.WHEN_FOCUSED).put(MenuItemSearchDialog.Action.SHORTCUT.getKeyStroke(), "none");
         lg.getInputMap(JComponent.WHEN_FOCUSED).put(HistoryInfoAction.SHORTCUT.getKeyStroke(), "none");
-        lg.setTransferHandler(null);
+        // Don't use the text handler drag and drop behavior. See #13196/#20528.
+        lg.setDropTarget(null);
 
         JScrollPane scroller = new JScrollPane(lg);
         scroller.setViewportBorder(new EmptyBorder(10, 100, 10, 100));
         add(scroller, BorderLayout.CENTER);
+
+        scroller.addMouseMotionListener(this);
+        scroller.addMouseListener(this);
+        lg.addMouseMotionListener(this);
+        lg.addMouseListener(this);
 
         getMOTD();
 
@@ -154,21 +173,71 @@ public final class GettingStarted extends JPanel implements ProxyPreferenceListe
 
     @Override
     public void addNotify() {
-        timer.start();
+        if (AnimationExtensionManager.isExtensionEnabled()) {
+            timer.start();
+        }
         super.addNotify();
     }
 
     @Override
     public void removeNotify() {
-        timer.stop();
+        if (timer.isRunning()) {
+            timer.stop();
+        }
         super.removeNotify();
+    }
+
+    @Override
+    public void mouseMoved(MouseEvent e) {
+        final AnimationExtension extension = AnimationExtensionManager.getExtension();
+        if (extension instanceof MouseMotionListener) {
+            ((MouseMotionListener) extension).mouseMoved(e);
+        }
+    }
+
+    @Override
+    public void mouseDragged(MouseEvent e) {
+        // Ignored
+    }
+
+    @Override
+    public void mousePressed(MouseEvent e) {
+        final AnimationExtension extension = AnimationExtensionManager.getExtension();
+        if (extension instanceof MouseListener) {
+            ((MouseListener) extension).mousePressed(e);
+        }
+    }
+
+    @Override
+    public void mouseEntered(MouseEvent e) {
+        // Ignored
+    }
+
+    @Override
+    public void mouseExited(MouseEvent e) {
+        // Ignored
+    }
+
+    @Override
+    public void mouseReleased(MouseEvent e) {
+        final AnimationExtension extension = AnimationExtensionManager.getExtension();
+        if (extension instanceof MouseListener) {
+            ((MouseListener) extension).mouseReleased(e);
+        }
+    }
+
+    @Override
+    public void mouseClicked(MouseEvent e) {
+        // Ignored
     }
 
     @Override
     public void paint(Graphics g) {
         super.paint(g);
         if (isShowing()) {
-            AnimationExtensionManager.getExtension().adjustForSize(getWidth(), getHeight());
+            Point p = new Point(0, 0);
+            SwingUtilities.convertPointToScreen(p, this);
+            AnimationExtensionManager.getExtension().adjustForSize(getWidth(), getHeight(), p.x, p.y);
             AnimationExtensionManager.getExtension().animate();
             AnimationExtensionManager.getExtension().paint(g);
         }

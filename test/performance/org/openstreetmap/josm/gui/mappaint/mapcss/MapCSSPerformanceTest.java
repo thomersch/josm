@@ -1,7 +1,7 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.mappaint.mapcss;
 
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
@@ -9,9 +9,8 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Collection;
 
-import org.junit.BeforeClass;
-import org.junit.Test;
-import org.openstreetmap.josm.JOSMFixture;
+import org.junit.jupiter.api.Test;
+import org.openstreetmap.josm.PerformanceTestUtils;
 import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.visitor.paint.StyledMapRenderer;
@@ -19,16 +18,18 @@ import org.openstreetmap.josm.data.preferences.sources.SourceEntry;
 import org.openstreetmap.josm.data.preferences.sources.SourceType;
 import org.openstreetmap.josm.gui.NavigatableComponent;
 import org.openstreetmap.josm.gui.mappaint.MapRendererPerformanceTest;
-import org.openstreetmap.josm.io.Compression;
 import org.openstreetmap.josm.io.IllegalDataException;
-import org.openstreetmap.josm.io.OsmReader;
+import org.openstreetmap.josm.testutils.annotations.PerformanceTest;
+import org.openstreetmap.josm.testutils.annotations.Projection;
 
 /**
  * This performance test measures the time for a full run of MapPaintVisitor.visitAll()
  * against a test data set using a test style.
  *
  */
-public class MapCSSPerformanceTest {
+@PerformanceTest
+@Projection
+class MapCSSPerformanceTest {
 
     /* ------------------------ configuration section  ---------------------------- */
     /**
@@ -36,10 +37,6 @@ public class MapCSSPerformanceTest {
      */
     static final String STYLE_FILE = "resources/styles/standard/elemstyles.mapcss";
 
-    /**
-     * The data file to be rendered
-     */
-    static final String DATA_FILE = "nodist/data/neubrandenburg.osm.bz2";
     /* ------------------------ / configuration section  ---------------------------- */
 
     DataSet ds;
@@ -50,14 +47,6 @@ public class MapCSSPerformanceTest {
               fail("STYLE_FILE refers to '"+STYLE_FILE+"'. This is either not a file or doesn't exist.\n" +
                       "Please update configuration settings in the unit test file.");
           }
-    }
-
-    /**
-     * Setup test.
-     */
-    @BeforeClass
-    public static void createJOSMFixture() {
-        JOSMFixture.createPerformanceTestFixture().init(true);
     }
 
     long timed(Runnable callable) {
@@ -88,8 +77,8 @@ public class MapCSSPerformanceTest {
     }
 
     void loadData() throws IllegalDataException, IOException {
-        System.out.print("Loading data file '"+DATA_FILE+"' ...");
-        ds = OsmReader.parseDataSet(Compression.getUncompressedFileInputStream(new File(DATA_FILE)), null);
+        System.out.print("Loading data file '"+PerformanceTestUtils.DATA_FILE+"' ...");
+        ds = PerformanceTestUtils.getNeubrandenburgDataSet();
         System.out.println("DONE");
     }
 
@@ -115,7 +104,7 @@ public class MapCSSPerformanceTest {
             () -> visitor.render(ds, false, new Bounds(-90, -180, 90, 180))
         );
         System.out.println("DONE");
-        System.out.println("data file : "+DATA_FILE);
+        System.out.println("data file : "+PerformanceTestUtils.DATA_FILE);
         System.out.println("style file: "+STYLE_FILE);
         System.out.println("");
         System.out.println("Rendering took "+time+" ms.");

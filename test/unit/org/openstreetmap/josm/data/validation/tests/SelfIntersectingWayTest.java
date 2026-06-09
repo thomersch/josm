@@ -1,33 +1,28 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.validation.tests;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-import org.junit.Assert;
-import org.junit.BeforeClass;
-import org.junit.Test;
-import org.openstreetmap.josm.JOSMFixture;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmUtils;
 import org.openstreetmap.josm.data.osm.Way;
 
 /**
- * JUnit Test of Multipolygon validation test.
+ * JUnit Test of {@link SelfIntersectingWay} validation test.
  */
-public class SelfIntersectingWayTest {
-
-    /**
-     * Setup test.
-     * @throws Exception if test cannot be initialized
-     */
-    @BeforeClass
-    public static void setUp() throws Exception {
-        JOSMFixture.createUnitTestFixture().init();
-    }
+class SelfIntersectingWayTest {
 
     private static List<Node> createNodes() {
         List<Node> nodes = IntStream.range(0, 6).mapToObj(i -> new Node(i + 1)).collect(Collectors.toList());
@@ -44,7 +39,7 @@ public class SelfIntersectingWayTest {
      * Self-Intersection at inner node (not first / last).
      */
     @Test
-    public void testUnclosedWayNormal() {
+    void testUnclosedWayNormal() {
         List<Node> nodes = createNodes();
 
         Way w = (Way) OsmUtils.createPrimitive("way ");
@@ -58,74 +53,40 @@ public class SelfIntersectingWayTest {
         w.setNodes(wayNodes);
         SelfIntersectingWay test = new SelfIntersectingWay();
         test.visit(w);
-        Assert.assertEquals(1, test.getErrors().size());
-        Assert.assertTrue(test.getErrors().iterator().next().getHighlighted().contains(nodes.get(1)));
+        assertEquals(1, test.getErrors().size());
+        assertTrue(test.getErrors().iterator().next().getHighlighted().contains(nodes.get(1)));
+    }
+
+    static List<Arguments> testOkInnerNode() {
+        // The first two are duplicates
+        return Arrays.asList(
+                Arguments.of("testUnclosedWayFirst - First node is identical to an inner node (\"P\"-Shape)",
+                        new int[] {0, 1, 2, 0 /* problem */, 3, 4}),
+                Arguments.of("testUnclosedWayFirstRepeated - First node is identical to an inner node (\"P\"-Shape)",
+                        new int[] {0, 1, 2, 0 /* problem */, 3, 4}),
+                Arguments.of("testUnclosedWayLast - Last node is identical to an inner node (\"b\"-Shape)",
+                        new int[] {0, 1 /* problem */, 2, 3, 4, 1})
+        );
     }
 
     /**
-     * First node is identical to an inner node ("P"-Shape).
+     * The starting or ending nodes are also an inner node.
      * This is considered okay.
      */
-    @Test
-    public void testUnclosedWayFirst() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("testOkInnerNode")
+    void testUnclosedWayFirst(String description, int[] nodeIndex) {
         List<Node> nodes = createNodes();
 
         Way w = (Way) OsmUtils.createPrimitive("way ");
-        List<Node> wayNodes = new ArrayList<>();
-        wayNodes.add(nodes.get(0));
-        wayNodes.add(nodes.get(1));
-        wayNodes.add(nodes.get(2));
-        wayNodes.add(nodes.get(0)); // problem
-        wayNodes.add(nodes.get(3));
-        wayNodes.add(nodes.get(4));
+        List<Node> wayNodes = new ArrayList<>(nodeIndex.length);
+        for (int i : nodeIndex) {
+            wayNodes.add(nodes.get(i));
+        }
         w.setNodes(wayNodes);
         SelfIntersectingWay test = new SelfIntersectingWay();
         test.visit(w);
-        Assert.assertEquals(0, test.getErrors().size());
-    }
-
-    /**
-     * First node is identical to an inner node ("P"-Shape).
-     * This is considered okay.
-     */
-    @Test
-    public void testUnclosedWayFirstRepeated() {
-        List<Node> nodes = createNodes();
-
-        Way w = (Way) OsmUtils.createPrimitive("way ");
-        List<Node> wayNodes = new ArrayList<>();
-        wayNodes.add(nodes.get(0));
-        wayNodes.add(nodes.get(1));
-        wayNodes.add(nodes.get(2));
-        wayNodes.add(nodes.get(0));
-        wayNodes.add(nodes.get(3));
-        wayNodes.add(nodes.get(4));
-        w.setNodes(wayNodes);
-        SelfIntersectingWay test = new SelfIntersectingWay();
-        test.visit(w);
-        Assert.assertEquals(0, test.getErrors().size());
-    }
-
-    /**
-     * Last node is identical to an inner node ("b"-Shape).
-     * This is considered okay.
-     */
-    @Test
-    public void testUnclosedWayLast() {
-        List<Node> nodes = createNodes();
-
-        Way w = (Way) OsmUtils.createPrimitive("way ");
-        List<Node> wayNodes = new ArrayList<>();
-        wayNodes.add(nodes.get(0));
-        wayNodes.add(nodes.get(1)); // problem node
-        wayNodes.add(nodes.get(2));
-        wayNodes.add(nodes.get(3));
-        wayNodes.add(nodes.get(4));
-        wayNodes.add(nodes.get(1));
-        w.setNodes(wayNodes);
-        SelfIntersectingWay test = new SelfIntersectingWay();
-        test.visit(w);
-        Assert.assertEquals(0, test.getErrors().size());
+        assertEquals(0, test.getErrors().size());
     }
 
     /**
@@ -133,7 +94,7 @@ public class SelfIntersectingWayTest {
      * This is considered to be an error.
      */
     @Test
-    public void testClosedWay() {
+    void testClosedWay() {
         List<Node> nodes = createNodes();
 
         Way w = (Way) OsmUtils.createPrimitive("way ");
@@ -148,8 +109,8 @@ public class SelfIntersectingWayTest {
         w.setNodes(wayNodes);
         SelfIntersectingWay test = new SelfIntersectingWay();
         test.visit(w);
-        Assert.assertEquals(1, test.getErrors().size());
-        Assert.assertTrue(test.getErrors().iterator().next().getHighlighted().contains(nodes.get(0)));
+        assertEquals(1, test.getErrors().size());
+        assertTrue(test.getErrors().iterator().next().getHighlighted().contains(nodes.get(0)));
     }
 
     /**
@@ -157,7 +118,7 @@ public class SelfIntersectingWayTest {
      * This is considered to be an error.
      */
     @Test
-    public void testSpikeWithStartInClosedWay() {
+    void testSpikeWithStartInClosedWay() {
         List<Node> nodes = createNodes();
 
         Way w = (Way) OsmUtils.createPrimitive("way ");
@@ -171,8 +132,8 @@ public class SelfIntersectingWayTest {
         w.setNodes(wayNodes);
         SelfIntersectingWay test = new SelfIntersectingWay();
         test.visit(w);
-        Assert.assertEquals(1, test.getErrors().size());
-        Assert.assertTrue(test.getErrors().iterator().next().getHighlighted().contains(nodes.get(0)));
+        assertEquals(1, test.getErrors().size());
+        assertTrue(test.getErrors().iterator().next().getHighlighted().contains(nodes.get(0)));
     }
 
     /**
@@ -180,7 +141,7 @@ public class SelfIntersectingWayTest {
      * This is considered to be an error.
      */
     @Test
-    public void testSpikeWithEndInClosedWay() {
+    void testSpikeWithEndInClosedWay() {
         List<Node> nodes = createNodes();
 
         Way w = (Way) OsmUtils.createPrimitive("way ");
@@ -194,8 +155,8 @@ public class SelfIntersectingWayTest {
         w.setNodes(wayNodes);
         SelfIntersectingWay test = new SelfIntersectingWay();
         test.visit(w);
-        Assert.assertEquals(1, test.getErrors().size());
-        Assert.assertTrue(test.getErrors().iterator().next().getHighlighted().contains(nodes.get(0)));
+        assertEquals(1, test.getErrors().size());
+        assertTrue(test.getErrors().iterator().next().getHighlighted().contains(nodes.get(0)));
     }
 
     /**
@@ -203,7 +164,7 @@ public class SelfIntersectingWayTest {
      * This is considered to be an error.
      */
     @Test
-    public void testSpikeInClosedWay() {
+    void testSpikeInClosedWay() {
         List<Node> nodes = createNodes();
 
         Way w = (Way) OsmUtils.createPrimitive("way ");
@@ -217,8 +178,8 @@ public class SelfIntersectingWayTest {
         w.setNodes(wayNodes);
         SelfIntersectingWay test = new SelfIntersectingWay();
         test.visit(w);
-        Assert.assertEquals(1, test.getErrors().size());
-        Assert.assertTrue(test.getErrors().iterator().next().getHighlighted().contains(nodes.get(2)));
+        assertEquals(1, test.getErrors().size());
+        assertTrue(test.getErrors().iterator().next().getHighlighted().contains(nodes.get(2)));
     }
 
     /**
@@ -226,7 +187,7 @@ public class SelfIntersectingWayTest {
      * This is considered to be an error.
      */
     @Test
-    public void testClosedWayBarbell() {
+    void testClosedWayBarbell() {
         List<Node> nodes = createNodes();
 
         Way w = (Way) OsmUtils.createPrimitive("way ");
@@ -242,8 +203,8 @@ public class SelfIntersectingWayTest {
         w.setNodes(wayNodes);
         SelfIntersectingWay test = new SelfIntersectingWay();
         test.visit(w);
-        Assert.assertEquals(1, test.getErrors().size());
-        Assert.assertTrue(test.getErrors().iterator().next().getHighlighted().contains(nodes.get(3)));
+        assertEquals(1, test.getErrors().size());
+        assertTrue(test.getErrors().iterator().next().getHighlighted().contains(nodes.get(3)));
     }
 
 }

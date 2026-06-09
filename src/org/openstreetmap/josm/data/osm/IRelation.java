@@ -12,7 +12,7 @@ import org.openstreetmap.josm.tools.Utils;
  * @param <M> Type of OSM relation member
  * @since 4098
  */
-public interface IRelation<M extends IRelationMember<?>> extends IPrimitive {
+public interface IRelation<M extends IRelationMember<? extends IPrimitive>> extends IPrimitive {
 
     /**
      * Returns the number of members.
@@ -115,6 +115,11 @@ public interface IRelation<M extends IRelationMember<?>> extends IPrimitive {
         return Utils.transform(getMembers(), IRelationMember::getMember);
     }
 
+    @Override
+    default List<? extends IPrimitive> getChildren() {
+        return getMemberPrimitivesList();
+    }
+
     /**
      * Replies a collection with the incomplete children this relation refers to.
      *
@@ -123,8 +128,8 @@ public interface IRelation<M extends IRelationMember<?>> extends IPrimitive {
      */
     default Collection<? extends IPrimitive> getIncompleteMembers() {
         return getMembers().stream()
-                .filter(rm -> rm.getMember().isIncomplete())
-                .map(rm -> rm.getMember())
+                .map(IRelationMember::getMember)
+                .filter(IPrimitive::isIncomplete)
                 .collect(Collectors.toSet());
     }
 
@@ -137,5 +142,14 @@ public interface IRelation<M extends IRelationMember<?>> extends IPrimitive {
     default List<? extends IPrimitive> findRelationMembers(String role) {
         return getMembers().stream().filter(rmv -> role.equals(rmv.getRole()))
                 .map(IRelationMember::getMember).collect(Collectors.toList());
+    }
+
+    /**
+     * Check if this relation is useful
+     * @return {@code true} if this relation is useful
+     * @since 18413
+     */
+    default boolean isUseful() {
+        return !this.isEmpty() && this.hasKeys();
     }
 }

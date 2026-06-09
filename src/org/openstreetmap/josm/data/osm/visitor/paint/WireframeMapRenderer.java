@@ -69,6 +69,8 @@ public class WireframeMapRenderer extends AbstractMapRenderer implements Primiti
     protected boolean fillTaggedNode;
     /** Preference: should multiply connected nodes be filled */
     protected boolean fillConnectionNode;
+    /** Preference: should relation ways be shown with outlines */
+    protected boolean useRelatedWayStroke;
     /** Preference: size of selected nodes */
     protected int selectedNodeSize;
     /** Preference: size of unselected nodes */
@@ -139,6 +141,8 @@ public class WireframeMapRenderer extends AbstractMapRenderer implements Primiti
         fillUnselectedNode = settings.isFillUnselectedNode();
         fillConnectionNode = settings.isFillConnectionNode();
         fillTaggedNode = settings.isFillTaggedNode();
+        useRelatedWayStroke =
+                Config.getPref().getBoolean("mappaint.wireframe.show-relation-outlines", true);
 
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
                 Config.getPref().getBoolean("mappaint.wireframe.use-antialiasing", false) ?
@@ -149,6 +153,10 @@ public class WireframeMapRenderer extends AbstractMapRenderer implements Primiti
     public void render(OsmData<?, ?, ?, ?> data, boolean virtual, Bounds bounds) {
         BBox bbox = bounds.toBBox();
         Rectangle clip = g.getClipBounds();
+        // handle possible null value, see #24734
+        if (clip == null)
+            return;
+
         clip.grow(50, 50);
         viewClip = mapState.getViewArea(clip);
         getSettings(virtual);
@@ -173,6 +181,7 @@ public class WireframeMapRenderer extends AbstractMapRenderer implements Primiti
                     way.accept(this);
                 }
             }
+            displaySegments();
         }
         displaySegments();
 
@@ -347,18 +356,19 @@ public class WireframeMapRenderer extends AbstractMapRenderer implements Primiti
         }
         g.setColor(col);
 
+        Bounds viewArea = mapState.getViewArea().getLatLonBoundsBox();
         for (IRelationMember<?> m : r.getMembers()) {
             if (m.getMember().isIncomplete() || !m.getMember().isDrawable()) {
                 continue;
             }
 
-            if (m.isNode()) {
+            if (m.isNode() && viewArea.contains((INode) m.getMember())) {
                 MapViewPoint p = mapState.getPointFor((INode) m.getMember());
                 if (p.isInView()) {
                     g.draw(new Ellipse2D.Double(p.getInViewX()-4, p.getInViewY()-4, 9, 9));
                 }
 
-            } else if (m.isWay()) {
+            } else if (m.isWay() && viewArea.intersects(m.getMember().getBBox())) {
                 GeneralPath path = new GeneralPath();
 
                 boolean first = true;
@@ -375,7 +385,11 @@ public class WireframeMapRenderer extends AbstractMapRenderer implements Primiti
                     }
                 }
 
-                g.draw(relatedWayStroke.createStrokedShape(path));
+                if (useRelatedWayStroke) {
+                    g.draw(relatedWayStroke.createStrokedShape(path));
+                } else {
+                    g.draw(path);
+                }
             }
         }
     }

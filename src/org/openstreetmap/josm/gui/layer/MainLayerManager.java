@@ -6,6 +6,7 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 import java.awt.GraphicsEnvironment;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -26,7 +27,7 @@ import org.openstreetmap.josm.tools.Logging;
  * <p>
  * The active layer is the layer the user is currently working on.
  * <p>
- * The edit layer is an data layer that we currently work with.
+ * The edit layer is a data layer that we currently work with.
  * @author Michael Zangl
  * @since 10279
  */
@@ -168,19 +169,49 @@ public class MainLayerManager extends LayerManager {
     private final List<LayerAvailabilityListener> layerAvailabilityListeners = new CopyOnWriteArrayList<>();
 
     /**
-     * Adds a active/edit layer change listener
+     * Adds an active/edit layer change listener
      *
      * @param listener the listener.
      */
     public synchronized void addActiveLayerChangeListener(ActiveLayerChangeListener listener) {
-        if (activeLayerChangeListeners.contains(listener)) {
-            throw new IllegalArgumentException("Attempted to add listener that was already in list: " + listener);
+        for (ActiveLayerChangeListener activeLayerChangeListener : activeLayerChangeListeners) {
+            if (activeLayerChangeListener == listener) {
+                Logging.error("");
+                Logging.error("Attempted to add listener that was already in list: " + listener);
+                showStackTrace(Thread.currentThread().getStackTrace());
+                return;
+            }
         }
         activeLayerChangeListeners.add(listener);
     }
 
     /**
-     * Adds a active/edit layer change listener. Fire a fake active-layer-changed-event right after adding
+     * Adds multiple active/edit layer change listeners. Either all listeners are added or none are added.
+     *
+     * @param listeners the listeners.
+     * @return {@code false} if the listener list did not change
+     * @since 18691
+     */
+    public synchronized boolean addActiveLayerChangeListeners(Collection<? extends ActiveLayerChangeListener> listeners) {
+        for (ActiveLayerChangeListener activeLayerChangeListener : activeLayerChangeListeners) {
+            if (listeners.contains(activeLayerChangeListener)) {
+                Logging.error("");
+                Logging.error("Attempted to add listener that was already in list: " + listeners);
+                showStackTrace(Thread.currentThread().getStackTrace());
+                return false;
+            }
+        }
+        return activeLayerChangeListeners.addAll(listeners);
+    }
+
+    private static void showStackTrace(StackTraceElement[] stackTrace) {
+        for (StackTraceElement st : stackTrace) {
+            Logging.error("\tat " + st);
+        }
+    }
+
+    /**
+     * Adds an active/edit layer change listener. Fire a fake active-layer-changed-event right after adding
      * the listener. The previous layers will be null. The listener is notified in the current thread.
      * @param listener the listener.
      */
@@ -194,10 +225,20 @@ public class MainLayerManager extends LayerManager {
      * @param listener the listener.
      */
     public synchronized void removeActiveLayerChangeListener(ActiveLayerChangeListener listener) {
-        if (!activeLayerChangeListeners.contains(listener)) {
-            throw new IllegalArgumentException("Attempted to remove listener that was not in list: " + listener);
+        int old = -1;
+        for (int i = 0; i < activeLayerChangeListeners.size(); i++) {
+            if (activeLayerChangeListeners.get(i) == listener) {
+                old = i;
+                break;
+            }
         }
-        activeLayerChangeListeners.remove(listener);
+        if (old < 0) {
+            Logging.error("");
+            Logging.error("Attempted to remove listener that was not in list: " + listener);
+            showStackTrace(Thread.currentThread().getStackTrace());
+            return;
+        }
+        activeLayerChangeListeners.remove(old);
     }
 
     /**
@@ -206,9 +247,7 @@ public class MainLayerManager extends LayerManager {
      * @since 10508
      */
     public synchronized void addLayerAvailabilityListener(LayerAvailabilityListener listener) {
-        if (!layerAvailabilityListeners.add(listener)) {
-            throw new IllegalArgumentException("Attempted to add listener that was already in list: " + listener);
-        }
+        layerAvailabilityListeners.add(listener);
     }
 
     /**
@@ -268,7 +307,11 @@ public class MainLayerManager extends LayerManager {
         GuiHelper.assertCallFromEdt();
         if (event.getPreviousActiveLayer() != activeLayer || event.getPreviousDataLayer() != osmDataLayer) {
             for (ActiveLayerChangeListener l : activeLayerChangeListeners) {
-                l.activeOrEditLayerChanged(event);
+                try {
+                    l.activeOrEditLayerChanged(event);
+                } catch (RuntimeException e) {
+                    Logging.logWithStackTrace(Logging.LEVEL_ERROR, "Error in layer change listener", e);
+                }
             }
         }
     }
@@ -315,30 +358,52 @@ public class MainLayerManager extends LayerManager {
     }
 
     /**
-     * Determines the next active data layer according to the following
-     * rules:
-     * <ul>
-     *   <li>if there is at least one {@link OsmDataLayer} the first one
-     *     becomes active</li>
-     *   <li>otherwise, the top most layer of any type becomes active</li>
-     * </ul>
+     * Determines the next active data layer.
+     * <p>
+     * The layer becomes active, which has the next highest index (closer to bottom) relative to {@code except} parameter
+     * in the following order:
+     * <ol>
+     *     <li>{@link OsmDataLayer} and visible, or if there is none</li>
+     *     <li>{@link OsmDataLayer} and hidden, or if there is none</li>
+     *     <li>any type</li>
+     * </ol>
      *
      * @param except A layer to ignore.
      * @return the next active data layer
      */
     private Layer suggestNextActiveLayer(Layer except) {
         List<Layer> layersList = new ArrayList<>(getLayers());
-        layersList.remove(except);
-        // First look for data layer
-        for (Layer layer : layersList) {
+
+        // construct a new list with decreasing priority
+        int indexOfExcept = layersList.indexOf(except);
+        List<Layer> remainingLayers = new ArrayList<>(layersList.subList(indexOfExcept, layersList.size()));
+        List<Layer> previousLayers = new ArrayList<>(layersList.subList(0, indexOfExcept));
+        Collections.reverse(previousLayers);
+        remainingLayers.addAll(previousLayers);
+        remainingLayers.remove(except);
+
+        // First look for visible data layer (and store first data layer for later)
+        Layer osmlayer = null;
+        for (Layer layer : remainingLayers) {
             if (layer instanceof OsmDataLayer) {
-                return layer;
+                if (layer.isVisible()) {
+                    return layer;
+                } else if (osmlayer == null) {
+                    osmlayer = layer;
+                }
             }
         }
 
+        // Then any data layer
+        if (osmlayer != null)
+            return osmlayer;
+
         // Then any layer
-        if (!layersList.isEmpty())
-            return layersList.get(0);
+        for (Layer layer : layersList) {
+            if (layer != except) {
+                return layer;
+            }
+        }
 
         // and then give up
         return null;
@@ -555,7 +620,7 @@ public class MainLayerManager extends LayerManager {
             if (layer instanceof GpxLayer) {
                 result.add(((GpxLayer) layer).data);
             } else if (layer instanceof GeoImageLayer) {
-                result.add(((GeoImageLayer) layer).getFauxGpxLayer().data);
+                result.add(((GeoImageLayer) layer).getFauxGpxData());
             }
         }
         return result;

@@ -10,8 +10,10 @@ import java.io.Writer;
 import java.net.Socket;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Collection;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -20,19 +22,24 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.StringTokenizer;
 import java.util.TreeMap;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
-import javax.json.Json;
+import jakarta.json.Json;
 
 import org.openstreetmap.josm.data.Version;
+import org.openstreetmap.josm.data.preferences.JosmUrls;
 import org.openstreetmap.josm.gui.help.HelpUtil;
+import org.openstreetmap.josm.io.OsmApi;
 import org.openstreetmap.josm.io.remotecontrol.handler.AddNodeHandler;
 import org.openstreetmap.josm.io.remotecontrol.handler.AddWayHandler;
+import org.openstreetmap.josm.io.remotecontrol.handler.AuthorizationHandler;
 import org.openstreetmap.josm.io.remotecontrol.handler.FeaturesHandler;
 import org.openstreetmap.josm.io.remotecontrol.handler.ImageryHandler;
 import org.openstreetmap.josm.io.remotecontrol.handler.ImportHandler;
+import org.openstreetmap.josm.io.remotecontrol.handler.ExportHandler;
 import org.openstreetmap.josm.io.remotecontrol.handler.LoadAndZoomHandler;
 import org.openstreetmap.josm.io.remotecontrol.handler.LoadDataHandler;
 import org.openstreetmap.josm.io.remotecontrol.handler.LoadObjectHandler;
@@ -42,6 +49,7 @@ import org.openstreetmap.josm.io.remotecontrol.handler.RequestHandler;
 import org.openstreetmap.josm.io.remotecontrol.handler.RequestHandler.RequestHandlerBadRequestException;
 import org.openstreetmap.josm.io.remotecontrol.handler.RequestHandler.RequestHandlerErrorException;
 import org.openstreetmap.josm.io.remotecontrol.handler.RequestHandler.RequestHandlerForbiddenException;
+import org.openstreetmap.josm.io.remotecontrol.handler.RequestHandler.RequestHandlerOsmApiException;
 import org.openstreetmap.josm.io.remotecontrol.handler.VersionHandler;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.Utils;
@@ -51,6 +59,8 @@ import org.openstreetmap.josm.tools.Utils;
  */
 public class RequestProcessor extends Thread {
 
+    /** This is purely used to ensure that remote control commands are executed in the order in which they are received */
+    private static final ReentrantLock ORDER_LOCK = new ReentrantLock(true);
     private static final Charset RESPONSE_CHARSET = StandardCharsets.UTF_8;
     private static final String RESPONSE_TEMPLATE = "<!DOCTYPE html><html><head><meta charset=\""
             + RESPONSE_CHARSET.name()
@@ -66,13 +76,18 @@ public class RequestProcessor extends Thread {
      * interface extensions. Change major number in case of incompatible
      * changes.
      */
-    public static final String PROTOCOLVERSION = Json.createObjectBuilder()
-            .add("protocolversion", Json.createObjectBuilder()
-                    .add("major", RemoteControl.protocolMajorVersion)
-                    .add("minor", RemoteControl.protocolMinorVersion))
-            .add("application", JOSM_REMOTE_CONTROL)
-            .add("version", Version.getInstance().getVersion())
-            .build().toString();
+    public static String getProtocolVersion() {
+        String osmServerUrl = OsmApi.getOsmApi().getServerUrl();
+        String defaultOsmApiUrl = JosmUrls.getInstance().getDefaultOsmApiUrl();
+        return Json.createObjectBuilder()
+                .add("protocolversion", Json.createObjectBuilder()
+                        .add("major", RemoteControl.protocolMajorVersion)
+                        .add("minor", RemoteControl.protocolMinorVersion))
+                .add("application", JOSM_REMOTE_CONTROL)
+                .add("version", Version.getInstance().getVersion())
+                .add("osm_server", osmServerUrl.equals(defaultOsmApiUrl) ? "default" : "custom")
+                .build().toString();
+    }
 
     /** The socket this processor listens on */
     private final Socket request;
@@ -160,7 +175,9 @@ public class RequestProcessor extends Thread {
             addRequestHandlerClass(LoadObjectHandler.command, LoadObjectHandler.class, true);
             addRequestHandlerClass(LoadDataHandler.command, LoadDataHandler.class, true);
             addRequestHandlerClass(ImportHandler.command, ImportHandler.class, true);
+            addRequestHandlerClass(ExportHandler.command, ExportHandler.class, true);
             addRequestHandlerClass(OpenFileHandler.command, OpenFileHandler.class, true);
+            PermissionPrefWithDefault.addPermissionPref(PermissionPrefWithDefault.ALLOW_WEB_RESOURCES);
             addRequestHandlerClass(ImageryHandler.command, ImageryHandler.class, true);
             PermissionPrefWithDefault.addPermissionPref(PermissionPrefWithDefault.CHANGE_SELECTION);
             PermissionPrefWithDefault.addPermissionPref(PermissionPrefWithDefault.CHANGE_VIEWPORT);
@@ -169,6 +186,7 @@ public class RequestProcessor extends Thread {
             addRequestHandlerClass(VersionHandler.command, VersionHandler.class, true);
             addRequestHandlerClass(FeaturesHandler.command, FeaturesHandler.class, true);
             addRequestHandlerClass(OpenApiHandler.command, OpenApiHandler.class, true);
+            addRequestHandlerClass(AuthorizationHandler.command, AuthorizationHandler.class, true);
         }
     }
 
@@ -177,26 +195,45 @@ public class RequestProcessor extends Thread {
      */
     @Override
     public void run() {
-        Writer out = null; // NOPMD
-        try { // NOPMD
-            out = new OutputStreamWriter(new BufferedOutputStream(request.getOutputStream()), RESPONSE_CHARSET);
-            BufferedReader in = new BufferedReader(new InputStreamReader(request.getInputStream(), StandardCharsets.US_ASCII)); // NOPMD
+        // The locks ensure that we process the instructions in the order in which they came.
+        // This is mostly important when the caller is attempting to create a new layer and add multiple download
+        // instructions for that layer. See #23821 for additional details.
+        ORDER_LOCK.lock();
+        try (request;
+             Writer out = new OutputStreamWriter(new BufferedOutputStream(request.getOutputStream()), RESPONSE_CHARSET);
+            BufferedReader in = new BufferedReader(new InputStreamReader(request.getInputStream(), StandardCharsets.US_ASCII))) {
+            realRun(in, out, request);
+        } catch (IOException ioe) {
+            Logging.debug(Logging.getErrorMessage(ioe));
+        } finally {
+            ORDER_LOCK.unlock();
+        }
+    }
 
+    /**
+     * Perform the actual commands
+     * @param in The reader for incoming data
+     * @param out The writer for outgoing data
+     * @param request The actual request
+     * @throws IOException Usually occurs if one of the {@link Writer} methods has problems.
+     */
+    private static void realRun(BufferedReader in, Writer out, Socket request) throws IOException {
+        try {
             String get = in.readLine();
             if (get == null) {
-                sendError(out);
+                sendInternalError(out, null);
                 return;
             }
             Logging.info("RemoteControl received: " + get);
 
             StringTokenizer st = new StringTokenizer(get);
             if (!st.hasMoreTokens()) {
-                sendError(out);
+                sendInternalError(out, null);
                 return;
             }
             String method = st.nextToken();
             if (!st.hasMoreTokens()) {
-                sendError(out);
+                sendInternalError(out, null);
                 return;
             }
             String url = st.nextToken();
@@ -206,117 +243,147 @@ public class RequestProcessor extends Thread {
                 return;
             }
 
-            int questionPos = url.indexOf('?');
+            final int questionPos = url.indexOf('?');
 
-            String command = questionPos < 0 ? url : url.substring(0, questionPos);
+            final String command = questionPos < 0 ? url : url.substring(0, questionPos);
 
-            Map<String, String> headers = new HashMap<>();
-            int k = 0;
-            int maxHeaders = 20;
-            while (k < maxHeaders) {
-                get = in.readLine();
-                if (get == null) break;
-                k++;
-                String[] h = get.split(": ", 2);
-                if (h.length == 2) {
-                    headers.put(h[0], h[1]);
-                } else break;
-            }
-
-            // Who sent the request: trying our best to detect
-            // not from localhost => sender = IP
-            // from localhost: sender = referer header, if exists
-            String sender = null;
-
-            if (!request.getInetAddress().isLoopbackAddress()) {
-                sender = request.getInetAddress().getHostAddress();
-            } else {
-                String ref = headers.get("Referer");
-                Pattern r = Pattern.compile("(https?://)?([^/]*)");
-                if (ref != null) {
-                    Matcher m = r.matcher(ref);
-                    if (m.find()) {
-                        sender = m.group(2);
-                    }
-                }
-                if (sender == null) {
-                    sender = "localhost";
-                }
-            }
-
-            // find a handler for this command
-            Class<? extends RequestHandler> handlerClass = handlers.get(command);
-            if (handlerClass == null) {
-                String usage = getUsageAsHtml();
-                String websiteDoc = HelpUtil.getWikiBaseHelpUrl() +"/Help/Preferences/RemoteControl";
-                String help = "No command specified! The following commands are available:<ul>" + usage
-                        + "</ul>" + "See <a href=\""+websiteDoc+"\">"+websiteDoc+"</a> for complete documentation.";
-                sendHeader(out, "400 Bad Request", "text/html", true);
-                out.write(String.format(
-                        RESPONSE_TEMPLATE,
-                        "<title>Bad Request</title>",
-                        "<h1>HTTP Error 400: Bad Request</h1>" +
-                        "<p>" + help + "</p>"));
-                out.flush();
-            } else {
-                // create handler object
-                RequestHandler handler = handlerClass.getConstructor().newInstance();
-                try {
-                    handler.setCommand(command);
-                    handler.setUrl(url);
-                    handler.setSender(sender);
-                    handler.handle();
-                    sendHeader(out, "200 OK", handler.getContentType(), false);
-                    out.write("Content-length: " + handler.getContent().length()
-                            + "\r\n");
-                    out.write("\r\n");
-                    out.write(handler.getContent());
-                    out.flush();
-                } catch (RequestHandlerErrorException ex) {
-                    Logging.debug(ex);
-                    sendError(out);
-                } catch (RequestHandlerBadRequestException ex) {
-                    Logging.debug(ex);
-                    sendBadRequest(out, ex.getMessage());
-                } catch (RequestHandlerForbiddenException ex) {
-                    Logging.debug(ex);
-                    sendForbidden(out, ex.getMessage());
-                }
-            }
-        } catch (IOException ioe) {
-            Logging.debug(Logging.getErrorMessage(ioe));
+            final Map<String, String> headers = parseHeaders(in);
+            final String sender = parseSender(headers, request);
+            callHandler(url, command, out, sender);
         } catch (ReflectiveOperationException e) {
             Logging.error(e);
             try {
-                sendError(out);
+                sendInternalError(out, e.getMessage());
             } catch (IOException e1) {
                 Logging.warn(e1);
-            }
-        } finally {
-            try {
-                request.close();
-            } catch (IOException e) {
-                Logging.debug(Logging.getErrorMessage(e));
             }
         }
     }
 
     /**
-     * Sends a 500 error: server error
+     * Parse the headers from the request
+     * @param in The request reader
+     * @return The map of headers
+     * @throws IOException See {@link BufferedReader#readLine()}
+     */
+    private static Map<String, String> parseHeaders(BufferedReader in) throws IOException {
+        Map<String, String> headers = new HashMap<>();
+        int k = 0;
+        int maxHeaders = 20;
+        int lastSize = -1;
+        while (k < maxHeaders && lastSize != headers.size()) {
+            lastSize = headers.size();
+            String get = in.readLine();
+            if (get != null) {
+                k++;
+                String[] h = get.split(": ", 2);
+                if (h.length == 2) {
+                    headers.put(h[0], h[1]);
+                }
+            }
+        }
+        return headers;
+    }
+
+    /**
+     * Attempt to figure out who sent the request
+     * @param headers The headers (we currently look for {@code Referer})
+     * @param request The request to look at
+     * @return The sender (or {@code "localhost"} if none could be found)
+     */
+    private static String parseSender(Map<String, String> headers, Socket request) {
+        // Who sent the request: trying our best to detect
+        // not from localhost => sender = IP
+        // from localhost: sender = referer header, if exists
+        if (!request.getInetAddress().isLoopbackAddress()) {
+            return request.getInetAddress().getHostAddress();
+        }
+        String ref = headers.get("Referer");
+        Pattern r = Pattern.compile("(https?://)?([^/]*)");
+        if (ref != null) {
+            Matcher m = r.matcher(ref);
+            if (m.find()) {
+                return m.group(2);
+            }
+        }
+        return "localhost";
+    }
+
+    /**
+     * Call the handler for the command
+     * @param url The request URL
+     * @param command The command we are using
+     * @param out The writer to use for indicating success or failure
+     * @param sender The sender of the request
+     * @throws ReflectiveOperationException If the handler class has an issue
+     * @throws IOException If one of the {@link Writer} methods has issues
+     */
+    private static void callHandler(String url, String command, Writer out, String sender) throws ReflectiveOperationException, IOException {
+        // find a handler for this command
+        Class<? extends RequestHandler> handlerClass = handlers.get(command);
+        if (handlerClass == null) {
+            String usage = getUsageAsHtml();
+            String websiteDoc = HelpUtil.getWikiBaseHelpUrl() +"/Help/Preferences/RemoteControl";
+            String help = "No command specified! The following commands are available:<ul>" + usage
+                    + "</ul>" + "See <a href=\""+websiteDoc+"\">"+websiteDoc+"</a> for complete documentation.";
+            sendErrorHtml(out, 400, "Bad Request", help);
+        } else {
+            // create handler object
+            RequestHandler handler = handlerClass.getConstructor().newInstance();
+            try {
+                handler.setCommand(command);
+                handler.setUrl(url);
+                handler.setSender(sender);
+                handler.handle();
+                sendHeader(out, "200 OK", handler.getContentType(), false);
+                out.write("Content-length: " + handler.getContent().getBytes().length
+                        + "\r\n");
+                out.write("\r\n");
+                out.write(handler.getContent());
+                out.flush();
+            } catch (RequestHandlerOsmApiException ex) {
+                Logging.debug(ex);
+                sendBadGateway(out, ex.getMessage());
+            } catch (RequestHandlerErrorException ex) {
+                Logging.debug(ex);
+                sendInternalError(out, ex.getMessage());
+            } catch (RequestHandlerBadRequestException ex) {
+                Logging.debug(ex);
+                sendBadRequest(out, ex.getMessage());
+            } catch (RequestHandlerForbiddenException ex) {
+                Logging.debug(ex);
+                sendForbidden(out, ex.getMessage());
+            }
+        }
+    }
+
+    private static void sendError(Writer out, int errorCode, String errorName, String help) throws IOException {
+        sendErrorHtml(out, errorCode, errorName, help == null ? "" : "<p>"+Utils.escapeReservedCharactersHTML(help) + "</p>");
+    }
+
+    private static void sendErrorHtml(Writer out, int errorCode, String errorName, String helpHtml) throws IOException {
+        sendHeader(out, errorCode + " " + errorName, "text/html", true);
+        out.write(String.format(
+                RESPONSE_TEMPLATE,
+                "<title>" + errorName + "</title>",
+                "<h1>HTTP Error " + errorCode + ": " + errorName + "</h1>" +
+                helpHtml
+        ));
+        out.flush();
+    }
+
+    /**
+     * Sends a 500 error: internal server error
      *
      * @param out
      *            The writer where the error is written
+     * @param help
+     *            Optional HTML help content to display, can be null
      * @throws IOException
      *             If the error can not be written
      */
-    private static void sendError(Writer out) throws IOException {
-        sendHeader(out, "500 Internal Server Error", "text/html", true);
-        out.write(String.format(
-                RESPONSE_TEMPLATE,
-                "<title>Internal Error</title>",
-                "<h1>HTTP Error 500: Internal Server Error</h1>"
-        ));
-        out.flush();
+    private static void sendInternalError(Writer out, String help) throws IOException {
+        sendError(out, 500, "Internal Server Error", help);
     }
 
     /**
@@ -328,13 +395,21 @@ public class RequestProcessor extends Thread {
      *             If the error can not be written
      */
     private static void sendNotImplemented(Writer out) throws IOException {
-        sendHeader(out, "501 Not Implemented", "text/html", true);
-        out.write(String.format(
-                RESPONSE_TEMPLATE,
-                "<title>Not Implemented</title>",
-                "<h1>HTTP Error 501: Not Implemented</h1>"
-        ));
-        out.flush();
+        sendError(out, 501, "Not Implemented", null);
+    }
+
+    /**
+     * Sends a 502 error: bad gateway
+     *
+     * @param out
+     *            The writer where the error is written
+     * @param help
+     *            Optional HTML help content to display, can be null
+     * @throws IOException
+     *             If the error can not be written
+     */
+    private static void sendBadGateway(Writer out, String help) throws IOException {
+        sendError(out, 502, "Bad Gateway", help);
     }
 
     /**
@@ -348,14 +423,7 @@ public class RequestProcessor extends Thread {
      *             If the error can not be written
      */
     private static void sendForbidden(Writer out, String help) throws IOException {
-        sendHeader(out, "403 Forbidden", "text/html", true);
-        out.write(String.format(
-                RESPONSE_TEMPLATE,
-                "<title>Forbidden</title>",
-                "<h1>HTTP Error 403: Forbidden</h1>" +
-                (help == null ? "" : "<p>"+Utils.escapeReservedCharactersHTML(help) + "</p>")
-        ));
-        out.flush();
+        sendError(out, 403, "Forbidden", help);
     }
 
     /**
@@ -366,14 +434,7 @@ public class RequestProcessor extends Thread {
      * @throws IOException If the error can not be written
      */
     private static void sendBadRequest(Writer out, String help) throws IOException {
-        sendHeader(out, "400 Bad Request", "text/html", true);
-        out.write(String.format(
-                RESPONSE_TEMPLATE,
-                "<title>Bad Request</title>",
-                "<h1>HTTP Error 400: Bad Request</h1>" +
-                (help == null ? "" : ("<p>" + Utils.escapeReservedCharactersHTML(help) + "</p>"))
-        ));
-        out.flush();
+        sendError(out, 400, "Bad Request", help);
     }
 
     /**
@@ -393,7 +454,7 @@ public class RequestProcessor extends Thread {
     private static void sendHeader(Writer out, String status, String contentType,
             boolean endHeaders) throws IOException {
         out.write("HTTP/1.1 " + status + "\r\n");
-        out.write("Date: " + new Date() + "\r\n");
+        out.write("Date: " + DateTimeFormatter.RFC_1123_DATE_TIME.format(ZonedDateTime.now(ZoneOffset.UTC)) + "\r\n");
         out.write("Server: " + JOSM_REMOTE_CONTROL + "\r\n");
         out.write("Content-type: " + contentType + "; charset=" + RESPONSE_CHARSET.name().toLowerCase(Locale.ENGLISH) + "\r\n");
         out.write("Access-Control-Allow-Origin: *\r\n");
@@ -451,7 +512,7 @@ public class RequestProcessor extends Thread {
             String[] examples = sample.getUsageExamples(handler.getKey().substring(1));
             usage.append("<li>")
                  .append(handler.getKey());
-            if (sample.getUsage() != null && !sample.getUsage().isEmpty()) {
+            if (!Utils.isEmpty(sample.getUsage())) {
                 usage.append(" &mdash; <i>").append(sample.getUsage()).append("</i>");
             }
             if (mandatory != null && mandatory.length > 0) {

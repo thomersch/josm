@@ -1,32 +1,23 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.preferences.server;
 
-import static org.junit.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.gui.preferences.PreferencesTestUtils;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
 /**
  * Unit tests of {@link ProxyPreference} class.
  */
-public class ProxyPreferenceTest {
-
-    /**
-     * Setup tests
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences();
-
+@BasicPreferences
+class ProxyPreferenceTest {
     /**
      * Unit test of {@link ProxyPreference#ProxyPreference}.
      */
     @Test
-    public void testProxyPreference() {
+    void testProxyPreference() {
         assertNotNull(new ProxyPreference.Factory().createPreferenceSetting());
     }
 
@@ -34,7 +25,7 @@ public class ProxyPreferenceTest {
      * Unit test of {@link ProxyPreference#addGui}.
      */
     @Test
-    public void testAddGui() {
-        PreferencesTestUtils.doTestPreferenceSettingAddGui(new ProxyPreference.Factory(), null);
+    void testAddGui() {
+        assertDoesNotThrow(() -> PreferencesTestUtils.doTestPreferenceSettingAddGui(new ProxyPreference.Factory(), null));
     }
 }

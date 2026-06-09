@@ -111,7 +111,7 @@ public class ImageryReader implements Closeable {
         }
     }
 
-    private static class Parser extends DefaultHandler {
+    private static final class Parser extends DefaultHandler {
         private static final String MAX_ZOOM = "max-zoom";
         private static final String MIN_ZOOM = "min-zoom";
         private static final String TILE_SIZE = "tile-size";
@@ -299,17 +299,21 @@ public class ImageryReader implements Closeable {
             case DEFAULT_LAYERS:
                 if ("layer".equals(qName)) {
                     newState = State.NOOP;
-                    defaultLayers.add(new DefaultLayer(
-                            entry.getImageryType(),
-                            atts.getValue("name"),
-                            atts.getValue("style"),
-                            atts.getValue("tile-matrix-set")
-                            ));
+                    try {
+                        defaultLayers.add(new DefaultLayer(
+                                entry.getImageryType(),
+                                atts.getValue("name"),
+                                atts.getValue("style"),
+                                atts.getValue("tile-matrix-set")
+                                ));
+                    } catch (IllegalArgumentException e) {
+                        Logging.error(e);
+                    }
                 }
                 break;
             default: // Do nothing
             }
-            /**
+            /*
              * Did not recognize the element, so the new state is UNKNOWN.
              * This includes the case where we are already inside an unknown
              * element, i.e. we do not try to understand the inner content
@@ -361,7 +365,7 @@ public class ImageryReader implements Closeable {
                 break;
             case MIRROR_ATTRIBUTE:
                 if (mirrorEntry != null) {
-                    switch(qName) {
+                    switch (qName) {
                     case "type":
                         Optional<ImageryType> type = Arrays.stream(ImageryType.values())
                                 .filter(t -> Objects.equals(accumulator.toString(), t.getTypeString()))
@@ -407,7 +411,7 @@ public class ImageryReader implements Closeable {
                 }
                 break;
             case ENTRY_ATTRIBUTE:
-                switch(qName) {
+                switch (qName) {
                 case "name":
                     entry.setName(lang == null ? LanguageInfo.getJOSMLocaleCode(null) : lang, accumulator.toString());
                     break;

@@ -8,15 +8,16 @@ import java.util.ConcurrentModificationException;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.Set;
 
 import org.openstreetmap.josm.tools.Utils;
 
 /**
- * A Set-like class that allows looking up equivalent preexising instance.
+ * A Set-like class that allows looking up equivalent preexisting instance.
  * It is useful wherever one would use self-mapping construct like
  * <code>Map&lt;T,T&gt;.put(t,t)</code>, that is, for caches, uniqueness filters or similar.
- *
+ * <p>
  * The semantics of equivalency can be external to the object, using the
  * {@link Hash} interface. The set also supports querying for entries using
  * different key type, in case you can provide a Hash implementation
@@ -231,9 +232,7 @@ public class Storage<T> extends AbstractSet<T> {
         copyArray();
         modCount++;
         size = 0;
-        for (int i = 0; i < data.length; i++) {
-            data[i] = null;
-        }
+        Arrays.fill(data, null);
     }
 
     @Override
@@ -400,15 +399,15 @@ public class Storage<T> extends AbstractSet<T> {
      * @return a hash implementation that just delegates to object's own hashCode and equals.
      */
     public static <O> Hash<O, O> defaultHash() {
-        return new Hash<O, O>() {
+        return new Hash<>() {
             @Override
             public int getHashCode(O t) {
-                return t.hashCode();
+                return Objects.hashCode(t);
             }
 
             @Override
             public boolean equals(O t1, O t2) {
-                return t1.equals(t2);
+                return Objects.equals(t1, t2);
             }
         };
     }

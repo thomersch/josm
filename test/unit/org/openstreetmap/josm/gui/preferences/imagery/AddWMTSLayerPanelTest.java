@@ -1,31 +1,23 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.preferences.imagery;
 
-import static org.junit.Assert.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests of {@link AddWMTSLayerPanel} class.
  */
-public class AddWMTSLayerPanelTest {
-
-    /**
-     * Setup tests
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences();
-
+@BasicPreferences
+class AddWMTSLayerPanelTest {
     /**
      * Unit test of {@link AddWMTSLayerPanel}.
      */
     @Test
-    public void testAddWMTSLayerPanel() {
+    void testAddWMTSLayerPanel() {
         AddWMTSLayerPanel panel = new AddWMTSLayerPanel();
         assertFalse(panel.isImageryValid());
     }
@@ -33,8 +25,8 @@ public class AddWMTSLayerPanelTest {
     /**
      * Unit test of {@link AddWMTSLayerPanel#getImageryInfo}.
      */
-    @Test(expected = IllegalArgumentException.class)
-    public void testGetImageryInfo() {
-        new AddWMTSLayerPanel().getImageryInfo();
+    @Test
+    void testGetImageryInfo() {
+        assertThrows(IllegalArgumentException.class, () -> new AddWMTSLayerPanel().getImageryInfo());
     }
 }

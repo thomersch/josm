@@ -5,6 +5,8 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.awt.BorderLayout;
 import java.awt.Component;
+import java.awt.ComponentOrientation;
+import java.awt.Frame;
 import java.awt.Image;
 import java.awt.Rectangle;
 import java.awt.Toolkit;
@@ -14,6 +16,7 @@ import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.beans.PropertyChangeListener;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -21,8 +24,10 @@ import java.util.stream.Stream;
 import javax.swing.ImageIcon;
 import javax.swing.JFrame;
 import javax.swing.JPanel;
+import javax.swing.WindowConstants;
 
 import org.openstreetmap.josm.data.UserIdentityManager;
+import org.openstreetmap.josm.gui.layer.AbstractModifiableLayer;
 import org.openstreetmap.josm.gui.layer.LayerManager.LayerAddEvent;
 import org.openstreetmap.josm.gui.layer.LayerManager.LayerChangeListener;
 import org.openstreetmap.josm.gui.layer.LayerManager.LayerOrderChangeEvent;
@@ -43,15 +48,15 @@ public class MainFrame extends JFrame {
     private final transient LayerStateChangeListener updateTitleOnLayerStateChange = (layer, newValue) -> onLayerChange(layer);
 
     private final transient PropertyChangeListener updateTitleOnSaveChange = evt -> {
-        if (evt.getPropertyName().equals(OsmDataLayer.REQUIRES_SAVE_TO_DISK_PROP)
+        if (evt.getPropertyName().equals(AbstractModifiableLayer.REQUIRES_SAVE_TO_DISK_PROP)
                 || evt.getPropertyName().equals(OsmDataLayer.REQUIRES_UPLOAD_TO_SERVER_PROP)) {
-            OsmDataLayer layer = (OsmDataLayer) evt.getSource();
+            AbstractModifiableLayer layer = (AbstractModifiableLayer) evt.getSource();
             onLayerChange(layer);
         }
     };
 
     protected transient WindowGeometry geometry;
-    protected int windowState = JFrame.NORMAL;
+    protected int windowState = Frame.NORMAL;
     private final MainPanel panel;
     private MainMenu menu;
 
@@ -72,6 +77,15 @@ public class MainFrame extends JFrame {
         this.geometry = geometry;
         this.panel = new MainPanel(MainApplication.getLayerManager());
         setContentPane(new JPanel(new BorderLayout()));
+        setComponentOrientation();
+    }
+
+    private void setComponentOrientation() {
+        ComponentOrientation orientation = ComponentOrientation.getOrientation(Locale.getDefault());
+        if (orientation == ComponentOrientation.RIGHT_TO_LEFT) {
+            Logging.info(tr("Setting component orientation to right-to-left"));
+        }
+        applyComponentOrientation(orientation);
     }
 
     /**
@@ -98,7 +112,7 @@ public class MainFrame extends JFrame {
                 .collect(Collectors.toList());
         setIconImages(l);
         addWindowListener(new ExitWindowAdapter());
-        setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+        setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
 
         // This listener is never removed, since the main frame exists forever.
         MainApplication.getLayerManager().addActiveLayerChangeListener(e -> refreshTitle());
@@ -116,9 +130,9 @@ public class MainFrame extends JFrame {
      */
     public void storeState() {
         if (geometry != null) {
-            geometry.remember("gui.geometry");
+             geometry.remember(WindowGeometry.PREF_KEY_GUI_GEOMETRY);
         }
-        Config.getPref().putBoolean("gui.maximized", (windowState & JFrame.MAXIMIZED_BOTH) != 0);
+        Config.getPref().putBoolean("gui.maximized", (windowState & Frame.MAXIMIZED_BOTH) != 0);
     }
 
     /**
@@ -149,8 +163,8 @@ public class MainFrame extends JFrame {
      */
     public void setMaximized(boolean maximized) {
         if (maximized) {
-            if (Toolkit.getDefaultToolkit().isFrameStateSupported(JFrame.MAXIMIZED_BOTH)) {
-                windowState = JFrame.MAXIMIZED_BOTH;
+            if (Toolkit.getDefaultToolkit().isFrameStateSupported(Frame.MAXIMIZED_BOTH)) {
+                windowState = Frame.MAXIMIZED_BOTH;
                 setExtendedState(windowState);
             } else {
                 Logging.debug("Main window: maximizing not supported");
@@ -165,8 +179,7 @@ public class MainFrame extends JFrame {
      */
     public void refreshTitle() {
         OsmDataLayer editLayer = MainApplication.getLayerManager().getEditLayer();
-        boolean dirty = editLayer != null && (editLayer.requiresSaveToFile()
-                || (editLayer.requiresUploadToServer() && !editLayer.isUploadDiscouraged()));
+        boolean dirty = editLayer != null && editLayer.isDirty();
         String userInfo = UserIdentityManager.getInstance().getUserName();
         if (userInfo != null && Config.getPref().getBoolean("draw.show-user", false))
             userInfo = tr(" ({0})", "@" + userInfo);
@@ -176,7 +189,7 @@ public class MainFrame extends JFrame {
         getRootPane().putClientProperty("Window.documentModified", dirty);
     }
 
-    private void onLayerChange(OsmDataLayer layer) {
+    private void onLayerChange(AbstractModifiableLayer layer) {
         if (layer == MainApplication.getLayerManager().getEditLayer()) {
             refreshTitle();
         }
@@ -217,7 +230,7 @@ public class MainFrame extends JFrame {
         }
     }
 
-    private class WindowPositionSizeListener extends WindowAdapter implements ComponentListener {
+    private final class WindowPositionSizeListener extends WindowAdapter implements ComponentListener {
         @Override
         public void windowStateChanged(WindowEvent e) {
             windowState = e.getNewState();
@@ -246,7 +259,7 @@ public class MainFrame extends JFrame {
         private void handleComponentEvent(ComponentEvent e) {
             Component c = e.getComponent();
             if (c instanceof JFrame && c.isVisible()) {
-                if (windowState == JFrame.NORMAL) {
+                if (windowState == Frame.NORMAL) {
                     geometry = new WindowGeometry((JFrame) c);
                 } else {
                     geometry.fixScreen((JFrame) c);

@@ -5,6 +5,7 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.awt.Component;
 import java.awt.Dimension;
+import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
@@ -16,7 +17,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-import javax.swing.AbstractAction;
 import javax.swing.Box;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
@@ -38,6 +38,7 @@ import javax.swing.tree.TreeSelectionModel;
 
 import org.openstreetmap.josm.actions.AutoScaleAction;
 import org.openstreetmap.josm.actions.AutoScaleAction.AutoScaleMode;
+import org.openstreetmap.josm.actions.JosmAction;
 import org.openstreetmap.josm.command.Command;
 import org.openstreetmap.josm.command.PseudoCommand;
 import org.openstreetmap.josm.data.UndoRedoHandler;
@@ -53,7 +54,6 @@ import org.openstreetmap.josm.gui.SideButton;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.widgets.PopupMenuLauncher;
 import org.openstreetmap.josm.tools.GBC;
-import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.InputMapUtils;
 import org.openstreetmap.josm.tools.Shortcut;
 import org.openstreetmap.josm.tools.SubclassFilteredCollection;
@@ -120,10 +120,10 @@ public class CommandStackDialog extends ToggleDialog implements CommandQueuePrec
 
         treesPanel.add(spacer, GBC.eol());
         spacer.setVisible(false);
-        treesPanel.add(undoTree, GBC.eol().fill(GBC.HORIZONTAL));
+        treesPanel.add(undoTree, GBC.eol().fill(GridBagConstraints.HORIZONTAL));
         separator.setVisible(false);
-        treesPanel.add(separator, GBC.eol().fill(GBC.HORIZONTAL));
-        treesPanel.add(redoTree, GBC.eol().fill(GBC.HORIZONTAL));
+        treesPanel.add(separator, GBC.eol().fill(GridBagConstraints.HORIZONTAL));
+        treesPanel.add(redoTree, GBC.eol().fill(GridBagConstraints.HORIZONTAL));
         treesPanel.add(Box.createRigidArea(new Dimension(0, 0)), GBC.std().weight(0, 1));
         treesPanel.setBackground(redoTree.getBackground());
 
@@ -146,7 +146,7 @@ public class CommandStackDialog extends ToggleDialog implements CommandQueuePrec
         InputMapUtils.addEnterAction(redoTree, selectAndZoomAction);
     }
 
-    private static class CommandCellRenderer extends DefaultTreeCellRenderer {
+    private static final class CommandCellRenderer extends DefaultTreeCellRenderer {
         @Override
         public Component getTreeCellRendererComponent(JTree tree, Object value, boolean sel, boolean expanded, boolean leaf, int row,
                 boolean hasFocus) {
@@ -273,8 +273,8 @@ public class CommandStackDialog extends ToggleDialog implements CommandQueuePrec
     private void buildUndoTree() {
         List<Command> undoCommands = UndoRedoHandler.getInstance().getUndoCommands();
         undoRoot = new DefaultMutableTreeNode();
-        for (int i = 0; i < undoCommands.size(); ++i) {
-            undoRoot.add(getNodeForCommand(undoCommands.get(i)));
+        for (Command undoCommand : undoCommands) {
+            undoRoot.add(getNodeForCommand(undoCommand));
         }
         undoTreeModel.setRoot(undoRoot);
     }
@@ -282,8 +282,8 @@ public class CommandStackDialog extends ToggleDialog implements CommandQueuePrec
     private void buildRedoTree() {
         List<Command> redoCommands = UndoRedoHandler.getInstance().getRedoCommands();
         redoRoot = new DefaultMutableTreeNode();
-        for (int i = 0; i < redoCommands.size(); ++i) {
-            redoRoot.add(getNodeForCommand(redoCommands.get(i)));
+        for (Command redoCommand : redoCommands) {
+            redoRoot.add(getNodeForCommand(redoCommand));
         }
         redoTreeModel.setRoot(redoRoot);
     }
@@ -337,8 +337,8 @@ public class CommandStackDialog extends ToggleDialog implements CommandQueuePrec
         CommandListMutableTreeNode node = new CommandListMutableTreeNode(c);
         if (c.getChildren() != null) {
             List<PseudoCommand> children = new ArrayList<>(c.getChildren());
-            for (int i = 0; i < children.size(); ++i) {
-                node.add(getNodeForCommand(children.get(i)));
+            for (PseudoCommand child : children) {
+                node.add(getNodeForCommand(child));
             }
         }
         return node;
@@ -346,11 +346,10 @@ public class CommandStackDialog extends ToggleDialog implements CommandQueuePrec
 
     /**
      * Return primitives that are affected by some command
-     * @param path GUI elements
-     * @return collection of affected primitives, onluy usable ones
+     * @param c the command
+     * @return collection of affected primitives, only usable ones
      */
-    protected static Collection<? extends OsmPrimitive> getAffectedPrimitives(TreePath path) {
-        PseudoCommand c = ((CommandListMutableTreeNode) path.getLastPathComponent()).getCommand();
+    protected static Collection<? extends OsmPrimitive> getAffectedPrimitives(PseudoCommand c) {
         final OsmDataLayer currentLayer = MainApplication.getLayerManager().getEditLayer();
         return new SubclassFilteredCollection<>(
                 c.getParticipatingPrimitives(),
@@ -411,38 +410,75 @@ public class CommandStackDialog extends ToggleDialog implements CommandQueuePrec
     /**
      * Action that selects the objects that take part in a command.
      */
-    public class SelectAction extends AbstractAction implements IEnabledStateUpdating {
+    public class SelectAction extends JosmAction implements IEnabledStateUpdating {
 
         /**
          * Constructs a new {@code SelectAction}.
          */
         public SelectAction() {
-            putValue(NAME, tr("Select"));
-            putValue(SHORT_DESCRIPTION, tr("Selects the objects that take part in this command (unless currently deleted)"));
-            new ImageProvider("dialogs", "select").getResource().attachImageIcon(this, true);
+            this(tr("Select"), "dialogs/select", tr("Selects the objects that take part in this command (unless currently deleted)"),
+                    Shortcut.registerShortcut("command:stack:select", tr("Command Stack: Select"), KeyEvent.VK_UNDEFINED, Shortcut.NONE),
+                    false, null, false);
+        }
+
+        /**
+         * Constructs a new {@code SelectAction} that calls
+         * {@link JosmAction#JosmAction(String, String, String, Shortcut, boolean, String, boolean)}
+         *
+         * The new super for all CommandStack actions.
+         *
+         * Use this super constructor to setup your action.
+         *
+         * @param name the action's text as displayed on the menu (if it is added to a menu)
+         * @param iconName the filename of the icon to use
+         * @param tooltip  a longer description of the action that will be displayed in the tooltip. Please note
+         *           that html is not supported for menu actions on some platforms.
+         * @param shortcut a ready-created shortcut object or null if you don't want a shortcut. But you always
+         *            do want a shortcut, remember you can always register it with group=none, so you
+         *            won't be assigned a shortcut unless the user configures one. If you pass null here,
+         *            the user CANNOT configure a shortcut for your action.
+         * @param registerInToolbar register this action for the toolbar preferences?
+         * @param toolbarId identifier for the toolbar preferences. The iconName is used, if this parameter is null
+         * @param installAdapters false, if you don't want to install layer changed and selection changed adapters
+         */
+        protected SelectAction(String name, String iconName, String tooltip, Shortcut shortcut, boolean registerInToolbar,
+                               String toolbarId, boolean installAdapters) {
+            super(name, iconName, tooltip, shortcut, registerInToolbar, toolbarId, installAdapters);
         }
 
         @Override
         public void actionPerformed(ActionEvent e) {
-            TreePath path;
-            if (!undoTree.isSelectionEmpty()) {
-                path = undoTree.getSelectionPath();
-            } else if (!redoTree.isSelectionEmpty()) {
-                path = redoTree.getSelectionPath();
-            } else {
-                // see #19514 for a possible cause
+            PseudoCommand command = getSelectedCommand();
+            if (command == null) {
                 return;
             }
 
             DataSet dataSet = MainApplication.getLayerManager().getEditDataSet();
             if (dataSet == null) return;
-            dataSet.setSelected(getAffectedPrimitives(path));
+            dataSet.setSelected(getAffectedPrimitives(command));
         }
 
         @Override
         public void updateEnabledState() {
             setEnabled(!undoTree.isSelectionEmpty() || !redoTree.isSelectionEmpty());
         }
+    }
+
+    /**
+     * Returns the selected undo/redo command
+     * @return the selected undo/redo command or {@code null}
+     */
+    public PseudoCommand getSelectedCommand() {
+        TreePath path;
+        if (!undoTree.isSelectionEmpty()) {
+            path = undoTree.getSelectionPath();
+        } else if (!redoTree.isSelectionEmpty()) {
+            path = redoTree.getSelectionPath();
+        } else {
+            // see #19514 for a possible cause
+            return null;
+        }
+        return path != null ? ((CommandListMutableTreeNode) path.getLastPathComponent()).getCommand() : null;
     }
 
     /**
@@ -453,10 +489,10 @@ public class CommandStackDialog extends ToggleDialog implements CommandQueuePrec
          * Constructs a new {@code SelectAndZoomAction}.
          */
         public SelectAndZoomAction() {
-            putValue(NAME, tr("Select and zoom"));
-            putValue(SHORT_DESCRIPTION,
-                    tr("Selects the objects that take part in this command (unless currently deleted), then and zooms to it"));
-            new ImageProvider("dialogs/autoscale", "selection").getResource().attachImageIcon(this, true);
+            super(tr("Select and zoom"), "dialogs/autoscale/selection",
+                    tr("Selects the objects that take part in this command (unless currently deleted), then and zooms to it"),
+                    Shortcut.registerShortcut("command:stack:select_and_zoom", tr("Command Stack: Select and zoom"),
+                            KeyEvent.VK_UNDEFINED, Shortcut.NONE), false, null, false);
         }
 
         @Override
@@ -475,9 +511,9 @@ public class CommandStackDialog extends ToggleDialog implements CommandQueuePrec
     }
 
     /**
-     * Action to undo or redo all commands up to (and including) the seleced item.
+     * Action to undo or redo all commands up to (and including) the selected item.
      */
-    protected class UndoRedoAction extends AbstractAction implements IEnabledStateUpdating {
+    protected class UndoRedoAction extends JosmAction implements IEnabledStateUpdating {
         private final UndoRedoType type;
         private final JTree tree;
 
@@ -486,17 +522,20 @@ public class CommandStackDialog extends ToggleDialog implements CommandQueuePrec
          * @param type decide whether it is an undo action or a redo action
          */
         public UndoRedoAction(UndoRedoType type) {
+            // This is really annoying. JEP 8300786 might fix this.
+            super(UndoRedoType.UNDO == type ? tr("Undo") : tr("Redo"),
+                    UndoRedoType.UNDO == type ? "undo" : "redo",
+                    UndoRedoType.UNDO == type ? tr("Undo the selected and all later commands")
+                            : tr("Redo the selected and all earlier commands"),
+                    UndoRedoType.UNDO == type
+                            ? Shortcut.registerShortcut("command:stack:undo", tr("Command Stack: Undo"), KeyEvent.VK_UNDEFINED, Shortcut.NONE)
+                            : Shortcut.registerShortcut("command:stack:redo", tr("Command Stack: Redo"), KeyEvent.VK_UNDEFINED, Shortcut.NONE),
+                    false, false);
             this.type = type;
             if (UndoRedoType.UNDO == type) {
                 tree = undoTree;
-                putValue(NAME, tr("Undo"));
-                putValue(SHORT_DESCRIPTION, tr("Undo the selected and all later commands"));
-                new ImageProvider("undo").getResource().attachImageIcon(this, true);
             } else {
                 tree = redoTree;
-                putValue(NAME, tr("Redo"));
-                putValue(SHORT_DESCRIPTION, tr("Redo the selected and all earlier commands"));
-                new ImageProvider("redo").getResource().attachImageIcon(this, true);
             }
         }
 

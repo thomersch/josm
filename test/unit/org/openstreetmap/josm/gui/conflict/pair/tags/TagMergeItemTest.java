@@ -1,33 +1,24 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.conflict.pair.tags;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import org.junit.Rule;
-import org.junit.Test;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.gui.conflict.pair.MergeDecisionType;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-import org.openstreetmap.josm.tools.Logging;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests of {@link TagMergeItem} class.
  */
-public class TagMergeItemTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+// Needed to due to OSM primitive dependencies
+@BasicPreferences
+class TagMergeItemTest {
     @Test
-    public void testTagMergeItem() {
+    void testTagMergeItem() {
         TagMergeItem item = new TagMergeItem("key", "myvalue", "theirvalue");
         assertEquals("key", item.getKey());
         assertEquals("myvalue", item.getMyTagValue());
@@ -36,7 +27,7 @@ public class TagMergeItemTest {
     }
 
     @Test
-    public void testTagMergeItem2() {
+    void testTagMergeItem2() {
         Node n1 = new Node(1);
         Node n2 = new Node(1);
         n1.put("key", "myvalue");
@@ -50,7 +41,7 @@ public class TagMergeItemTest {
     }
 
     @Test
-    public void testTagMergeItem3() {
+    void testTagMergeItem3() {
         Node n1 = new Node(1);
         Node n2 = new Node(1);
         n1.put("key", "myvalue");
@@ -64,7 +55,7 @@ public class TagMergeItemTest {
     }
 
     @Test
-    public void testTagMergeItem4() {
+    void testTagMergeItem4() {
         Node n1 = new Node(1);
         Node n2 = new Node(1);
         // n1 does not have this key
@@ -79,26 +70,20 @@ public class TagMergeItemTest {
     }
 
     @Test
-    public void testDecide() {
+    void testDecide() {
         TagMergeItem item = new TagMergeItem("key", "myvalue", "theirvalue");
         item.decide(MergeDecisionType.KEEP_MINE);
         assertEquals(MergeDecisionType.KEEP_MINE, item.getMergeDecision());
     }
 
     @Test
-    public void testDecide1() {
+    void testDecide1() {
         TagMergeItem item = new TagMergeItem("key", "myvalue", "theirvalue");
-        try {
-            item.decide(null);
-            fail("expected IllegalArgumentException not thrown");
-        } catch (IllegalArgumentException e) {
-            // OK
-            Logging.trace(e);
-        }
+        assertThrows(IllegalArgumentException.class, () -> item.decide(null));
     }
 
     @Test
-    public void testApplyToMyPrimitive() {
+    void testApplyToMyPrimitive() {
         TagMergeItem item = new TagMergeItem("key", "myvalue", "theirvalue");
         item.decide(MergeDecisionType.KEEP_MINE);
 
@@ -113,7 +98,7 @@ public class TagMergeItemTest {
     }
 
     @Test
-    public void testApplyToMyPrimitive2() {
+    void testApplyToMyPrimitive2() {
         TagMergeItem item = new TagMergeItem("key", "myvalue", "theirvalue");
         item.decide(MergeDecisionType.KEEP_THEIR);
 
@@ -128,32 +113,20 @@ public class TagMergeItemTest {
     }
 
     @Test
-    public void testApplyToMyPrimitive3() {
+    void testApplyToMyPrimitive3() {
         TagMergeItem item = new TagMergeItem("key", "myvalue", "theirvalue");
         // item is undecided
         // item.decide(MergeDecisionType.KEEP_THEIR);
 
         Node n1 = new Node(1);
         n1.put("key", "oldvalue");
-        try {
-            item.applyToMyPrimitive(n1);
-            fail("expected IllegalStateException");
-        } catch (IllegalStateException e) {
-            // OK
-            Logging.trace(e);
-        }
+        assertThrows(IllegalStateException.class, () -> item.applyToMyPrimitive(n1));
     }
 
     @Test
-    public void testApplyToMyPrimitive4() {
+    void testApplyToMyPrimitive4() {
         TagMergeItem item = new TagMergeItem("key", "myvalue", "theirvalue");
 
-        try {
-            item.applyToMyPrimitive(null);
-            fail("expected IllegalArgumentException");
-        } catch (IllegalArgumentException e) {
-            // OK
-            Logging.trace(e);
-        }
+        assertThrows(IllegalArgumentException.class, () -> item.applyToMyPrimitive(null));
     }
 }

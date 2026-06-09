@@ -1,41 +1,31 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.tools;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import java.util.Collections;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
+import org.openstreetmap.josm.testutils.annotations.Projection;
 
 /**
  * Integration tests of {@link Territories} class.
  */
-public class TerritoriesTestIT {
-
-    /**
-     * Test rules.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules rules = new JOSMTestRules().projection();
-
-
+@Projection
+@org.openstreetmap.josm.testutils.annotations.Territories
+class TerritoriesTestIT {
     /**
      * Test of {@link Territories#initialize} method.
      */
     @Test
-    public void testUtilityClass() {
+    void testUtilityClass() {
         Logging.clearLastErrorAndWarnings();
         Territories.initialize();
-        assertEquals("no errors or warnings", Collections.emptyList(), Logging.getLastErrorAndWarnings());
-        assertFalse("customTagsCache is non empty", Territories.customTagsCache.isEmpty());
-        assertFalse("iso3166Cache is non empty", Territories.iso3166Cache.isEmpty());
-        assertFalse("taginfoCache is non empty", Territories.taginfoCache.isEmpty());
-        assertFalse("taginfoGeofabrikCache is non empty", Territories.taginfoGeofabrikCache.isEmpty());
+        assertEquals(Collections.emptyList(), Logging.getLastErrorAndWarnings(), "no errors or warnings");
+        assertFalse(Territories.customTagsCache.isEmpty(), "customTagsCache is non empty");
+        assertFalse(Territories.iso3166Cache.isEmpty(), "iso3166Cache is non empty");
+        assertFalse(Territories.taginfoCache.isEmpty(), "taginfoCache is non empty");
+        assertFalse(Territories.taginfoGeofabrikCache.isEmpty(), "taginfoGeofabrikCache is non empty");
     }
 }

@@ -5,6 +5,7 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 import static org.openstreetmap.josm.tools.I18n.trc;
 
 import java.awt.Component;
+import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.event.ActionEvent;
 import java.awt.image.BufferedImage;
@@ -37,6 +38,7 @@ import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.MapView;
 import org.openstreetmap.josm.gui.MenuScroller;
 import org.openstreetmap.josm.gui.layer.imagery.ImageryFilterSettings;
+import org.openstreetmap.josm.gui.layer.imagery.MVTLayer;
 import org.openstreetmap.josm.gui.widgets.UrlLabel;
 import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.ImageProcessor;
@@ -46,7 +48,7 @@ import org.openstreetmap.josm.tools.Logging;
 
 /**
  * Abstract base class for background imagery layers ({@link WMSLayer}, {@link TMSLayer}, {@link WMTSLayer}).
- *
+ * <p>
  * Handles some common tasks, like image filters, image processors, etc.
  */
 public abstract class ImageryLayer extends Layer {
@@ -136,7 +138,7 @@ public abstract class ImageryLayer extends Layer {
             for (List<String> entry: content) {
                 panel.add(new JLabel(entry.get(0) + ':'), GBC.std());
                 panel.add(GBC.glue(5, 0), GBC.std());
-                panel.add(createTextField(entry.get(1)), GBC.eol().fill(GBC.HORIZONTAL));
+                panel.add(createTextField(entry.get(1)), GBC.eol().fill(GridBagConstraints.HORIZONTAL));
             }
         }
         return panel;
@@ -158,7 +160,7 @@ public abstract class ImageryLayer extends Layer {
      * @return The created layer
      */
     public static ImageryLayer create(ImageryInfo info) {
-        switch(info.getImageryType()) {
+        switch (info.getImageryType()) {
         case WMS:
         case WMS_ENDPOINT:
             return new WMSLayer(info);
@@ -168,6 +170,8 @@ public abstract class ImageryLayer extends Layer {
         case BING:
         case SCANEX:
             return new TMSLayer(info);
+        case MVT:
+            return new MVTLayer(info);
         default:
             throw new AssertionError(tr("Unsupported imagery type: {0}", info.getImageryType()));
         }
@@ -189,6 +193,9 @@ public abstract class ImageryLayer extends Layer {
         }
     }
 
+    /**
+     * Create an offset for an imagery layer
+     */
     public class OffsetAction extends AbstractAction implements LayerAction {
         @Override
         public void actionPerformed(ActionEvent e) {
@@ -219,9 +226,9 @@ public abstract class ImageryLayer extends Layer {
 
     /**
      * Create the submenu or the menu item to set the offset of the layer.
-     *
+     * <p>
      * If only one menu item for this layer exists, it is returned by this method.
-     *
+     * <p>
      * If there are multiple, this method appends them to the subMenu and then returns the reference to the subMenu.
      * @param subMenu The subMenu to use
      * @return A single menu item to adjust the layer or the passed subMenu to which the menu items were appended.

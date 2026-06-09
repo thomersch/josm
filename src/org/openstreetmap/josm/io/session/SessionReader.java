@@ -14,6 +14,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.AbstractMap.SimpleEntry;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -35,15 +36,19 @@ import javax.xml.parsers.ParserConfigurationException;
 
 import org.openstreetmap.josm.data.ViewportData;
 import org.openstreetmap.josm.data.coor.EastNorth;
+import org.openstreetmap.josm.data.coor.ILatLon;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.projection.Projection;
+import org.openstreetmap.josm.gui.ExceptionDialogUtil;
 import org.openstreetmap.josm.gui.ExtendedDialog;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.layer.Layer;
 import org.openstreetmap.josm.gui.progress.NullProgressMonitor;
 import org.openstreetmap.josm.gui.progress.ProgressMonitor;
+import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.io.Compression;
 import org.openstreetmap.josm.io.IllegalDataException;
+import org.openstreetmap.josm.plugins.PluginHandler;
 import org.openstreetmap.josm.tools.CheckParameterUtil;
 import org.openstreetmap.josm.tools.JosmRuntimeException;
 import org.openstreetmap.josm.tools.Logging;
@@ -142,8 +147,8 @@ public class SessionReader {
             // large, to keep it within projection bounds and
             // not too small to avoid rounding errors.
             double dist = 0.01 * proj.getDefaultZoomInPPD();
-            LatLon ll1 = proj.eastNorth2latlon(new EastNorth(centerEN.east() - dist, centerEN.north()));
-            LatLon ll2 = proj.eastNorth2latlon(new EastNorth(centerEN.east() + dist, centerEN.north()));
+            ILatLon ll1 = proj.eastNorth2latlon(new EastNorth(centerEN.east() - dist, centerEN.north()));
+            ILatLon ll2 = proj.eastNorth2latlon(new EastNorth(centerEN.east() + dist, centerEN.north()));
             double meterPerEasting = ll1.greatCircleDistance(ll2) / dist / 2;
             double scale = meterPerPixel / meterPerEasting; // unit: easting per pixel
             return new ViewportData(centerEN, scale);
@@ -154,6 +159,7 @@ public class SessionReader {
 
     private URI sessionFileURI;
     private boolean zip; // true, if session file is a .joz file; false if it is a .jos file
+    private boolean pluginData; // true, if a plugin restored state from a .joz file. False otherwise.
     private ZipFile zipFile;
     private List<Layer> layers = new ArrayList<>();
     private int active = -1;
@@ -190,7 +196,7 @@ public class SessionReader {
         Class<? extends SessionLayerImporter> importerClass = sessionLayerImporters.get(layerType);
         if (importerClass == null)
             return null;
-        SessionLayerImporter importer = null;
+        SessionLayerImporter importer;
         try {
             importer = importerClass.getConstructor().newInstance();
         } catch (ReflectiveOperationException e) {
@@ -242,6 +248,15 @@ public class SessionReader {
     }
 
     /**
+     * Returns whether plugins loaded additonal data
+     * @return {@code true} if at least one plugin loaded additional data
+     * @since 18833
+     */
+    public boolean loadedPluginData() {
+        return this.pluginData;
+    }
+
+    /**
      * A class that provides some context for the individual {@link SessionLayerImporter}
      * when doing the import.
      */
@@ -250,6 +265,7 @@ public class SessionReader {
         private final String layerName;
         private final int layerIndex;
         private final List<LayerDependency> layerDependencies;
+        private Map<Integer, Entry<Layer, Element>> subLayers;
 
         /**
          * Path of the file inside the zip archive.
@@ -279,10 +295,35 @@ public class SessionReader {
         }
 
         /**
+         * Add sub layers
+         * @param idx index
+         * @param layer sub layer
+         * @param el The XML element of the sub layer.
+         *           Should contain "index" and "name" attributes.
+         *           Can contain "opacity" and "visible" attributes
+         * @since 18466
+         */
+        public void addSubLayer(int idx, Layer layer, Element el) {
+            if (subLayers == null) {
+                subLayers = new HashMap<>();
+            }
+            subLayers.put(idx, new SimpleEntry<>(layer, el));
+        }
+
+        /**
+         * Returns the sub layers
+         * @return the sub layers. Can be null.
+         * @since 18466
+         */
+        public Map<Integer, Entry<Layer, Element>> getSubLayers() {
+            return subLayers;
+        }
+
+        /**
          * Return an InputStream for a URI from a .jos/.joz file.
-         *
+         * <p>
          * The following forms are supported:
-         *
+         * <p>
          * - absolute file (both .jos and .joz):
          *         "file:///home/user/data.osm"
          *         "file:/home/user/data.osm"
@@ -323,7 +364,7 @@ public class SessionReader {
 
         /**
          * Return a File for a URI from a .jos/.joz file.
-         *
+         * <p>
          * Returns null if the URI points to a file inside the zip archive.
          * In this case, inZipPath will be set to the corresponding path.
          * @param uriStr the URI as string
@@ -406,6 +447,9 @@ public class SessionReader {
         }
     }
 
+    /**
+     * A dependency of another layer
+     */
     public static class LayerDependency {
         private final Integer index;
         private final Layer layer;
@@ -506,7 +550,6 @@ public class SessionReader {
         List<Integer> sorted = Utils.topologicalSort(deps);
         final Map<Integer, Layer> layersMap = new TreeMap<>(Collections.reverseOrder());
         final Map<Integer, SessionLayerImporter> importers = new HashMap<>();
-        final Map<Integer, String> names = new HashMap<>();
 
         progressMonitor.setTicksCount(sorted.size());
         LAYER: for (int idx: sorted) {
@@ -519,7 +562,6 @@ public class SessionReader {
                 return;
             }
             String name = e.getAttribute("name");
-            names.put(idx, name);
             if (!e.hasAttribute("type")) {
                 error(tr("missing mandatory attribute ''type'' for element ''layer''"));
                 return;
@@ -531,9 +573,8 @@ public class SessionReader {
                 dialog.show(
                         tr("Unable to load layer"),
                         tr("Cannot load layer of type ''{0}'' because no suitable importer was found.", type),
-                        JOptionPane.WARNING_MESSAGE,
-                        progressMonitor
-                        );
+                        JOptionPane.WARNING_MESSAGE
+                );
                 if (dialog.isCancel()) {
                     progressMonitor.cancel();
                     return;
@@ -550,9 +591,8 @@ public class SessionReader {
                         dialog.show(
                                 tr("Unable to load layer"),
                                 tr("Cannot load layer {0} because it depends on layer {1} which has been skipped.", idx, d),
-                                JOptionPane.WARNING_MESSAGE,
-                                progressMonitor
-                                );
+                                JOptionPane.WARNING_MESSAGE
+                        );
                         if (dialog.isCancel()) {
                             progressMonitor.cancel();
                             return;
@@ -582,9 +622,8 @@ public class SessionReader {
                                 tr("<html>Could not load layer {0} ''{1}''.<br>Error is:<br>{2}</html>", idx,
                                         Utils.escapeReservedCharactersHTML(name),
                                         Utils.escapeReservedCharactersHTML(exception.getMessage())),
-                                JOptionPane.ERROR_MESSAGE,
-                                progressMonitor
-                                );
+                                JOptionPane.ERROR_MESSAGE
+                        );
                         if (dialog.isCancel()) {
                             progressMonitor.cancel();
                             return;
@@ -595,30 +634,51 @@ public class SessionReader {
                 }
 
                 layersMap.put(idx, layer);
+                setLayerAttributes(layer, e);
+
+                if (support.getSubLayers() != null) {
+                    support.getSubLayers().forEach((Integer markerIndex, Entry<Layer, Element> entry) -> {
+                        Layer subLayer = entry.getKey();
+                        Element subElement = entry.getValue();
+
+                        layersMap.put(markerIndex, subLayer);
+                        setLayerAttributes(subLayer, subElement);
+                    });
+                }
+
             }
+            if (progressMonitor.isCanceled())
+                return;
             progressMonitor.worked(1);
         }
+
 
         layers = new ArrayList<>();
         for (Entry<Integer, Layer> entry : layersMap.entrySet()) {
             Layer layer = entry.getValue();
-            if (layer == null) {
-                continue;
+            if (layer != null) {
+                layers.add(layer);
             }
-            Element el = elems.get(entry.getKey());
-            if (el.hasAttribute("visible")) {
-                layer.setVisible(Boolean.parseBoolean(el.getAttribute("visible")));
+        }
+    }
+
+    private static void setLayerAttributes(Layer layer, Element e) {
+        if (layer == null)
+            return;
+
+        if (e.hasAttribute("name")) {
+            layer.setName(e.getAttribute("name"));
+        }
+        if (e.hasAttribute("visible")) {
+            layer.setVisible(Boolean.parseBoolean(e.getAttribute("visible")));
+        }
+        if (e.hasAttribute("opacity")) {
+            try {
+                double opacity = Double.parseDouble(e.getAttribute("opacity"));
+                layer.setOpacity(opacity);
+            } catch (NumberFormatException ex) {
+                Logging.warn(ex);
             }
-            if (el.hasAttribute("opacity")) {
-                try {
-                    double opacity = Double.parseDouble(el.getAttribute("opacity"));
-                    layer.setOpacity(opacity);
-                } catch (NumberFormatException ex) {
-                    Logging.warn(ex);
-                }
-            }
-            layer.setName(names.get(entry.getKey()));
-            layers.add(layer);
         }
     }
 
@@ -667,15 +727,15 @@ public class SessionReader {
     /**
      * Show Dialog when there is an error for one layer.
      * Ask the user whether to cancel the complete session loading or just to skip this layer.
-     *
+     * <p>
      * This is expected to run in a worker thread (PleaseWaitRunnable), so invokeAndWait is
      * needed to block the current thread and wait for the result of the modal dialog from EDT.
      */
-    private static class CancelOrContinueDialog {
+    private static final class CancelOrContinueDialog {
 
         private boolean cancel;
 
-        public void show(final String title, final String message, final int icon, final ProgressMonitor progressMonitor) {
+        void show(final String title, final String message, final int icon) {
             try {
                 SwingUtilities.invokeAndWait(() -> {
                     ExtendedDialog dlg = new ExtendedDialog(
@@ -697,6 +757,19 @@ public class SessionReader {
         }
     }
 
+    private void loadPluginData() {
+        if (!zip) {
+            return;
+        }
+        for (PluginSessionImporter importer : PluginHandler.load(PluginSessionImporter.class)) {
+            try {
+                this.pluginData |= importer.readZipFile(zipFile);
+            } catch (IOException ioException) {
+                GuiHelper.runInEDT(() -> ExceptionDialogUtil.explainException(ioException));
+            }
+        }
+    }
+
     /**
      * Loads session from the given file.
      * @param sessionFile session file to load
@@ -708,6 +781,7 @@ public class SessionReader {
     public void loadSession(File sessionFile, boolean zip, ProgressMonitor progressMonitor) throws IllegalDataException, IOException {
         try (InputStream josIS = createInputStream(sessionFile, zip)) {
             loadSession(josIS, sessionFile.toURI(), zip, progressMonitor);
+            this.postLoadTasks.add(this::loadPluginData);
         }
     }
 

@@ -1,48 +1,62 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.layer;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.Color;
+import java.awt.Component;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.TimeZone;
 
 import javax.swing.JScrollPane;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.gpx.GpxData;
 import org.openstreetmap.josm.data.gpx.GpxTrack;
 import org.openstreetmap.josm.data.gpx.IGpxTrackSegment;
 import org.openstreetmap.josm.data.gpx.WayPoint;
 import org.openstreetmap.josm.data.osm.DataSet;
+import org.openstreetmap.josm.data.osm.visitor.BoundingXYVisitor;
+import org.openstreetmap.josm.data.projection.CustomProjection;
 import org.openstreetmap.josm.data.projection.Projections;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.widgets.HtmlPanel;
 import org.openstreetmap.josm.io.GpxReaderTest;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.I18n;
+import org.openstreetmap.josm.testutils.annotations.Main;
+import org.openstreetmap.josm.testutils.annotations.MeasurementSystem;
+import org.openstreetmap.josm.testutils.annotations.Projection;
+import org.openstreetmap.josm.tools.date.DateUtils;
 import org.xml.sax.SAXException;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
  * Unit tests of {@link GpxLayer} class.
  */
+@I18n
+@Main
+@MeasurementSystem
+@Projection
 public class GpxLayerTest {
-
     /**
-     * Setup tests
+     * Setup test.
      */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().main().projection().i18n().metricSystem();
+    @BeforeEach
+    void setUp() {
+        Locale.setDefault(Locale.ROOT);
+        DateUtils.PROP_ISO_DATES.put(true);
+    }
 
     private static String getHtml(GpxLayer layer) {
         return ((HtmlPanel) ((JScrollPane) layer.getInfoComponent()).getViewport().getView()).getEditorPane().getText();
@@ -70,10 +84,9 @@ public class GpxLayerTest {
 
     /**
      * Unit test of {@link GpxLayer#GpxLayer}.
-     * @throws Exception if any error occurs
      */
     @Test
-    public void testGpxLayer() throws Exception {
+    void testGpxLayer() {
         GpxLayer layer = new GpxLayer(new GpxData(), "foo", false);
         GpxTrack trk = new GpxTrack(new ArrayList<IGpxTrackSegment>(), new HashMap<>());
         trk.getExtensions().add("gpxd", "color", "#FF0000");
@@ -104,7 +117,7 @@ public class GpxLayerTest {
      * @throws Exception if any error occurs
      */
     @Test
-    public void testGetInfoComponent() throws Exception {
+    void testGetInfoComponent() throws Exception {
         assertEquals("<html>\n"+
                      "  <head>\n" +
                      "    <style type=\"text/css\">\n" +
@@ -165,7 +178,7 @@ public class GpxLayerTest {
                      "          \n" +
                      "        </td>\n" +
                      "        <td>\n" +
-                     "          1/3/16 11:59 AM - 12:00 PM (0:00)\n" +
+                     "          2016-01-03 11:59:58 &#8211; 12:00:00 (2.0 s)\n" +
                      "        </td>\n" +
                      "        <td>\n" +
                      "          12.0 m\n" +
@@ -191,14 +204,14 @@ public class GpxLayerTest {
      * @throws Exception if any error occurs
      */
     @Test
-    public void testGetTimespanForTrack() throws Exception {
+    void testGetTimespanForTrack() throws Exception {
         assertEquals("", GpxLayer.getTimespanForTrack(
-                new GpxTrack(new ArrayList<Collection<WayPoint>>(), new HashMap<String, Object>())));
+                new GpxTrack(new ArrayList<Collection<WayPoint>>(), new HashMap<>())));
 
-        assertEquals("1/3/16 11:59 AM - 12:00 PM (0:00)", GpxLayer.getTimespanForTrack(getMinimalGpxData().tracks.iterator().next()));
+        assertEquals("2016-01-03 11:59:58 \u2013 12:00:00 (2.0 s)", GpxLayer.getTimespanForTrack(getMinimalGpxData().tracks.iterator().next()));
 
         TimeZone.setDefault(TimeZone.getTimeZone("Europe/Berlin"));
-        assertEquals("1/3/16 12:59 PM - 1:00 PM (0:00)", GpxLayer.getTimespanForTrack(getMinimalGpxData().tracks.iterator().next()));
+        assertEquals("2016-01-03 12:59:58 \u2013 13:00:00 (2.0 s)", GpxLayer.getTimespanForTrack(getMinimalGpxData().tracks.iterator().next()));
     }
 
     /**
@@ -206,7 +219,7 @@ public class GpxLayerTest {
      * @throws Exception if any error occurs
      */
     @Test
-    public void testMergeFrom() throws Exception {
+    void testMergeFrom() throws Exception {
         GpxLayer layer = new GpxLayer(new GpxData());
         assertTrue(layer.data.isEmpty());
         layer.mergeFrom(getMinimalGpxLayer());
@@ -218,9 +231,11 @@ public class GpxLayerTest {
     /**
      * Test that {@link GpxLayer#mergeFrom} throws IAE for invalid arguments
      */
-    @Test(expected = IllegalArgumentException.class)
-    public void testMergeFromIAE() {
-        new GpxLayer(new GpxData()).mergeFrom(new OsmDataLayer(new DataSet(), "", null));
+    @Test
+    void testMergeFromIAE() {
+        final GpxLayer gpxLayer = new GpxLayer(new GpxData());
+        final OsmDataLayer osmDataLayer = new OsmDataLayer(new DataSet(), "testMergeFromIAE", null);
+        assertThrows(IllegalArgumentException.class, () -> gpxLayer.mergeFrom(osmDataLayer));
     }
 
     /**
@@ -228,7 +243,7 @@ public class GpxLayerTest {
      * @throws Exception if any error occurs
      */
     @Test
-    public void testPaint() throws Exception {
+    void testPaint() throws Exception {
         GpxLayer layer = getMinimalGpxLayer();
         try {
             MainApplication.getLayerManager().addLayer(layer);
@@ -243,8 +258,51 @@ public class GpxLayerTest {
      * Unit test of {@link GpxLayer#getChangesetSourceTag}.
      */
     @Test
-    public void testGetChangesetSourceTag() {
+    void testGetChangesetSourceTag() {
         assertEquals("survey", new GpxLayer(new GpxData(), "", true).getChangesetSourceTag());
         assertNull(new GpxLayer(new GpxData(), "", false).getChangesetSourceTag());
+    }
+
+    /**
+     * Checks that potential operations that could be called after destroy() are harmless
+     */
+    @Test
+    void testRobustnessAfterDestroy() {
+        GpxData data = new GpxData();
+        GpxLayer layer = new GpxLayer(data, "1", false);
+        GpxLayer otherLayer = new GpxLayer(new GpxData(), "2", false);
+        assertEquals(data, layer.getData());
+        assertTrue(layer.isMergable(otherLayer));
+        assertTrue(layer.hasColor());
+        assertTrue(layer.isSavable());
+        assertTrue(layer.checkSaveConditions());
+        assertFalse(layer.isModified());
+        assertFalse(layer.requiresSaveToFile());
+        assertNull(layer.getChangesetSourceTag());
+        assertNull(layer.getAssociatedFile());
+
+        layer.destroy();
+
+        assertNull(layer.getData());
+        assertNull(layer.getColor());
+        assertFalse(layer.hasColor());
+        assertFalse(layer.isMergable(otherLayer));
+        assertFalse(layer.isSavable());
+        assertFalse(layer.checkSaveConditions());
+        assertFalse(layer.isModified());
+        assertFalse(layer.requiresSaveToFile());
+        assertNull(layer.getChangesetSourceTag());
+        assertNull(layer.getAssociatedFile());
+        Object infoComponent = layer.getInfoComponent();
+        Component view = assertInstanceOf(JScrollPane.class, infoComponent).getViewport().getView();
+        String text = assertInstanceOf(HtmlPanel.class, view).getEditorPane().getText().trim();
+        assertTrue(text.startsWith("<html>"), text);
+        assertTrue(text.endsWith("</html>"), text);
+        assertEquals("<html><br></html>", layer.getToolTipText());
+        assertDoesNotThrow(layer::jumpToNextMarker);
+        assertDoesNotThrow(layer::jumpToPreviousMarker);
+        assertDoesNotThrow(() -> layer.visitBoundingBox(new BoundingXYVisitor()));
+        assertDoesNotThrow(() -> layer.filterTracksByDate(null, null, false));
+        assertDoesNotThrow(() -> layer.projectionChanged(new CustomProjection(), new CustomProjection()));
     }
 }

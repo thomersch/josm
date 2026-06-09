@@ -36,6 +36,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -123,29 +124,29 @@ public class StyledMapRenderer extends AbstractMapRenderer {
             this.osm = osm;
             this.flags = flags;
 
-            long order = 0;
+            long styleOrder = 0;
             if ((this.flags & FLAG_DISABLED) == 0) {
-                order |= 1;
+                styleOrder |= 1;
             }
 
-            order <<= 24;
-            order |= floatToFixed(this.style.majorZIndex, 24);
+            styleOrder <<= 24;
+            styleOrder |= floatToFixed(this.style.majorZIndex, 24);
 
             // selected on top of member of selected on top of unselected
             // FLAG_DISABLED bit is the same at this point, but we simply ignore it
-            order <<= 4;
-            order |= this.flags & 0xf;
+            styleOrder <<= 4;
+            styleOrder |= this.flags & 0xf;
 
-            order <<= 24;
-            order |= floatToFixed(this.style.zIndex, 24);
+            styleOrder <<= 24;
+            styleOrder |= floatToFixed(this.style.zIndex, 24);
 
-            order <<= 1;
+            styleOrder <<= 1;
             // simple node on top of icons and shapes
             if (DefaultStyles.SIMPLE_NODE_ELEMSTYLE.equals(this.style)) {
-                order |= 1;
+                styleOrder |= 1;
             }
 
-            this.order = order;
+            this.order = styleOrder;
         }
 
         /**
@@ -243,15 +244,15 @@ public class StyledMapRenderer extends AbstractMapRenderer {
 
     /**
      * Check, if this System has the GlyphVector double translation bug.
-     *
+     * <p>
      * With this bug, <code>gv.setGlyphTransform(i, trfm)</code> has a different
      * effect than on most other systems, namely the translation components
      * ("m02" &amp; "m12", {@link AffineTransform}) appear to be twice as large, as
      * they actually are. The rotation is unaffected (scale &amp; shear not tested
      * so far).
-     *
+     * <p>
      * This bug has only been observed on Mac OS X, see #7841.
-     *
+     * <p>
      * After switch to Java 7, this test is a false positive on Mac OS X (see #10446),
      * i.e. it returns true, but the real rendering code does not require any special
      * handling.
@@ -379,6 +380,24 @@ public class StyledMapRenderer extends AbstractMapRenderer {
         Component focusOwner = FocusManager.getCurrentManager().getFocusOwner();
         useWiderHighlight = !(focusOwner instanceof AbstractButton || focusOwner == nc);
         this.styles = MapPaintStyles.getStyles();
+    }
+
+    /**
+     * Constructs a new {@code StyledMapRenderer} with custom map paint settings.
+     *
+     * @param g the graphics context. Must not be null.
+     * @param nc the map viewport. Must not be null.
+     * @param isInactiveMode if true, the paint visitor shall render OSM objects such that they
+     * look inactive. Example: rendering of data in an inactive layer using light gray as color only.
+     * @param paintSettings the map paint settings to use. Must not be null.
+     * @throws IllegalArgumentException if {@code g} is null
+     * @throws IllegalArgumentException if {@code nc} is null
+     * @throws IllegalArgumentException if {@code paintSettings} is null
+     * @since 19549
+     */
+    public StyledMapRenderer(Graphics2D g, NavigatableComponent nc, boolean isInactiveMode, MapPaintSettings paintSettings) {
+        this(g, nc, isInactiveMode);
+        this.paintSettings = paintSettings;
     }
 
     /**
@@ -584,7 +603,7 @@ public class StyledMapRenderer extends AbstractMapRenderer {
     /**
      * Determine, if partial fill should be turned off for this object, because
      * only a small unfilled gap in the center of the area would be left.
-     *
+     * <p>
      * This is used to get a cleaner look for urban regions with many small
      * areas like buildings, etc.
      * @param ap the area and the perimeter of the object
@@ -611,7 +630,7 @@ public class StyledMapRenderer extends AbstractMapRenderer {
         MapViewPoint p = mapState.getPointFor(n);
         TextLabel text = bs.text;
         String s = text.labelCompositionStrategy.compose(n);
-        if (s == null || s.isEmpty()) return;
+        if (Utils.isEmpty(s)) return;
 
         Font defaultFont = g.getFont();
         g.setFont(text.font);
@@ -621,7 +640,7 @@ public class StyledMapRenderer extends AbstractMapRenderer {
 
         double x = p.getInViewX() + bs.xOffset;
         double y = p.getInViewY() + bs.yOffset;
-        /**
+        /*
          *
          *       left-above __center-above___ right-above
          *         left-top|                 |right-top
@@ -976,7 +995,7 @@ public class StyledMapRenderer extends AbstractMapRenderer {
                         continue;
                     }
 
-                    switch(m.getRole()) {
+                    switch (m.getRole()) {
                     case "from":
                         if (fromWay == null) {
                             fromWay = w;
@@ -1015,7 +1034,7 @@ public class StyledMapRenderer extends AbstractMapRenderer {
             IWay<?> viaWay = (IWay<?>) via;
             INode firstNode = viaWay.firstNode();
             INode lastNode = viaWay.lastNode();
-            Boolean onewayvia = Boolean.FALSE;
+            boolean onewayvia = Boolean.FALSE;
 
             String onewayviastr = viaWay.get("oneway");
             if (onewayviastr != null) {
@@ -1143,7 +1162,7 @@ public class StyledMapRenderer extends AbstractMapRenderer {
             return;
         }
         String name = text.getString(osm);
-        if (name == null || name.isEmpty()) {
+        if (Utils.isEmpty(name)) {
             return;
         }
 
@@ -1246,7 +1265,7 @@ public class StyledMapRenderer extends AbstractMapRenderer {
                 for (PolyData pd : multipolygon.getCombinedPolygons()) {
                     MapViewPath path = new MapViewPath(mapState);
                     path.appendFromEastNorth(pd.get());
-                    path.setWindingRule(MapViewPath.WIND_EVEN_ODD);
+                    path.setWindingRule(Path2D.WIND_EVEN_ODD);
                     consumer.accept(path);
                 }
             }
@@ -1289,7 +1308,7 @@ public class StyledMapRenderer extends AbstractMapRenderer {
         if (!way.isHighlighted() && highlightWaySegments != null) {
             MapViewPath highlightSegs = null;
             for (WaySegment ws : highlightWaySegments) {
-                if (ws.way != way || ws.lowerIndex < offset) {
+                if (ws.getWay() != way || ws.getLowerIndex() < offset || !ws.isUsable()) {
                     continue;
                 }
                 if (highlightSegs == null) {
@@ -1409,7 +1428,9 @@ public class StyledMapRenderer extends AbstractMapRenderer {
     @Override
     public void getSettings(boolean virtual) {
         super.getSettings(virtual);
-        paintSettings = MapPaintSettings.INSTANCE;
+        if (paintSettings == null) {
+            paintSettings = MapPaintSettings.INSTANCE;
+        }
 
         circum = nc.getDist100Pixel();
         scale = nc.getScale();
@@ -1421,7 +1442,7 @@ public class StyledMapRenderer extends AbstractMapRenderer {
         showIcons = paintSettings.getShowIconsDistance() > circum;
         isOutlineOnly = paintSettings.isOutlineOnly();
 
-        antialiasing = PREFERENCE_ANTIALIASING_USE.get() ?
+        antialiasing = Boolean.TRUE.equals(PREFERENCE_ANTIALIASING_USE.get()) ?
                         RenderingHints.VALUE_ANTIALIAS_ON : RenderingHints.VALUE_ANTIALIAS_OFF;
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, antialiasing);
 
@@ -1482,12 +1503,12 @@ public class StyledMapRenderer extends AbstractMapRenderer {
 
     /**
      * Fix the clipping area of unclosed polygons for partial fill.
-     *
+     * <p>
      * The current algorithm for partial fill simply strokes the polygon with a
      * large stroke width after masking the outside with a clipping area.
      * This works, but for unclosed polygons, the mask can crop the corners at
      * both ends (see #12104).
-     *
+     * <p>
      * This method fixes the clipping area by sort of adding the corners to the
      * clip outline.
      *
@@ -1530,7 +1551,7 @@ public class StyledMapRenderer extends AbstractMapRenderer {
 
     /**
      * Get the point to add to the clipping area for partial fill of unclosed polygons.
-     *
+     * <p>
      * <code>(p1,p2)</code> is the first or last way segment and <code>p3</code> the
      * opposite endpoint.
      *
@@ -1637,13 +1658,13 @@ public class StyledMapRenderer extends AbstractMapRenderer {
         RenderBenchmarkCollector benchmark = benchmarkFactory.get();
         BBox bbox = bounds.toBBox();
         getSettings(renderVirtualNodes);
-
         try {
-            if (data.getReadLock().tryLock(1, TimeUnit.SECONDS)) {
+            Lock readLock = data.getReadLock();
+            if (readLock.tryLock(1, TimeUnit.SECONDS)) {
                 try {
                     paintWithLock(data, renderVirtualNodes, benchmark, bbox);
                 } finally {
-                    data.getReadLock().unlock();
+                    readLock.unlock();
                 }
             } else {
                 Logging.warn("Cannot paint layer {0}: It is locked.");
@@ -1691,8 +1712,8 @@ public class StyledMapRenderer extends AbstractMapRenderer {
                 return;
             }
 
-            for (StyleRecord record : sorted) {
-                paintRecord(record);
+            for (StyleRecord styleRecord : sorted) {
+                paintRecord(styleRecord);
             }
 
             drawVirtualNodes(data, bbox);
@@ -1708,11 +1729,11 @@ public class StyledMapRenderer extends AbstractMapRenderer {
         }
     }
 
-    private void paintRecord(StyleRecord record) {
+    private void paintRecord(StyleRecord styleRecord) {
         try {
-            record.paintPrimitive(paintSettings, this);
+            styleRecord.paintPrimitive(paintSettings, this);
         } catch (RuntimeException e) {
-            throw BugReport.intercept(e).put("record", record);
+            throw BugReport.intercept(e).put("record", styleRecord);
         }
     }
 }

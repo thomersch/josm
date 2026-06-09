@@ -1,13 +1,12 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.command.conflict;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.command.CommandTest.CommandTestData;
 import org.openstreetmap.josm.data.conflict.Conflict;
@@ -16,29 +15,21 @@ import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.User;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.gui.mappaint.ElemStyles;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import nl.jqno.equalsverifier.EqualsVerifier;
 import nl.jqno.equalsverifier.Warning;
 
 /**
  * Unit tests of {@link ConflictAddCommand} class.
  */
-public class ConflictAddCommandTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
+class ConflictAddCommandTest {
     private CommandTestData testData;
 
     /**
      * Setup test.
      */
-    @Before
+    @BeforeEach
     public void setUp() {
         testData = new CommandTestData();
     }
@@ -47,7 +38,7 @@ public class ConflictAddCommandTest {
      * Unit test of {@code ConflictAddCommand#executeCommand} and {@code ConflictAddCommand#undoCommand} methods.
      */
     @Test
-    public void testExecuteUndoCommand() {
+    void testExecuteUndoCommand() {
         DataSet ds = testData.layer.getDataSet();
         Conflict<Node> conflict = new Conflict<>(testData.existingNode, testData.existingNode2);
         ConflictAddCommand cmd = new ConflictAddCommand(ds, conflict);
@@ -63,7 +54,7 @@ public class ConflictAddCommandTest {
      * Unit test of {@code ConflictAddCommand#getDescriptionIcon} method.
      */
     @Test
-    public void testGetDescriptionIcon() {
+    void testGetDescriptionIcon() {
         Conflict<Node> conflict = new Conflict<>(testData.existingNode, testData.existingNode2);
         assertNotNull(new ConflictAddCommand(testData.layer.getDataSet(), conflict).getDescriptionIcon());
     }
@@ -72,7 +63,7 @@ public class ConflictAddCommandTest {
      * Unit test of methods {@link ConflictAddCommand#equals} and {@link ConflictAddCommand#hashCode}.
      */
     @Test
-    public void testEqualsContract() {
+    void testEqualsContract() {
         TestUtils.assumeWorkingEqualsVerifier();
         EqualsVerifier.forClass(ConflictAddCommand.class).usingGetClass()
             .withPrefabValues(DataSet.class,
@@ -83,6 +74,8 @@ public class ConflictAddCommandTest {
                     new Conflict<>(new Node(), new Node()), new Conflict<>(new Way(), new Way()))
             .withPrefabValues(OsmDataLayer.class,
                     new OsmDataLayer(new DataSet(), "1", null), new OsmDataLayer(new DataSet(), "2", null))
+            .withPrefabValues(ElemStyles.class,
+                    new ElemStyles(), new ElemStyles())
             .suppress(Warning.NONFINAL_FIELDS)
             .verify();
     }

@@ -13,9 +13,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import javax.swing.JLabel;
-import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 
@@ -27,10 +27,12 @@ import org.openstreetmap.josm.data.correction.TagCorrection;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.DefaultNameFormatter;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
+import org.openstreetmap.josm.gui.ExtendedDialog;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.correction.RoleCorrectionTable;
 import org.openstreetmap.josm.gui.correction.TagCorrectionTable;
 import org.openstreetmap.josm.gui.widgets.JMultilineLabel;
+import org.openstreetmap.josm.tools.AlphanumComparator;
 import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.UserCancelException;
@@ -94,12 +96,13 @@ public abstract class TagCorrector<P extends OsmPrimitive> {
             p.add(label2, GBC.eop().anchor(GBC.CENTER).fill(GBC.HORIZONTAL));
 
             for (Entry<OsmPrimitive, List<TagCorrection>> entry : tagCorrectionsMap.entrySet()) {
-                final OsmPrimitive primitive = entry.getKey();
-                final List<TagCorrection> tagCorrections = entry.getValue();
-
-                if (tagCorrections.isEmpty()) {
+                if (entry.getValue().isEmpty())
                     continue;
-                }
+
+                final OsmPrimitive primitive = entry.getKey();
+                final List<TagCorrection> tagCorrections = entry.getValue().stream()
+                        .sorted((o1, o2) -> AlphanumComparator.getInstance().compare(o1.oldKey, o2.oldKey))
+                        .collect(Collectors.toList());
 
                 final JLabel propertiesLabel = new JLabel(tr("Tags of "));
                 p.add(propertiesLabel, GBC.std());
@@ -107,25 +110,26 @@ public abstract class TagCorrector<P extends OsmPrimitive> {
                 final JLabel primitiveLabel = new JLabel(
                         primitive.getDisplayName(DefaultNameFormatter.getInstance()) + ':',
                         ImageProvider.get(primitive.getDisplayType()),
-                        JLabel.LEFT
+                        JLabel.LEADING
                 );
                 p.add(primitiveLabel, GBC.eol());
 
-                final TagCorrectionTable table = new TagCorrectionTable(
-                        tagCorrections);
+                final TagCorrectionTable table = new TagCorrectionTable(tagCorrections);
                 final JScrollPane scrollPane = new JScrollPane(table);
-                p.add(scrollPane, GBC.eop().fill(GBC.HORIZONTAL));
+                p.add(scrollPane, GBC.eop().fill(GBC.BOTH));
 
                 tagTableMap.put(primitive, table);
             }
 
             for (Entry<OsmPrimitive, List<RoleCorrection>> entry : roleCorrectionMap.entrySet()) {
-                final OsmPrimitive primitive = entry.getKey();
-                final List<RoleCorrection> roleCorrections = entry.getValue();
-
-                if (roleCorrections.isEmpty()) {
+                if (entry.getValue().isEmpty())
                     continue;
-                }
+
+                final OsmPrimitive primitive = entry.getKey();
+                final List<RoleCorrection> roleCorrections = entry.getValue().stream()
+                        .sorted((o1, o2) -> DefaultNameFormatter.getInstance().getRelationComparator()
+                                .compare(o1.relation, o2.relation))
+                        .collect(Collectors.toList());
 
                 final JLabel rolesLabel = new JLabel(tr("Roles in relations referring to"));
                 p.add(rolesLabel, GBC.std());
@@ -133,31 +137,30 @@ public abstract class TagCorrector<P extends OsmPrimitive> {
                 final JLabel primitiveLabel = new JLabel(
                         primitive.getDisplayName(DefaultNameFormatter.getInstance()),
                         ImageProvider.get(primitive.getDisplayType()),
-                        JLabel.LEFT
+                        JLabel.LEADING
                 );
                 p.add(primitiveLabel, GBC.eol());
                 rolesLabel.setLabelFor(primitiveLabel);
 
                 final RoleCorrectionTable table = new RoleCorrectionTable(roleCorrections);
                 final JScrollPane scrollPane = new JScrollPane(table);
-                p.add(scrollPane, GBC.eop().fill(GBC.HORIZONTAL));
+                p.add(scrollPane, GBC.eop().fill(GBC.BOTH));
                 primitiveLabel.setLabelFor(table);
 
                 roleTableMap.put(primitive, table);
             }
 
-            int answer = JOptionPane.showOptionDialog(
+            ExtendedDialog dialog = new ExtendedDialog(
                     MainApplication.getMainFrame(),
-                    p,
                     tr("Automatic tag correction"),
-                    JOptionPane.YES_NO_CANCEL_OPTION,
-                    JOptionPane.PLAIN_MESSAGE,
-                    null,
-                    APPLICATION_OPTIONS,
-                    APPLICATION_OPTIONS[0]
+                    APPLICATION_OPTIONS
             );
+            dialog.setContent(p, false);
+            dialog.setButtonIcons("dialogs/edit", "dialogs/next", "cancel");
+            dialog.showDialog();
+            int answer = dialog.getValue();
 
-            if (answer == JOptionPane.YES_OPTION) {
+            if (answer == 1) {
                 for (Entry<OsmPrimitive, List<TagCorrection>> entry : tagCorrectionsMap.entrySet()) {
                     OsmPrimitive primitive = entry.getKey();
 
@@ -198,7 +201,7 @@ public abstract class TagCorrector<P extends OsmPrimitive> {
                         }
                     }
                 }
-            } else if (answer != JOptionPane.NO_OPTION)
+            } else if (answer != 2)
                 throw new UserCancelException();
             return Collections.unmodifiableCollection(commands);
         }

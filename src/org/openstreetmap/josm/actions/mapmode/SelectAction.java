@@ -3,11 +3,13 @@ package org.openstreetmap.josm.actions.mapmode;
 
 import static org.openstreetmap.josm.gui.help.HelpUtil.ht;
 import static org.openstreetmap.josm.tools.I18n.tr;
+import static org.openstreetmap.josm.tools.I18n.trc;
 import static org.openstreetmap.josm.tools.I18n.trn;
 
 import java.awt.Cursor;
 import java.awt.Point;
 import java.awt.Rectangle;
+import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseEvent;
 import java.awt.geom.Point2D;
@@ -17,9 +19,11 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 import javax.swing.JOptionPane;
+import javax.swing.SwingUtilities;
 
 import org.openstreetmap.josm.actions.MergeNodesAction;
 import org.openstreetmap.josm.command.AddCommand;
@@ -39,7 +43,9 @@ import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.data.osm.WaySegment;
 import org.openstreetmap.josm.data.osm.visitor.AllNodesVisitor;
-import org.openstreetmap.josm.data.osm.visitor.paint.WireframeMapRenderer;
+import org.openstreetmap.josm.data.osm.visitor.paint.AbstractMapRenderer;
+import org.openstreetmap.josm.data.preferences.BooleanProperty;
+import org.openstreetmap.josm.data.preferences.CachingProperty;
 import org.openstreetmap.josm.gui.ExtendedDialog;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.MapFrame;
@@ -58,15 +64,16 @@ import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.Pair;
 import org.openstreetmap.josm.tools.PlatformManager;
 import org.openstreetmap.josm.tools.Shortcut;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * Move is an action that can move all kind of OsmPrimitives (except keys for now).
- *
+ * <p>
  * If an selected object is under the mouse when dragging, move all selected objects.
  * If an unselected object is under the mouse when dragging, it becomes selected
  * and will be moved.
  * If no object is under the mouse, move all selected objects (if any)
- *
+ * <p>
  * On Mac OS X, Ctrl + mouse button 1 simulates right click (map move), so the
  * feature "selection remove" is disabled on this platform.
  */
@@ -128,6 +135,10 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
         }
     }
 
+    /** Whether nodes should be merged with other primitives by default when they are being dragged */
+    private static final CachingProperty<Boolean> MERGE_BY_DEFAULT
+            = new BooleanProperty("edit.move.merge-by-default", false).cached();
+
     private boolean lassoMode;
     private boolean repeatedKeySwitchLassoOption;
 
@@ -185,7 +196,7 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
      * to remove the highlight from them again as otherwise the whole data
      * set would have to be checked.
      */
-    private transient Optional<OsmPrimitive> currentHighlight = Optional.empty();
+    private transient OsmPrimitive currentHighlight;
 
     /**
      * Create a new SelectAction
@@ -194,7 +205,7 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
     public SelectAction(MapFrame mapFrame) {
         super(tr("Select mode"), "move/move", tr("Select, move, scale and rotate objects"),
                 Shortcut.registerShortcut("mapmode:select", tr("Mode: {0}", tr("Select mode")), KeyEvent.VK_S, Shortcut.DIRECT),
-                ImageProvider.getCursor("normal", "selection"));
+                ImageProvider.getCursor(NORMAL, "selection"));
         mv = mapFrame.mapView;
         setHelpId(ht("/Action/Select"));
         selectionManager = new SelectionManager(this, false, mv);
@@ -231,6 +242,7 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
         map.keyDetector.removeModifierExListener(this);
         map.keyDetector.removeKeyListener(this);
         removeHighlighting();
+        virtualManager.clear();
     }
 
     @Override
@@ -265,8 +277,6 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
         updateKeyModifiersEx(modifiers);
         determineMapMode(c.isPresent());
 
-        Optional<OsmPrimitive> newHighlight = Optional.empty();
-
         virtualManager.clear();
         if (mode == Mode.MOVE && !dragInProgress() && virtualManager.activateVirtualNodeNearPoint(e.getPoint())) {
             DataSet ds = getLayerManager().getActiveDataSet();
@@ -275,22 +285,23 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
             }
             mv.setNewCursor(SelectActionCursor.virtual_node.cursor(), this);
             // don't highlight anything else if a virtual node will be
-            return repaintIfRequired(newHighlight);
+            return repaintIfRequired(null);
         }
 
         mv.setNewCursor(getCursor(c.orElse(null)), this);
 
         // return early if there can't be any highlights
         if (!drawTargetHighlight || (mode != Mode.MOVE && mode != Mode.SELECT) || !c.isPresent())
-            return repaintIfRequired(newHighlight);
+            return repaintIfRequired(null);
 
         // CTRL toggles selection, but if while dragging CTRL means merge
-        final boolean isToggleMode = ctrl && !dragInProgress();
-        if (c.isPresent() && (isToggleMode || !c.get().isSelected())) {
+        final boolean isToggleMode = platformMenuShortcutKeyMask && !dragInProgress();
+        OsmPrimitive newHighlight = null;
+        if (isToggleMode || !c.get().isSelected()) {
             // only highlight primitives that will change the selection
             // when clicked. I.e. don't highlight selected elements unless
             // we are in toggle mode.
-            newHighlight = c;
+            newHighlight = c.get();
         }
         return repaintIfRequired(newHighlight);
     }
@@ -304,7 +315,7 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
      */
     private Cursor getCursor(OsmPrimitive nearbyStuff) {
         String c = "rect";
-        switch(mode) {
+        switch (mode) {
         case MOVE:
             if (virtualManager.hasVirtualNode()) {
                 c = "virtual_node";
@@ -315,7 +326,7 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
             if (dragInProgress()) {
                 // only consider merge if ctrl is pressed and there are nodes in
                 // the selection that could be merged
-                if (!ctrl || getLayerManager().getEditDataSet().getSelectedNodes().isEmpty()) {
+                if (!isMergeRequested() || getLayerManager().getEditDataSet().getSelectedNodes().isEmpty()) {
                     c = "move";
                     break;
                 }
@@ -330,7 +341,7 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
             c = (osm instanceof Way) ? "way" : c;
             if (shift) {
                 c += "_add";
-            } else if (ctrl) {
+            } else if (platformMenuShortcutKeyMask) {
                 c += osm == null || osm.isSelected() ? "_rm" : "_add";
             }
             break;
@@ -343,8 +354,12 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
         case SELECT:
             if (lassoMode) {
                 c = "lasso";
+            } else if (shift) {
+                c = "rect_add";
+            } else if (platformMenuShortcutKeyMask) {
+                c = "rect_rm";
             } else {
-                c = "rect" + (shift ? "_add" : (ctrl && !PlatformManager.isPlatformOsx() ? "_rm" : ""));
+                c = "rect";
             }
             break;
         }
@@ -362,20 +377,23 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
             needsRepaint = true;
             ds.clearHighlightedVirtualNodes();
         }
-        if (!currentHighlight.isPresent()) {
+        if (currentHighlight == null) {
             return needsRepaint;
-        } else {
-            currentHighlight.get().setHighlighted(false);
         }
-        currentHighlight = Optional.empty();
+        currentHighlight.setHighlighted(false);
+        currentHighlight = null;
         return true;
     }
 
-    private boolean repaintIfRequired(Optional<OsmPrimitive> newHighlight) {
-        if (!drawTargetHighlight || currentHighlight.equals(newHighlight))
+    private boolean repaintIfRequired(OsmPrimitive newHighlight) {
+        if (!drawTargetHighlight || Objects.equals(currentHighlight, newHighlight))
             return false;
-        currentHighlight.ifPresent(osm -> osm.setHighlighted(false));
-        newHighlight.ifPresent(osm -> osm.setHighlighted(true));
+        if (currentHighlight != null) {
+            currentHighlight.setHighlighted(false);
+        }
+        if (newHighlight != null) {
+            newHighlight.setHighlighted(true);
+        }
         currentHighlight = newHighlight;
         return true;
     }
@@ -383,9 +401,9 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
     /**
      * Look, whether any object is selected. If not, select the nearest node.
      * If there are no nodes in the dataset, do nothing.
-     *
+     * <p>
      * If the user did not press the left mouse button, do nothing.
-     *
+     * <p>
      * Also remember the starting position of the movement and change the mouse
      * cursor to movement.
      */
@@ -393,7 +411,7 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
     public void mousePressed(MouseEvent e) {
         mouseDownButton = e.getButton();
         // return early
-        if (!mv.isActiveLayerVisible() || !(Boolean) this.getValue("active") || mouseDownButton != MouseEvent.BUTTON1)
+        if (!mv.isActiveLayerVisible() || Boolean.FALSE.equals(this.getValue("active")) || mouseDownButton != MouseEvent.BUTTON1)
             return;
 
         // left-button mouse click only is processed here
@@ -406,7 +424,7 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
 
         // We don't want to change to draw tool if the user tries to (de)select
         // stuff but accidentally clicks in an empty area when selection is empty
-        cancelDrawMode = shift || ctrl;
+        cancelDrawMode = shift || platformMenuShortcutKeyMask;
         didMouseDrag = false;
         initialMoveThresholdExceeded = false;
         mouseDownTime = System.currentTimeMillis();
@@ -419,7 +437,7 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
 
         determineMapMode(nearestPrimitive != null);
 
-        switch(mode) {
+        switch (mode) {
         case ROTATE:
         case SCALE:
             //  if nothing was selected, select primitive under cursor for scaling or rotating
@@ -446,7 +464,6 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
             GuiHelper.scheduleTimer(initialMoveDelay+1, evt -> updateStatusLine(), false);
             break;
         case SELECT:
-        default:
             if (!(ctrl && PlatformManager.isPlatformOsx())) {
                 // start working with rectangle or lasso
                 selectionManager.register(mv, lassoMode);
@@ -462,11 +479,6 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
 
     @Override
     public void mouseMoved(MouseEvent e) {
-        // Mac OSX simulates with ctrl + mouse 1 the second mouse button hence no dragging events get fired.
-        if (PlatformManager.isPlatformOsx() && (mode == Mode.ROTATE || mode == Mode.SCALE)) {
-            mouseDragged(e);
-            return;
-        }
         oldEvent = e;
         if (giveUserFeedback(e)) {
             mv.repaint();
@@ -488,6 +500,8 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
         if (mouseDownButton == MouseEvent.BUTTON1 && mouseReleaseTime > mouseDownTime)
             return;
 
+        updateKeyModifiers(e);
+
         cancelDrawMode = true;
         if (mode == Mode.SELECT) {
             // Unregisters selectionManager if ctrl has been pressed after mouse click on Mac OS X in order to move the map
@@ -503,7 +517,7 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
         if ((mode == Mode.MOVE) && (System.currentTimeMillis() - mouseDownTime < initialMoveDelay))
             return;
 
-        if (mode != Mode.ROTATE && mode != Mode.SCALE && (e.getModifiersEx() & MouseEvent.BUTTON1_DOWN_MASK) == 0) {
+        if (mode != Mode.ROTATE && mode != Mode.SCALE && (e.getModifiersEx() & InputEvent.BUTTON1_DOWN_MASK) == 0) {
             // button is pressed in rotate mode
             return;
         }
@@ -511,12 +525,12 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
         if (mode == Mode.MOVE) {
             // If ctrl is pressed we are in merge mode. Look for a nearby node,
             // highlight it and adjust the cursor accordingly.
-            final boolean canMerge = ctrl && !getLayerManager().getEditDataSet().getSelectedNodes().isEmpty();
+            final boolean canMerge = isMergeRequested() && !getLayerManager().getEditDataSet().getSelectedNodes().isEmpty();
             final OsmPrimitive p = canMerge ? findNodeToMergeTo(e.getPoint()) : null;
             boolean needsRepaint = removeHighlighting();
             if (p != null) {
                 p.setHighlighted(true);
-                currentHighlight = Optional.of(p);
+                currentHighlight = p;
                 needsRepaint = true;
             }
             mv.setNewCursor(getCursor(p), this);
@@ -551,7 +565,7 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
         if (virtualManager.hasVirtualWaysToBeConstructed()) {
             virtualManager.createMiddleNodeFromVirtual(currentEN);
         } else {
-            if (!updateCommandWhileDragging(currentEN)) return;
+            if (!updateCommandWhileDragging(e, currentEN)) return;
         }
 
         mv.repaint();
@@ -593,29 +607,30 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
             }
         }
 
-        if (mode == Mode.MOVE && e.getButton() == MouseEvent.BUTTON1) {
-            DataSet ds = getLayerManager().getEditDataSet();
-            if (!didMouseDrag) {
-                // only built in move mode
-                virtualManager.clear();
-                // do nothing if the click was to short too be recognized as a drag,
-                // but the release position is farther than 10px away from the press position
-                if (lastMousePos == null || lastMousePos.distanceSq(e.getPoint()) < 100) {
-                    updateKeyModifiers(e);
-                    selectPrims(cycleManager.cyclePrims(), true, false);
+        if (mode == Mode.MOVE && e.getButton() == MouseEvent.BUTTON1 && !didMouseDrag) {
+            // only built in move mode
+            virtualManager.clear();
+            // do nothing if the click was to short too be recognized as a drag,
+            // but the release position is farther than 10px away from the press position
+            if (lastMousePos == null || lastMousePos.distanceSq(e.getPoint()) < 100) {
+                DataSet ds = getLayerManager().getEditDataSet();
+                updateKeyModifiers(e);
+                selectPrims(cycleManager.cyclePrims(), true, false);
 
-                    // If the user double-clicked a node, change to draw mode
-                    Collection<OsmPrimitive> c = ds.getSelected();
-                    if (e.getClickCount() >= 2 && c.size() == 1 && c.iterator().next() instanceof Node) {
-                        // We need to do it like this as otherwise drawAction will see a double
-                        // click and switch back to SelectMode
-                        MainApplication.worker.execute(() -> map.selectDrawTool(true));
-                        return;
-                    }
+                // If the user double-clicked a node, change to draw mode
+                Collection<OsmPrimitive> c = ds.getSelected();
+                if (e.getClickCount() >= 2 && c.size() == 1 && c.iterator().next() instanceof Node) {
+                    // We need to do it like this as otherwise drawAction will see a double
+                    // click and switch back to SelectMode
+                    MainApplication.worker.execute(() -> map.selectDrawTool(true));
+                    return;
                 }
-            } else {
-                confirmOrUndoMovement(e);
             }
+        }
+
+        if ((mode == Mode.MOVE || mode == Mode.ROTATE || mode == Mode.SCALE) && e.getButton() == MouseEvent.BUTTON1
+                && didMouseDrag) {
+            confirmOrUndoMovement(e);
         }
 
         mode = null;
@@ -667,9 +682,9 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
      */
     private void determineMapMode(boolean hasSelectionNearby) {
         if (getLayerManager().getEditDataSet() != null) {
-            if (shift && ctrl) {
+            if (shift && platformMenuShortcutKeyMask) {
                 mode = Mode.ROTATE;
-            } else if (alt && ctrl) {
+            } else if (alt && platformMenuShortcutKeyMask) {
                 mode = Mode.SCALE;
             } else if (hasSelectionNearby || dragInProgress()) {
                 mode = Mode.MOVE;
@@ -693,10 +708,11 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
     /**
      * Create or update data modification command while dragging mouse - implementation of
      * continuous moving, scaling and rotation
+     * @param mouseEvent The triggering mouse event
      * @param currentEN - mouse position
      * @return status of action (<code>true</code> when action was performed)
      */
-    private boolean updateCommandWhileDragging(EastNorth currentEN) {
+    private boolean updateCommandWhileDragging(MouseEvent mouseEvent, EastNorth currentEN) {
         // Currently we support only transformations which do not affect relations.
         // So don't add them in the first place to make handling easier
         DataSet ds = getLayerManager().getEditDataSet();
@@ -716,9 +732,34 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
             return ds.update(() -> {
                 MoveCommand moveCmd = null;
                 if (c instanceof MoveCommand && affectedNodes.equals(((MoveCommand) c).getParticipatingPrimitives())) {
+                    EastNorth clampedEastNorth = currentEN;
+                    if (platformMenuShortcutKeyMask) {
+                        Way w = ds.getLastSelectedWay();
+                        if (w != null && w.getNodesCount() == 2) {
+                            double clamph = w.firstNode().getEastNorth().heading(w.lastNode().getEastNorth());
+                            double dh = startEN.heading(currentEN, clamph);
+                            switch ((int) (dh / (Math.PI/4))) {
+                            case 1:
+                            case 2:
+                                dh -= Math.PI/2;
+                                break;
+                            case 3:
+                            case 4:
+                                dh += Math.PI;
+                                break;
+                            case 5:
+                            case 6:
+                                dh += Math.PI/2;
+                                break;
+                            default:
+                                // Just in case we cannot clamp
+                            }
+                            clampedEastNorth = currentEN.rotate(startEN, -dh);
+                        }
+                    }
                     moveCmd = (MoveCommand) c;
                     moveCmd.saveCheckpoint();
-                    moveCmd.applyVectorTo(currentEN);
+                    moveCmd.applyVectorTo(clampedEastNorth);
                 } else if (!selection.isEmpty()) {
                     moveCmd = new MoveCommand(selection, startEN, currentEN);
                     UndoRedoHandler.getInstance().add(moveCmd);
@@ -744,20 +785,28 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
         } else {
             startEN = currentEN; // drag can continue after scaling/rotation
 
-            if (mode != Mode.ROTATE && mode != Mode.SCALE) {
+            if ((mode != Mode.ROTATE && mode != Mode.SCALE) || SwingUtilities.isRightMouseButton(mouseEvent)) {
                 return false;
             }
 
             return ds.update(() -> {
                 if (mode == Mode.ROTATE) {
                     if (c instanceof RotateCommand && affectedNodes.equals(((RotateCommand) c).getTransformedNodes())) {
-                        ((RotateCommand) c).handleEvent(currentEN);
+                        if (didMouseDrag) {
+                            ((RotateCommand) c).handleEvent(currentEN);
+                        } else {
+                            ((RotateCommand) c).handleUpdate(currentEN);
+                        }
                     } else {
                         UndoRedoHandler.getInstance().add(new RotateCommand(selection, currentEN));
                     }
                 } else if (mode == Mode.SCALE) {
                     if (c instanceof ScaleCommand && affectedNodes.equals(((ScaleCommand) c).getTransformedNodes())) {
-                        ((ScaleCommand) c).handleEvent(currentEN);
+                        if (didMouseDrag) {
+                            ((ScaleCommand) c).handleEvent(currentEN);
+                        } else {
+                            ((ScaleCommand) c).handleUpdate(currentEN);
+                        }
                     } else {
                         UndoRedoHandler.getInstance().add(new ScaleCommand(selection, currentEN));
                     }
@@ -766,6 +815,14 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
                 Collection<Way> ways = ds.getSelectedWays();
                 if (doesImpactStatusLine(affectedNodes, ways)) {
                     MainApplication.getMap().statusLine.setDist(ways);
+                }
+                if (c instanceof RotateCommand) {
+                    double angle = Utils.toDegrees(((RotateCommand) c).getRotationAngle());
+                    MainApplication.getMap().statusLine.setAngleNaN(angle);
+                } else if (c instanceof ScaleCommand) {
+                    // U+00D7 MULTIPLICATION SIGN
+                    String angle = String.format("%.2f", ((ScaleCommand) c).getScalingFactor()) + " \u00d7";
+                    MainApplication.getMap().statusLine.setAngleText(angle);
                 }
                 return true;
             });
@@ -827,27 +884,21 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
             ed.toggleEnable("movedHiddenElements");
             showConfirmMoveDialog(ed);
         }
+
         final Command lastCommand = UndoRedoHandler.getInstance().getLastCommand();
         if (lastCommand == null) {
             Logging.warn("No command found in undo/redo history, skipping confirmOrUndoMovement");
             return;
         }
+
+        SelectAction.checkCommandForLargeDistance(lastCommand);
+
+        // check if move was cancelled
+        if (UndoRedoHandler.getInstance().getLastCommand() != lastCommand)
+            return;
+
         final int moveCount = lastCommand.getParticipatingPrimitives().size();
-        if (lastCommand instanceof MoveCommand) {
-            final double moveDistance = ((MoveCommand) lastCommand).getDistance(n -> !n.isNew());
-            if (Double.isFinite(moveDistance) && moveDistance > Config.getPref().getInt("warn.move.maxdistance", 200)) {
-                final ConfirmMoveDialog ed = new ConfirmMoveDialog();
-                ed.setContent(trn(
-                        "You moved {0} element by a distance of {1}. "
-                                + "Moving elements by a large distance is often an error.\n" + "Really move them?",
-                        "You moved {0} elements by a distance of {1}. "
-                                + "Moving elements by a large distance is often an error.\n" + "Really move them?",
-                        moveCount, moveCount, SystemOfMeasurement.getSystemOfMeasurement().getDistText(moveDistance)));
-                ed.toggleEnable("movedLargeDistance");
-                showConfirmMoveDialog(ed);
-            }
-        }
-        int max = Config.getPref().getInt("warn.move.maxelements", 20);
+        final int max = Config.getPref().getInt("warn.move.maxelements", 20);
         if (moveCount > max) {
             final ConfirmMoveDialog ed = new ConfirmMoveDialog();
             ed.setContent(
@@ -860,11 +911,32 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
         } else {
             // if small number of elements were moved,
             updateKeyModifiers(e);
-            if (ctrl) mergePrims(e.getPoint());
+            if (isMergeRequested()) mergePrims(e.getPoint());
         }
     }
 
-    private void showConfirmMoveDialog(ConfirmMoveDialog ed) {
+    static void checkCommandForLargeDistance(Command lastCommand) {
+        if (lastCommand == null) {
+            return;
+        }
+        final int moveCount = lastCommand.getParticipatingPrimitives().size();
+        if (lastCommand instanceof MoveCommand) {
+            final double moveDistance = ((MoveCommand) lastCommand).getDistance(n -> !n.isNew());
+            if (Double.isFinite(moveDistance) && moveDistance > Config.getPref().getInt("warn.move.maxdistance", 200)) {
+                final ConfirmMoveDialog ed = new ConfirmMoveDialog();
+                ed.setContent(trn(
+                        "You moved {0} element by a distance of {1}. "
+                                + "Moving elements by a large distance is often an error.\n" + "Really move it?",
+                        "You moved {0} elements by a distance of {1}. "
+                                + "Moving elements by a large distance is often an error.\n" + "Really move them?",
+                        moveCount, moveCount, SystemOfMeasurement.getSystemOfMeasurement().getDistText(moveDistance)));
+                ed.toggleEnable("movedLargeDistance");
+                showConfirmMoveDialog(ed);
+            }
+        }
+    }
+
+    private static void showConfirmMoveDialog(ConfirmMoveDialog ed) {
         if (ed.showDialog().getValue() != 1) {
             UndoRedoHandler.getInstance().undo();
         }
@@ -889,6 +961,14 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
         return elementsToTest.stream()
                 .flatMap(n -> n.referrers(Way.class))
                 .anyMatch(Way::isDisabledAndHidden);
+    }
+
+    /**
+     * Check if dragged node should be merged when moving it over another primitive
+     * @return true if merge is requested
+     */
+    private boolean isMergeRequested() {
+        return MERGE_BY_DEFAULT.get() ^ platformMenuShortcutKeyMask;
     }
 
     /**
@@ -960,7 +1040,8 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
         // Virtual Ways: if non-empty the cursor is above a virtual node. So don't highlight
         // anything if about to drag the virtual node (i.e. !released) but continue if the
         // cursor is only released above a virtual node by accident (i.e. released). See #7018
-        if (ds == null || (shift && ctrl) || (ctrl && !released) || (virtualManager.hasVirtualWaysToBeConstructed() && !released))
+        if (ds == null || (shift && platformMenuShortcutKeyMask) || (platformMenuShortcutKeyMask && !released)
+                || (virtualManager.hasVirtualWaysToBeConstructed() && !released))
             return;
 
         if (!released) {
@@ -970,7 +1051,7 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
             shift |= ds.getSelected().containsAll(prims);
         }
 
-        if (ctrl) {
+        if (platformMenuShortcutKeyMask) {
             // Ctrl on an item toggles its selection status,
             // but Ctrl on an *area* just clears those items
             // out of the selection.
@@ -999,21 +1080,34 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
 
     @Override
     public String getModeHelpText() {
+        // There needs to be a better way
+        final String menuKey;
+        switch (PlatformManager.getPlatform().getMenuShortcutKeyMaskEx()) {
+        case InputEvent.CTRL_DOWN_MASK:
+            menuKey = trc("SelectAction help", "Ctrl");
+            break;
+        case InputEvent.META_DOWN_MASK:
+            menuKey = trc("SelectAction help", "Meta");
+            break;
+        default:
+            throw new IllegalStateException("Unknown platform menu shortcut key for " + PlatformManager.getPlatform().getOSDescription());
+        }
+        final String type = this.lassoMode ? trc("SelectAction help", "lasso") : trc("SelectAction help", "rectangle");
         if (mouseDownButton == MouseEvent.BUTTON1 && mouseReleaseTime < mouseDownTime) {
             if (mode == Mode.SELECT)
-                return tr("Release the mouse button to select the objects in the rectangle.");
+                return tr("Release the mouse button to select the objects in the {0}.", type);
             else if (mode == Mode.MOVE && (System.currentTimeMillis() - mouseDownTime >= initialMoveDelay)) {
                 final DataSet ds = getLayerManager().getEditDataSet();
                 final boolean canMerge = ds != null && !ds.getSelectedNodes().isEmpty();
-                final String mergeHelp = canMerge ? (' ' + tr("Ctrl to merge with nearest node.")) : "";
+                final String mergeHelp = canMerge ? (' ' + tr("{0} to merge with nearest node.", menuKey)) : "";
                 return tr("Release the mouse button to stop moving.") + mergeHelp;
             } else if (mode == Mode.ROTATE)
                 return tr("Release the mouse button to stop rotating.");
             else if (mode == Mode.SCALE)
                 return tr("Release the mouse button to stop scaling.");
         }
-        return tr("Move objects by dragging; Shift to add to selection (Ctrl to toggle); Shift-Ctrl to rotate selected; " +
-                  "Alt-Ctrl to scale selected; or change selection");
+        return tr("Move objects by dragging; Shift to add to selection ({0} to toggle); Shift-{0} to rotate selected; " +
+                "Alt-{0} to scale selected; or change selection", menuKey);
     }
 
     @Override
@@ -1033,7 +1127,7 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
     private final transient CycleManager cycleManager = new CycleManager();
     private final transient VirtualManager virtualManager = new VirtualManager();
 
-    private class CycleManager {
+    private final class CycleManager {
 
         private Collection<OsmPrimitive> cycleList = Collections.emptyList();
         private boolean cyclePrims;
@@ -1087,17 +1181,18 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
 
                         // special case:  for cycle groups of 2, we can toggle to the
                         // true nearest primitive on mousePressed right away
-                        if (cycleList.size() == 2 && !waitForMouseUpParameter) {
-                            if (!(osm.equals(old) || osm.isNew() || ctrl)) {
+                        if (cycleList.size() == 2 && !waitForMouseUpParameter
+                                // This was a nested if statement (see commented code below)
+                                && !(osm.equals(old) || osm.isNew() || platformMenuShortcutKeyMask)) {
                                 cyclePrims = false;
                                 osm = old;
-                            } // else defer toggling to mouseRelease time in those cases:
-                            /*
-                             * osm == old -- the true nearest node is the
-                             * selected one osm is a new node -- do not break
-                             * unglue ways in ALT mode ctrl is pressed -- ctrl
-                             * generally works on mouseReleased
-                             */
+                                // else defer toggling to mouseRelease time in those cases:
+                                /*
+                                 * osm == old -- the true nearest node is the
+                                 * selected one osm is a new node -- do not break
+                                 * unglue ways in ALT mode ctrl is pressed -- ctrl
+                                 * generally works on mouseReleased
+                                 */
                         }
                     }
                 }
@@ -1123,8 +1218,8 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
             OsmPrimitive nxt = first;
 
             if (cyclePrims && shift) {
-                for (Iterator<OsmPrimitive> i = cycleList.iterator(); i.hasNext();) {
-                    nxt = i.next();
+                for (OsmPrimitive osmPrimitive : cycleList) {
+                    nxt = osmPrimitive;
                     if (!nxt.isSelected()) {
                         break; // take first primitive in cycleList not in sel
                     }
@@ -1136,7 +1231,7 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
                     if (nxt.isSelected()) {
                         foundInDS = nxt;
                         // first selected primitive in cycleList is found
-                        if (cyclePrims || ctrl) {
+                        if (cyclePrims || platformMenuShortcutKeyMask) {
                             ds.clearSelection(foundInDS); // deselect it
                             nxt = i.hasNext() ? i.next() : first;
                             // return next one in cycle list (last->first)
@@ -1147,7 +1242,7 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
             }
 
             // if "no-alt-cycling" is enabled, Ctrl-Click arrives here.
-            if (ctrl) {
+            if (platformMenuShortcutKeyMask) {
                 // a member of cycleList was found in the current dataset selection
                 if (foundInDS != null) {
                     // mouse was moved to a different selection group w/ a previous sel
@@ -1171,7 +1266,7 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
         }
     }
 
-    private class VirtualManager {
+    private final class VirtualManager {
 
         private Node virtualNode;
         private Collection<WaySegment> virtualWays = new LinkedList<>();
@@ -1204,13 +1299,13 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
                 Pair<Node, Node> vnp = null, wnp = new Pair<>(null, null);
 
                 for (WaySegment ws : mv.getNearestWaySegments(p, mv.isSelectablePredicate)) {
-                    Way w = ws.way;
+                    Way w = ws.getWay();
 
-                    wnp.a = w.getNode(ws.lowerIndex);
-                    wnp.b = w.getNode(ws.lowerIndex + 1);
+                    wnp.a = w.getNode(ws.getLowerIndex());
+                    wnp.b = w.getNode(ws.getUpperIndex());
                     MapViewPoint p1 = mv.getState().getPointFor(wnp.a);
                     MapViewPoint p2 = mv.getState().getPointFor(wnp.b);
-                    if (WireframeMapRenderer.isLargeSegment(p1, p2, virtualSpace)) {
+                    if (AbstractMapRenderer.isLargeSegment(p1, p2, virtualSpace)) {
                         Point2D pc = new Point2D.Double((p1.getInViewX() + p2.getInViewX()) / 2, (p1.getInViewY() + p2.getInViewY()) / 2);
                         if (p.distanceSq(pc) < virtualSnapDistSq2) {
                             // Check that only segments on top of each other get added to the
@@ -1246,9 +1341,9 @@ public class SelectAction extends MapMode implements ModifierExListener, KeyPres
             Collection<Command> virtualCmds = new LinkedList<>();
             virtualCmds.add(new AddCommand(ds, virtualNode));
             for (WaySegment virtualWay : virtualWays) {
-                Way w = virtualWay.way;
+                Way w = virtualWay.getWay();
                 List<Node> modNodes = w.getNodes();
-                modNodes.add(virtualWay.lowerIndex + 1, virtualNode);
+                modNodes.add(virtualWay.getUpperIndex(), virtualNode);
                 virtualCmds.add(new ChangeNodesCommand(ds, w, modNodes));
             }
             virtualCmds.add(new MoveCommand(ds, virtualNode, startEN, currentEN));

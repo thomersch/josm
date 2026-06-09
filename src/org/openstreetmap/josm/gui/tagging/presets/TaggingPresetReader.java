@@ -20,6 +20,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.zip.ZipFile;
 
 import javax.swing.JOptionPane;
 
@@ -47,6 +48,7 @@ import org.openstreetmap.josm.io.UTFInputStreamReader;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.I18n;
 import org.openstreetmap.josm.tools.Logging;
+import org.openstreetmap.josm.tools.Pair;
 import org.openstreetmap.josm.tools.Stopwatch;
 import org.openstreetmap.josm.tools.Utils;
 import org.openstreetmap.josm.tools.XmlObjectParser;
@@ -106,6 +108,11 @@ public final class TaggingPresetReader {
         }
     }
 
+    /**
+     * A {@link LinkedHashSet} with the ability to get the "last" object.
+     * Note that this is unnecessary in Java 21 (see JEP 431).
+     * @param <E> The object type in the set
+     */
     static class HashSetWithLast<E> extends LinkedHashSet<E> {
         private static final long serialVersionUID = 1L;
         protected transient E last;
@@ -120,6 +127,7 @@ public final class TaggingPresetReader {
          * Returns the last inserted element.
          * @return the last inserted element
          */
+        @SuppressWarnings("PMD.MissingOverride") // For Java >= 21 we can drop the whole class
         public E getLast() {
             return last;
         }
@@ -166,7 +174,7 @@ public final class TaggingPresetReader {
      * @throws SAXException if any XML error occurs
      */
     public static Collection<TaggingPreset> readAll(Reader in, boolean validate) throws SAXException {
-        return readAll(in, validate, new HashSetWithLast<TaggingPreset>());
+        return readAll(in, validate, new HashSetWithLast<>());
     }
 
     /**
@@ -180,18 +188,18 @@ public final class TaggingPresetReader {
     static Collection<TaggingPreset> readAll(Reader in, boolean validate, HashSetWithLast<TaggingPreset> all) throws SAXException {
         XmlObjectParser parser = buildParser();
 
-        /** to detect end of {@code <checkgroup>} */
+        /* to detect end of {@code <checkgroup>} */
         CheckGroup lastcheckgroup = null;
-        /** to detect end of {@code <group>} */
+        /* to detect end of {@code <group>} */
         TaggingPresetMenu lastmenu = null;
-        /** to detect end of reused {@code <group>} */
+        /* to detect end of reused {@code <group>} */
         TaggingPresetMenu lastmenuOriginal = null;
         Roles lastrole = null;
         final List<Check> checks = new LinkedList<>();
         final List<PresetListEntry> listEntries = new LinkedList<>();
         final Map<String, List<Object>> byId = new HashMap<>();
         final Deque<String> lastIds = new ArrayDeque<>();
-        /** lastIdIterators contains non empty iterators of items to be handled before obtaining the next item from the XML parser */
+        /* lastIdIterators contains non empty iterators of items to be handled before obtaining the next item from the XML parser */
         final Deque<Iterator<Object>> lastIdIterators = new ArrayDeque<>();
 
         if (validate) {
@@ -217,14 +225,13 @@ public final class TaggingPresetReader {
                     // pop last id on end of object, don't process further
                     lastIds.pop();
                     ((Chunk) o).id = null;
-                    continue;
                 } else {
                     // if preset item contains an id, store a mapping for later usage
                     String lastId = ((Chunk) o).id;
                     lastIds.push(lastId);
                     byId.put(lastId, new ArrayList<>());
-                    continue;
                 }
+                continue;
             } else if (!lastIds.isEmpty()) {
                 // add object to mapping for later usage
                 byId.get(lastIds.peek()).add(o);
@@ -240,6 +247,9 @@ public final class TaggingPresetReader {
                 Iterator<Object> it = byId.get(ref).iterator();
                 if (it.hasNext()) {
                     lastIdIterators.push(it);
+                    if (lastIdIterators.size() > 100) {
+                        throw new SAXException(tr("Reference stack for {0} is too large", ref));
+                    }
                 } else {
                     Logging.warn("Ignoring reference '"+ref+"' denoting an empty chunk");
                 }
@@ -348,7 +358,7 @@ public final class TaggingPresetReader {
      * @throws IOException if any I/O error occurs
      */
     public static Collection<TaggingPreset> readAll(String source, boolean validate) throws SAXException, IOException {
-        return readAll(source, validate, new HashSetWithLast<TaggingPreset>());
+        return readAll(source, validate, new HashSetWithLast<>());
     }
 
     /**
@@ -367,15 +377,21 @@ public final class TaggingPresetReader {
         Stopwatch stopwatch = Stopwatch.createStarted();
         try (
             CachedFile cf = new CachedFile(source).setHttpAccept(PRESET_MIME_TYPES);
-            // zip may be null, but Java 7 allows it: https://blogs.oracle.com/darcy/entry/project_coin_null_try_with
-            InputStream zip = cf.findZipEntryInputStream("xml", "preset")
         ) {
-            if (zip != null) {
-                zipIcons = cf.getFile();
-                I18n.addTexts(zipIcons);
-            }
-            try (InputStreamReader r = UTFInputStreamReader.create(zip == null ? cf.getInputStream() : zip)) {
-                tp = readAll(new BufferedReader(r), validate, all);
+            Pair<ZipFile, InputStream> zip = cf.findZipEntryInputStream("xml", "preset");
+            try {
+                if (zip != null) {
+                    zipIcons = cf.getFile();
+                    I18n.addTexts(zipIcons);
+                }
+                try (InputStreamReader r = UTFInputStreamReader.create(zip == null ? cf.getInputStream() : zip.b)) {
+                    tp = readAll(new BufferedReader(r), validate, all);
+                }
+            } finally {
+                if (zip != null) {
+                    Utils.close(zip.b);
+                    Utils.close(zip.a);
+                }
             }
         }
         Logging.debug(stopwatch.toString("Reading presets"));

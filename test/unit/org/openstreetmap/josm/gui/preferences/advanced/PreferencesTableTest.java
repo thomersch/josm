@@ -1,38 +1,31 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.preferences.advanced;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.util.Arrays;
+import java.util.Collections;
 
 import javax.swing.JOptionPane;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.gui.ExtendedDialog;
 import org.openstreetmap.josm.gui.preferences.advanced.PreferencesTable.AllSettingsTableModel;
 import org.openstreetmap.josm.spi.preferences.StringSetting;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.AssertionsInEDT;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 import org.openstreetmap.josm.testutils.mockers.ExtendedDialogMocker;
 import org.openstreetmap.josm.testutils.mockers.JOptionPaneSimpleMocker;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
  * Unit tests of {@link PreferencesTable} class.
  */
-public class PreferencesTableTest {
-    /**
-     * Setup tests
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences().assertionsInEDT();
-
+@AssertionsInEDT
+@BasicPreferences
+class PreferencesTableTest {
     private static PrefEntry newPrefEntry(String value) {
         StringSetting val = new StringSetting(value);
         StringSetting def = new StringSetting("defaultValue");
@@ -40,14 +33,14 @@ public class PreferencesTableTest {
     }
 
     private static PreferencesTable newTable() {
-        return new PreferencesTable(Arrays.asList(newPrefEntry("value")));
+        return new PreferencesTable(Collections.singletonList(newPrefEntry("value")));
     }
 
     /**
      * Unit test of {@link PreferencesTable#PreferencesTable}.
      */
     @Test
-    public void testPreferencesTable() {
+    void testPreferencesTable() {
         TestUtils.assumeWorkingJMockit();
         final JOptionPaneSimpleMocker mocker = new JOptionPaneSimpleMocker();
         mocker.getMockResultMap().put("Please select the row to edit.", JOptionPane.OK_OPTION);
@@ -74,7 +67,7 @@ public class PreferencesTableTest {
      * Unit test of {@link PreferencesTable.AllSettingsTableModel} class.
      */
     @Test
-    public void testAllSettingsTableModel() {
+    void testAllSettingsTableModel() {
         AllSettingsTableModel model = (AllSettingsTableModel) newTable().getModel();
         assertEquals(1, model.getRowCount());
         assertFalse(model.isCellEditable(0, 0));

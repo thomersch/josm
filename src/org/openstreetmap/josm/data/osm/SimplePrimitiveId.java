@@ -56,7 +56,7 @@ public class SimplePrimitiveId implements PrimitiveId, Serializable {
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, type);
+        return Long.hashCode(id) + 31 * Objects.hashCode(type);
     }
 
     @Override
@@ -98,7 +98,7 @@ public class SimplePrimitiveId implements PrimitiveId, Serializable {
     public static List<SimplePrimitiveId> multipleFromString(String s) {
         final Matcher m = MULTIPLE_IDS_PATTERN.matcher(s);
         if (m.matches()) {
-            return extractIdsInto(m, new ArrayList<SimplePrimitiveId>());
+            return extractIdsInto(m, new ArrayList<>());
         } else {
             throw new IllegalArgumentException("The string " + s + " does not match the pattern " + MULTIPLE_IDS_PATTERN);
         }
@@ -147,5 +147,27 @@ public class SimplePrimitiveId implements PrimitiveId, Serializable {
 
     private static OsmPrimitiveType getOsmPrimitiveType(char firstChar) {
         return firstChar == 'n' ? OsmPrimitiveType.NODE : firstChar == 'w' ? OsmPrimitiveType.WAY : OsmPrimitiveType.RELATION;
+    }
+
+    /**
+     * Convert a primitive to a simple id
+     *
+     * @param primitive The primitive to convert
+     * @return The type (may be n, w, or r, or something else) + the id (e.g., w42)
+     * @since 18829
+     */
+    public static String toSimpleId(PrimitiveId primitive) {
+        switch (primitive.getType()) {
+            case NODE:
+                return "n" + primitive.getUniqueId();
+            case CLOSEDWAY:
+            case WAY:
+                return "w" + primitive.getUniqueId();
+            case MULTIPOLYGON:
+            case RELATION:
+                return "r" + primitive.getUniqueId();
+            default:
+                throw new IllegalArgumentException("Unknown primitive type: " + primitive.getType());
+        }
     }
 }

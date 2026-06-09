@@ -1,10 +1,10 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.conflict.pair.nodes;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
@@ -18,32 +18,24 @@ import java.util.Set;
 
 import javax.swing.DefaultListSelectionModel;
 
-import org.junit.Rule;
-import org.junit.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.gui.conflict.pair.AbstractListMergeModel;
 import org.openstreetmap.josm.testutils.DatasetFactory;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 import org.openstreetmap.josm.tools.Logging;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests of {@link NodeListMergeModel}.
  */
-public class NodeListMergeModelTest {
-
+// Needed to due to OSM primitive dependencies
+@BasicPreferences
+class NodeListMergeModelTest {
     private final DatasetFactory my = new DatasetFactory();
     private final DatasetFactory their = new DatasetFactory();
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
 
     @SuppressWarnings("unchecked")
     protected List<Node> inspectNodeList(NodeListMergeModel model, String name) {
@@ -75,13 +67,13 @@ public class NodeListMergeModelTest {
 
     protected void ensureSelected(DefaultListSelectionModel model, Object... idx) {
         if (idx == null) return;
-        for (int i = 0; i < idx.length; i++) {
-            if (idx[i] instanceof Integer) {
-                int j = (Integer) idx[i];
-                assertTrue("expected row " + j + " to be selected", model.isSelectedIndex(j));
+        for (Object object : idx) {
+            if (object instanceof Integer) {
+                int j = (Integer) object;
+                assertTrue(model.isSelectedIndex(j), "expected row " + j + " to be selected");
                 break;
             }
-            int[] rows = (int[]) idx[i];
+            int[] rows = (int[]) object;
             if (rows.length != 2) {
                 fail("illegal selection range. Either null or not length 2: " + Arrays.toString(rows));
             }
@@ -89,13 +81,13 @@ public class NodeListMergeModelTest {
                 fail("illegal selection range. lower bound > upper bound ");
             }
             for (int j = rows[0]; j <= rows[1]; j++) {
-                assertTrue("expected row " + j + " to be selected", model.isSelectedIndex(j));
+                assertTrue(model.isSelectedIndex(j), "expected row " + j + " to be selected");
             }
         }
     }
 
     @Test
-    public void testCopyMyNodesToTop1() {
+    void testCopyMyNodesToTop1() {
         NodeListMergeModel model = new NodeListMergeModel();
 
         Way myWay = my.addWay(1, 1);
@@ -117,7 +109,7 @@ public class NodeListMergeModelTest {
     }
 
     @Test
-    public void testCopyMyNodesToTop2() {
+    void testCopyMyNodesToTop2() {
         NodeListMergeModel model = new NodeListMergeModel();
 
         Way myWay = my.addWay(1, 1);
@@ -143,7 +135,7 @@ public class NodeListMergeModelTest {
     }
 
     @Test
-    public void testCopyMyNodesToTop3() {
+    void testCopyMyNodesToTop3() {
         NodeListMergeModel model = new NodeListMergeModel();
 
         Way myWay = my.addWay(1, 1);
@@ -169,7 +161,7 @@ public class NodeListMergeModelTest {
     }
 
     @Test
-    public void testCopyMyNodesToTop4() {
+    void testCopyMyNodesToTop4() {
         NodeListMergeModel model = new NodeListMergeModel();
 
         Way myWay = my.addWay(1, 1);
@@ -196,7 +188,7 @@ public class NodeListMergeModelTest {
     }
 
     @Test
-    public void testCopyMyNodesToEnd1() {
+    void testCopyMyNodesToEnd1() {
         NodeListMergeModel model = new NodeListMergeModel();
 
         Way myWay = my.addWay(1, 1);
@@ -217,7 +209,7 @@ public class NodeListMergeModelTest {
     }
 
     @Test
-    public void testCopyMyNodesToEnd2() {
+    void testCopyMyNodesToEnd2() {
         NodeListMergeModel model = new NodeListMergeModel();
 
         Way myWay = my.addWay(1, 1);
@@ -242,7 +234,7 @@ public class NodeListMergeModelTest {
     }
 
     @Test
-    public void testCopyMyNodesToEnd3() {
+    void testCopyMyNodesToEnd3() {
         NodeListMergeModel model = new NodeListMergeModel();
 
 
@@ -269,7 +261,7 @@ public class NodeListMergeModelTest {
     }
 
     @Test
-    public void testCopyMyNodesToEnd4() {
+    void testCopyMyNodesToEnd4() {
         NodeListMergeModel model = new NodeListMergeModel();
 
 
@@ -302,7 +294,7 @@ public class NodeListMergeModelTest {
     /* ----------------------------------------------------------------------------- */
 
     @Test
-    public void testCopyMyNodesBeforeCurrent1() {
+    void testCopyMyNodesBeforeCurrent1() {
         NodeListMergeModel model = new NodeListMergeModel();
 
         Way myWay = my.addWay(1, 1);
@@ -329,7 +321,7 @@ public class NodeListMergeModelTest {
     }
 
     @Test
-    public void testCopyMyNodesBeforeCurrent2() {
+    void testCopyMyNodesBeforeCurrent2() {
         NodeListMergeModel model = new NodeListMergeModel();
 
         Way myWay = my.addWay(1, 1);
@@ -357,7 +349,7 @@ public class NodeListMergeModelTest {
     }
 
     @Test
-    public void testCopyMyNodesBeforeCurrent3() {
+    void testCopyMyNodesBeforeCurrent3() {
         NodeListMergeModel model = new NodeListMergeModel();
 
         Way myWay = my.addWay(1, 1);
@@ -392,7 +384,7 @@ public class NodeListMergeModelTest {
     /* copyMyNodesAfterCurrent                                                       */
     /* ----------------------------------------------------------------------------- */
     @Test
-    public void testCopyMyNodesAfterCurrent1() {
+    void testCopyMyNodesAfterCurrent1() {
         NodeListMergeModel model = new NodeListMergeModel();
 
         Way myWay = my.addWay(1, 1);
@@ -419,7 +411,7 @@ public class NodeListMergeModelTest {
     }
 
     @Test
-    public void testCopyMyNodesAfterCurrent2() {
+    void testCopyMyNodesAfterCurrent2() {
         NodeListMergeModel model = new NodeListMergeModel();
 
         Way myWay = my.addWay(1, 1);
@@ -448,7 +440,7 @@ public class NodeListMergeModelTest {
     }
 
     @Test
-    public void testCopyMyNodesAfterCurrent3() {
+    void testCopyMyNodesAfterCurrent3() {
         NodeListMergeModel model = new NodeListMergeModel();
 
         Way myWay = my.addWay(1, 1);
@@ -481,7 +473,7 @@ public class NodeListMergeModelTest {
     /* moveUpMergedNodes                                                       */
     /* ----------------------------------------------------------------------------- */
     @Test
-    public void testMoveUpMergedNodes1() {
+    void testMoveUpMergedNodes1() {
         NodeListMergeModel model = new NodeListMergeModel();
 
         Way myWay = new Way(1, 1);
@@ -507,7 +499,7 @@ public class NodeListMergeModelTest {
     }
 
     @Test
-    public void testMoveUpMergedNodes2() {
+    void testMoveUpMergedNodes2() {
         NodeListMergeModel model = new NodeListMergeModel();
 
         Way myWay = new Way(1, 1);
@@ -537,7 +529,7 @@ public class NodeListMergeModelTest {
     }
 
     @Test
-    public void testMoveUpMergedNodes3() {
+    void testMoveUpMergedNodes3() {
         NodeListMergeModel model = new NodeListMergeModel();
 
         Way myWay = new Way(1, 1);
@@ -570,7 +562,7 @@ public class NodeListMergeModelTest {
     /* moveDownMergedNodes                                                       */
     /* ----------------------------------------------------------------------------- */
     @Test
-    public void testMoveDownMergedNodes1() {
+    void testMoveDownMergedNodes1() {
         NodeListMergeModel model = new NodeListMergeModel();
 
         Way myWay = new Way(1, 1);
@@ -596,7 +588,7 @@ public class NodeListMergeModelTest {
     }
 
     @Test
-    public void testMoveDownMergedNodes2() {
+    void testMoveDownMergedNodes2() {
         NodeListMergeModel model = new NodeListMergeModel();
 
         Way myWay = new Way(1, 1);
@@ -626,7 +618,7 @@ public class NodeListMergeModelTest {
     }
 
     @Test
-    public void testMoveDownMergedNodes3() {
+    void testMoveDownMergedNodes3() {
         NodeListMergeModel model = new NodeListMergeModel();
 
         Way myWay = new Way(1, 1);
@@ -659,7 +651,7 @@ public class NodeListMergeModelTest {
     /* PropertyChangeListener                                                        */
     /* ----------------------------------------------------------------------------- */
     @Test
-    public void testAddPropertyChangeListener() throws ReflectiveOperationException {
+    void testAddPropertyChangeListener() throws ReflectiveOperationException {
         NodeListMergeModel model = new NodeListMergeModel();
 
         PropertyChangeListener listener = evt -> {
@@ -674,7 +666,7 @@ public class NodeListMergeModelTest {
     }
 
     @Test
-    public void testRemovePropertyChangeListener() throws ReflectiveOperationException {
+    void testRemovePropertyChangeListener() throws ReflectiveOperationException {
         NodeListMergeModel model = new NodeListMergeModel();
 
         PropertyChangeListener listener = evt -> {
@@ -692,7 +684,7 @@ public class NodeListMergeModelTest {
     /* property frozen                                                               */
     /* ----------------------------------------------------------------------------- */
     @Test
-    public void testSetFrozen() {
+    void testSetFrozen() {
         NodeListMergeModel model = new NodeListMergeModel();
         model.setFrozen(true);
         assertTrue(model.isFrozen());
@@ -702,7 +694,7 @@ public class NodeListMergeModelTest {
     }
 
     @Test
-    public void testSetFrozenWithPropertyChangeNotification() {
+    void testSetFrozenWithPropertyChangeNotification() {
         NodeListMergeModel model = new NodeListMergeModel();
 
         class MyListener implements PropertyChangeListener {

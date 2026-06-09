@@ -6,10 +6,15 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.function.Consumer;
 
 import javax.swing.JOptionPane;
 
@@ -35,16 +40,18 @@ import org.openstreetmap.josm.io.ChangesetUpdater;
 import org.openstreetmap.josm.io.UploadStrategySpecification;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.ImageProvider;
+import org.openstreetmap.josm.tools.JosmRuntimeException;
+import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.Shortcut;
 import org.openstreetmap.josm.tools.Utils;
 
 /**
  * Action that opens a connection to the osm server and uploads all changes.
- *
+ * <p>
  * A dialog is displayed asking the user to specify a rectangle to grab.
  * The url and account settings from the preferences are used.
- *
- * If the upload fails this action offers various options to resolve conflicts.
+ * <p>
+ * If the upload fails, this action offers various options to resolve conflicts.
  *
  * @author imi
  */
@@ -53,8 +60,8 @@ public class UploadAction extends AbstractUploadAction {
      * The list of upload hooks. These hooks will be called one after the other
      * when the user wants to upload data. Plugins can insert their own hooks here
      * if they want to be able to veto an upload.
-     *
-     * Be default, the standard upload dialog is the only element in the list.
+     * <p>
+     * By default, the standard upload dialog is the only element in the list.
      * Plugins should normally insert their code before that, so that the upload
      * dialog is the last thing shown before upload really starts; on occasion
      * however, a plugin might also want to insert something after that.
@@ -65,27 +72,27 @@ public class UploadAction extends AbstractUploadAction {
     private static final String IS_ASYNC_UPLOAD_ENABLED = "asynchronous.upload";
 
     static {
-        /**
+        /*
          * Calls validator before upload.
          */
         UPLOAD_HOOKS.add(new ValidateUploadHook());
 
-        /**
+        /*
          * Fixes database errors
          */
         UPLOAD_HOOKS.add(new FixDataHook());
 
-        /**
+        /*
          * Checks server capabilities before upload.
          */
         UPLOAD_HOOKS.add(new ApiPreconditionCheckerHook());
 
-        /**
+        /*
          * Adjusts the upload order of new relations
          */
         UPLOAD_HOOKS.add(new RelationUploadOrderHook());
 
-        /**
+        /*
          * Removes discardable tags like created_by on modified objects
          */
         LATE_UPLOAD_HOOKS.add(new DiscardTagsHook());
@@ -192,8 +199,8 @@ public class UploadAction extends AbstractUploadAction {
     }
 
     /**
-     * Check whether the preconditions are met to upload data in <code>apiData</code>.
-     * Makes sure upload is allowed, primitives in <code>apiData</code> don't participate in conflicts and
+     * Check whether the preconditions are met to upload data in {@code apiData}.
+     * Makes sure upload is allowed, primitives in {@code apiData} don't participate in conflicts and
      * runs the installed {@link UploadHook}s.
      *
      * @param layer the source layer of the data to be uploaded
@@ -201,25 +208,53 @@ public class UploadAction extends AbstractUploadAction {
      * @return true, if the preconditions are met; false, otherwise
      */
     public static boolean checkPreUploadConditions(AbstractModifiableLayer layer, APIDataSet apiData) {
-        if (layer.isUploadDiscouraged() && warnUploadDiscouraged(layer)) {
-            return false;
+        try {
+            return checkPreUploadConditionsAsync(layer, apiData, null).get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new JosmRuntimeException(e);
+        } catch (ExecutionException e) {
+            throw new JosmRuntimeException(e);
         }
-        if (layer instanceof OsmDataLayer) {
+    }
+
+    /**
+     * Check whether the preconditions are met to upload data in {@code apiData}.
+     * Makes sure upload is allowed, primitives in {@code apiData} don't participate in conflicts and
+     * runs the installed {@link UploadHook}s.
+     *
+     * @param layer the source layer of the data to be uploaded
+     * @param apiData the data to be uploaded
+     * @param onFinish {@code true} if the preconditions are met; {@code false}, otherwise
+     * @return A future that completes when the checks are finished
+     * @since 18752
+     */
+    private static Future<Boolean> checkPreUploadConditionsAsync(AbstractModifiableLayer layer, APIDataSet apiData, Consumer<Boolean> onFinish) {
+        final CompletableFuture<Boolean> future = new CompletableFuture<>();
+        if (onFinish != null) {
+            future.thenAccept(onFinish);
+        }
+        if (layer.isUploadDiscouraged() && warnUploadDiscouraged(layer)) {
+            future.complete(false);
+        } else if (layer instanceof OsmDataLayer) {
             OsmDataLayer osmLayer = (OsmDataLayer) layer;
             ConflictCollection conflicts = osmLayer.getConflicts();
             if (apiData.participatesInConflict(conflicts)) {
                 alertUnresolvedConflicts(osmLayer);
-                return false;
+                future.complete(false);
             }
         }
         // Call all upload hooks in sequence.
-        // FIXME: this should become an asynchronous task
-        //
-        if (apiData != null) {
-            return UPLOAD_HOOKS.stream().allMatch(hook -> hook.checkUpload(apiData));
+        if (!future.isDone()) {
+            MainApplication.worker.execute(() -> {
+                boolean hooks = true;
+                if (apiData != null) {
+                    hooks = UPLOAD_HOOKS.stream().allMatch(hook -> hook.checkUpload(apiData));
+                }
+                future.complete(hooks);
+            });
         }
-
-        return true;
+        return future;
     }
 
     /**
@@ -230,17 +265,42 @@ public class UploadAction extends AbstractUploadAction {
      */
     public void uploadData(final OsmDataLayer layer, APIDataSet apiData) {
         if (apiData.isEmpty()) {
-            new Notification(tr("No changes to upload.")).show();
+            new Notification(tr("No changes to upload.")).setIcon(JOptionPane.INFORMATION_MESSAGE).show();
             return;
         }
-        if (!checkPreUploadConditions(layer, apiData))
-            return;
+        checkPreUploadConditionsAsync(layer, apiData, passed -> GuiHelper.runInEDT(() -> {
+            if (Boolean.TRUE.equals(passed)) {
+                realUploadData(layer, apiData);
+            } else {
+                new Notification(tr("One of the upload verification processes failed"))
+                        .setIcon(JOptionPane.WARNING_MESSAGE)
+                        .show();
+            }
+        }));
+    }
+
+    /**
+     * Uploads data to the OSM API.
+     *
+     * @param layer the source layer for the data to upload
+     * @param apiData the primitives to be added, updated, or deleted
+     */
+    private static void realUploadData(final OsmDataLayer layer, final APIDataSet apiData) {
 
         ChangesetUpdater.check();
 
         final UploadDialog dialog = UploadDialog.getUploadDialog();
-        dialog.setChangesetTags(layer.getDataSet());
         dialog.setUploadedPrimitives(apiData);
+        dialog.initLifeCycle(layer.getDataSet());
+        Map<String, String> changesetTags = dialog.getChangeset().getKeys();
+        Map<String, String> originalChangesetTags = new HashMap<>(changesetTags);
+        for (UploadHook hook : UPLOAD_HOOKS) {
+            hook.modifyChangesetTags(changesetTags);
+        }
+        dialog.getModel().putAll(changesetTags);
+        if (!originalChangesetTags.equals(changesetTags)) {
+            dialog.setChangesetTagsModifiedProgramatically();
+        }
         dialog.setVisible(true);
         dialog.rememberUserInput();
         if (dialog.isCanceled()) {
@@ -257,24 +317,22 @@ public class UploadAction extends AbstractUploadAction {
 
         // Any hooks want to change the changeset tags?
         Changeset cs = dialog.getChangeset();
-        Map<String, String> changesetTags = cs.getKeys();
-        for (UploadHook hook : UPLOAD_HOOKS) {
-            hook.modifyChangesetTags(changesetTags);
-        }
+        changesetTags = cs.getKeys();
         for (UploadHook hook : LATE_UPLOAD_HOOKS) {
             hook.modifyChangesetTags(changesetTags);
         }
 
         UploadStrategySpecification uploadStrategySpecification = dialog.getUploadStrategySpecification();
+        Logging.info("Starting upload with tags {0}", changesetTags);
+        Logging.info(uploadStrategySpecification.toString());
+        Logging.info(cs.toString());
         dialog.clean();
 
         if (Config.getPref().getBoolean(IS_ASYNC_UPLOAD_ENABLED, true)) {
             Optional<AsynchronousUploadPrimitivesTask> asyncUploadTask = AsynchronousUploadPrimitivesTask.createAsynchronousUploadTask(
                     uploadStrategySpecification, layer, apiData, cs);
 
-            if (asyncUploadTask.isPresent()) {
-                MainApplication.worker.execute(asyncUploadTask.get());
-            }
+            asyncUploadTask.ifPresent(MainApplication.worker::execute);
         } else {
             MainApplication.worker.execute(new UploadPrimitivesTask(uploadStrategySpecification, layer, apiData, cs));
         }
@@ -285,7 +343,7 @@ public class UploadAction extends AbstractUploadAction {
         if (!isEnabled())
             return;
         if (MainApplication.getMap() == null) {
-            new Notification(tr("Nothing to upload. Get some data first.")).show();
+            new Notification(tr("Nothing to upload. Get some data first.")).setIcon(JOptionPane.INFORMATION_MESSAGE).show();
             return;
         }
         APIDataSet apiData = new APIDataSet(getLayerManager().getEditDataSet());

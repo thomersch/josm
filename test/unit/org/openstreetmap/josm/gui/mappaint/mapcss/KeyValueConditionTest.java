@@ -1,15 +1,14 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.mappaint.mapcss;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.StringReader;
 
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Node;
@@ -21,29 +20,21 @@ import org.openstreetmap.josm.gui.mappaint.mapcss.Condition.Context;
 import org.openstreetmap.josm.gui.mappaint.mapcss.ConditionFactory.KeyValueCondition;
 import org.openstreetmap.josm.gui.mappaint.mapcss.ConditionFactory.Op;
 import org.openstreetmap.josm.gui.mappaint.mapcss.parsergen.MapCSSParser;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.Projection;
 import org.openstreetmap.josm.tools.Logging;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
  * Unit tests of {@link KeyValueCondition}.
  */
-public class KeyValueConditionTest {
+@Projection
+class KeyValueConditionTest {
 
     private DataSet ds;
 
     /**
-     * Setup rule
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().projection();
-
-    /**
      * Setup test
      */
-    @Before
+    @BeforeEach
     public void setUp() {
         ds = new DataSet();
     }
@@ -113,7 +104,7 @@ public class KeyValueConditionTest {
     }
 
     @Test
-    public void testKeyRegexValueRegex() throws Exception {
+    void testKeyRegexValueRegex() throws Exception {
         Selector selPos = new MapCSSParser(new StringReader("*[/^source/ =~ /.*,.*/]")).selector();
         Selector selNeg = new MapCSSParser(new StringReader("*[/^source/ !~ /.*,.*/]")).selector();
         assertFalse(selPos.matches(new Environment(OsmUtils.createPrimitive("way foo=bar"))));
@@ -128,7 +119,7 @@ public class KeyValueConditionTest {
     }
 
     @Test
-    public void testValueFive() throws Exception {
+    void testValueFive() throws Exception {
         // ticket #5985
         Selector sel = new MapCSSParser(new StringReader("*[width=5]")).selector();
         assertTrue(sel.matches(new Environment(OsmUtils.createPrimitive("way highway=track width=5"))));
@@ -136,7 +127,7 @@ public class KeyValueConditionTest {
     }
 
     @Test
-    public void testValueZero() throws Exception {
+    void testValueZero() throws Exception {
         // ticket #12267
         Selector sel = new MapCSSParser(new StringReader("*[frequency=0]")).selector();
         assertTrue(sel.matches(new Environment(OsmUtils.createPrimitive("way railway=rail frequency=0"))));

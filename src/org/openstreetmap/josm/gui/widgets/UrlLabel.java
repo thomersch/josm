@@ -37,7 +37,7 @@ public class UrlLabel extends JLabel implements MouseListener {
      * @param url The URL to use, also used as description
      */
     public UrlLabel(String url) {
-        this (url, url, 0);
+        this(url, url, 0);
     }
 
     /**
@@ -46,7 +46,7 @@ public class UrlLabel extends JLabel implements MouseListener {
      * @param fontPlus The font increase in 1/72 of an inch units.
      */
     public UrlLabel(String url, int fontPlus) {
-        this (url, url, fontPlus);
+        this(url, url, fontPlus);
     }
 
     /**
@@ -55,11 +55,11 @@ public class UrlLabel extends JLabel implements MouseListener {
      * @param description The description to display
      */
     public UrlLabel(String url, String description) {
-        this (url, description, 0);
+        this(url, description, 0);
     }
 
     /**
-     * Constructs a new {@code UrlLabel} for the given URL, description and font increase.
+     * Constructs a new {@code UrlLabel} for the given URL, description and image.
      * @param url The URL to use
      * @param description The description to display
      * @param image The image to be displayed by the label instead of text
@@ -91,8 +91,8 @@ public class UrlLabel extends JLabel implements MouseListener {
     }
 
     protected final void refresh() {
-        if (url != null && !url.isEmpty()) {
-            refresh("<html><a href=\""+url+"\">"+description+"</a></html>",
+        if (!Utils.isEmpty(url)) {
+            refresh("<html><a color=\"" + JosmEditorPane.getLinkColor() + "\" href=\"" + url + "\">" + description + "</a></html>",
                     Cursor.getPredefinedCursor(Cursor.HAND_CURSOR),
                     String.format("<html>%s<br/>%s</html>", url, tr("Right click = copy to clipboard")));
         } else {
@@ -146,7 +146,7 @@ public class UrlLabel extends JLabel implements MouseListener {
 
     @Override
     public void mouseClicked(MouseEvent e) {
-        if (url != null && !url.isEmpty()) {
+        if (!Utils.isEmpty(url)) {
             if (SwingUtilities.isLeftMouseButton(e)) {
                 OpenBrowser.displayUrl(url);
             } else if (SwingUtilities.isRightMouseButton(e)) {

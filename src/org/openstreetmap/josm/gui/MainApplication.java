@@ -2,6 +2,7 @@
 package org.openstreetmap.josm.gui;
 
 import static org.openstreetmap.josm.tools.I18n.tr;
+import static org.openstreetmap.josm.tools.I18n.trc;
 import static org.openstreetmap.josm.tools.I18n.trn;
 import static org.openstreetmap.josm.tools.Utils.getSystemProperty;
 
@@ -11,11 +12,11 @@ import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GraphicsEnvironment;
 import java.awt.GridBagLayout;
+import java.awt.RenderingHints;
 import java.awt.Toolkit;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.lang.reflect.Field;
 import java.net.Authenticator;
 import java.net.Inet6Address;
 import java.net.InetAddress;
@@ -38,7 +39,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.ResourceBundle;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ExecutorService;
@@ -52,9 +52,11 @@ import javax.net.ssl.SSLSocketFactory;
 import javax.swing.Action;
 import javax.swing.InputMap;
 import javax.swing.JComponent;
+import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JTextPane;
 import javax.swing.KeyStroke;
 import javax.swing.LookAndFeel;
 import javax.swing.RepaintManager;
@@ -69,6 +71,7 @@ import org.openstreetmap.josm.actions.OpenFileAction;
 import org.openstreetmap.josm.actions.OpenFileAction.OpenFileTask;
 import org.openstreetmap.josm.actions.PreferencesAction;
 import org.openstreetmap.josm.actions.RestartAction;
+import org.openstreetmap.josm.actions.ShowStatusReportAction;
 import org.openstreetmap.josm.actions.downloadtasks.DownloadGpsTask;
 import org.openstreetmap.josm.actions.downloadtasks.DownloadOsmTask;
 import org.openstreetmap.josm.actions.downloadtasks.DownloadParams;
@@ -95,6 +98,7 @@ import org.openstreetmap.josm.data.projection.ProjectionRegistry;
 import org.openstreetmap.josm.data.projection.datum.NTV2GridShiftFileSource;
 import org.openstreetmap.josm.data.projection.datum.NTV2GridShiftFileWrapper;
 import org.openstreetmap.josm.data.projection.datum.NTV2Proj4DirGridShiftFileSource;
+import org.openstreetmap.josm.data.validation.ValidatorCLI;
 import org.openstreetmap.josm.data.validation.tests.MapCSSTagChecker;
 import org.openstreetmap.josm.gui.ProgramArguments.Option;
 import org.openstreetmap.josm.gui.SplashScreen.SplashProgressMonitor;
@@ -104,6 +108,7 @@ import org.openstreetmap.josm.gui.download.DownloadDialog;
 import org.openstreetmap.josm.gui.io.CredentialDialog;
 import org.openstreetmap.josm.gui.io.CustomConfigurator.XMLCommandProcessor;
 import org.openstreetmap.josm.gui.io.SaveLayersDialog;
+import org.openstreetmap.josm.gui.io.importexport.Options;
 import org.openstreetmap.josm.gui.layer.AutosaveTask;
 import org.openstreetmap.josm.gui.layer.Layer;
 import org.openstreetmap.josm.gui.layer.LayerManager.LayerAddEvent;
@@ -124,6 +129,7 @@ import org.openstreetmap.josm.gui.util.CheckThreadViolationRepaintManager;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.util.RedirectInputMap;
 import org.openstreetmap.josm.gui.util.WindowGeometry;
+import org.openstreetmap.josm.gui.widgets.TextContextualPopupMenu;
 import org.openstreetmap.josm.gui.widgets.UrlLabel;
 import org.openstreetmap.josm.io.CachedFile;
 import org.openstreetmap.josm.io.CertificateAmendment;
@@ -155,9 +161,7 @@ import org.openstreetmap.josm.tools.JosmRuntimeException;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.OsmUrlToBounds;
 import org.openstreetmap.josm.tools.PlatformHook.NativeOsCallback;
-import org.openstreetmap.josm.tools.PlatformHookWindows;
 import org.openstreetmap.josm.tools.PlatformManager;
-import org.openstreetmap.josm.tools.ReflectionUtils;
 import org.openstreetmap.josm.tools.Shortcut;
 import org.openstreetmap.josm.tools.Utils;
 import org.openstreetmap.josm.tools.bugreport.BugReportExceptionHandler;
@@ -176,6 +180,10 @@ public class MainApplication {
      * Command-line arguments used to run the application.
      */
     private static volatile List<String> commandLineArgs;
+    /**
+     * The preference key for the startup failure counter
+     */
+    private static final String PREF_STARTUP_FAILURE_COUNTER = "josm.startup.failure.count";
 
     /**
      * The main menu bar at top of screen.
@@ -266,15 +274,14 @@ public class MainApplication {
 
         @Override
         public void processArguments(String[] argArray) {
-            ProgramArguments args = null;
-            // construct argument table
             try {
-                args = new ProgramArguments(argArray);
+                // construct argument table
+                ProgramArguments args = new ProgramArguments(argArray);
+                mainJOSM(args);
             } catch (IllegalArgumentException e) {
                 System.err.println(e.getMessage());
-                System.exit(1);
+                Lifecycle.exitJosm(true, 1);
             }
-            mainJOSM(args);
         }
     };
 
@@ -307,6 +314,7 @@ public class MainApplication {
         registerCLIModule(JOSM_CLI_MODULE);
         registerCLIModule(ProjectionCLI.INSTANCE);
         registerCLIModule(RenderingCLI.INSTANCE);
+        registerCLIModule(ValidatorCLI.INSTANCE);
     }
 
     /**
@@ -338,36 +346,13 @@ public class MainApplication {
         Lifecycle.setShutdownSequence(new MainTermination());
     }
 
-    /**
-     * Asks user to update its version of Java.
-     * @param updVersion target update version
-     * @param url download URL
-     * @param major true for a migration towards a major version of Java (8:9), false otherwise
-     * @param eolDate the EOL/expiration date
-     * @since 12270
-     */
-    public static void askUpdateJava(String updVersion, String url, String eolDate, boolean major) {
-        ExtendedDialog ed = new ExtendedDialog(
-                mainFrame,
-                tr("Outdated Java version"),
-                tr("OK"), tr("Update Java"), tr("Cancel"));
+    private static void askUpdate(String title, String update, String property, String icon, StringBuilder content, String url) {
+        ExtendedDialog ed = new ExtendedDialog(mainFrame, title, tr("OK"), update, tr("Cancel"));
         // Check if the dialog has not already been permanently hidden by user
-        if (!ed.toggleEnable("askUpdateJava"+updVersion).toggleCheckState()) {
-            ed.setButtonIcons("ok", "java", "cancel").setCancelButton(3);
+        if (!ed.toggleEnable(property).toggleCheckState()) {
+            ed.setButtonIcons("ok", icon, "cancel").setCancelButton(3);
             ed.setMinimumSize(new Dimension(480, 300));
             ed.setIcon(JOptionPane.WARNING_MESSAGE);
-            StringBuilder content = new StringBuilder(tr("You are running version {0} of Java.",
-                    "<b>"+getSystemProperty("java.version")+"</b>")).append("<br><br>");
-            if ("Sun Microsystems Inc.".equals(getSystemProperty("java.vendor")) && !PlatformManager.getPlatform().isOpenJDK()) {
-                content.append("<b>").append(tr("This version is no longer supported by {0} since {1} and is not recommended for use.",
-                        "Oracle", eolDate)).append("</b><br><br>");
-            }
-            content.append("<b>")
-                   .append(major ?
-                        tr("JOSM will soon stop working with this version; we highly recommend you to update to Java {0}.", updVersion) :
-                        tr("You may face critical Java bugs; we highly recommend you to update to Java {0}.", updVersion))
-                   .append("</b><br><br>")
-                   .append(tr("Would you like to update now ?"));
             ed.setContent(content.toString());
 
             if (ed.showDialog().getValue() == 2) {
@@ -377,6 +362,69 @@ public class MainApplication {
                     Logging.warn(e);
                 }
             }
+        }
+    }
+
+    /**
+     * Asks user to update its version of Java.
+     * @param updVersion target update version
+     * @param url download URL
+     * @param major true for a migration towards a major version of Java (8:11), false otherwise
+     * @param eolDate the EOL/expiration date
+     * @since 12270
+     */
+    public static void askUpdateJava(String updVersion, String url, String eolDate, boolean major) {
+        StringBuilder content = new StringBuilder(256);
+        content.append(tr("You are running version {0} of Java.",
+                "<b>"+getSystemProperty("java.version")+"</b>")).append("<br><br>");
+        if ("Sun Microsystems Inc.".equals(getSystemProperty("java.vendor")) && !PlatformManager.getPlatform().isOpenJDK()) {
+            content.append("<b>").append(tr("This version is no longer supported by {0} since {1} and is not recommended for use.",
+                    "Oracle", eolDate)).append("</b><br><br>");
+        }
+        content.append("<b>")
+               .append(major ?
+                    tr("JOSM will soon stop working with this version; we highly recommend you to update to Java {0}.", updVersion) :
+                    tr("You may face critical Java bugs; we highly recommend you to update to Java {0}.", updVersion))
+               .append("</b><br><br>")
+               .append(tr("Would you like to update now ?"));
+        askUpdate(tr("Outdated Java version"), tr("Update Java"), "askUpdateJava"+updVersion, /* ICON */"java", content, url);
+    }
+
+    /**
+     * Tells the user that a sanity check failed
+     * @param title The title of the message to show
+     * @param canContinue {@code true} if the failed sanity check(s) will not instantly kill JOSM when the user edits
+     * @param message The message parts to show the user (as a list)
+     */
+    public static void sanityCheckFailed(String title, boolean canContinue, String... message) {
+        final ExtendedDialog ed;
+        if (canContinue) {
+            ed = new ExtendedDialog(mainFrame, title, trc("dialog", "Stop"), tr("Continue"));
+            ed.setButtonIcons("cancel", "apply");
+        } else {
+            ed = new ExtendedDialog(mainFrame, title, trc("dialog", "Stop"));
+            ed.setButtonIcons("cancel");
+        }
+        ed.setDefaultButton(1).setCancelButton(1);
+        // Check if the dialog has not already been permanently hidden by user
+        ed.toggleEnable("sanityCheckFailed");
+        final String content = Arrays.stream(message).collect(Collectors.joining("</li><li>",
+                 "<html><body><ul><li>", "</li></ul></body></html>"));
+        final JTextPane textField = new JTextPane();
+        textField.setContentType("text/html");
+        textField.setText(content);
+        TextContextualPopupMenu.enableMenuFor(textField, true);
+        ed.setMinimumSize(new Dimension(480, 300));
+        ed.setIcon(JOptionPane.WARNING_MESSAGE);
+        ed.setContent(textField);
+        ed.showDialog(); // This won't show the dialog if the user has previously saved their response
+        if (!canContinue || ed.getValue() <= 1) { // 0 == cancel (we want to stop) and 1 == stop
+            // Never store cancel/stop -- this would otherwise lead to the user never seeing the window again, and JOSM just stopping.
+            if (ConditionalOptionPaneUtil.getDialogReturnValue("sanityCheckFailed") != -1) {
+                Config.getPref().put("message.sanityCheckFailed", null);
+                Config.getPref().put("message.sanityCheckFailed.value", null);
+            }
+            Lifecycle.exitJosm(true, -1);
         }
     }
 
@@ -489,7 +537,8 @@ public class MainApplication {
      * @since 12636 (specialized version of {@link Lifecycle#exitJosm})
      */
     public static boolean exitJosm(boolean exit, int exitCode, SaveLayersDialog.Reason reason) {
-        final boolean proceed = Boolean.TRUE.equals(GuiHelper.runInEDTAndWaitAndReturn(() ->
+        final boolean proceed = layerManager.getLayers().isEmpty() ||
+                Boolean.TRUE.equals(GuiHelper.runInEDTAndWaitAndReturn(() ->
                 SaveLayersDialog.saveUnsavedModifications(layerManager.getLayers(),
                         reason != null ? reason : SaveLayersDialog.Reason.EXIT)));
         if (proceed) {
@@ -636,7 +685,8 @@ public class MainApplication {
                 tr("commands")+":\n"+
                 "\trunjosm     "+tr("launch JOSM (default, performed when no command is specified)")+'\n'+
                 "\trender      "+tr("render data and save the result to an image file")+'\n'+
-                "\tproject     "+tr("convert coordinates from one coordinate reference system to another")+"\n\n"+
+                "\tproject     " + tr("convert coordinates from one coordinate reference system to another")+ '\n' +
+                "\tvalidate    " + tr("validate data") + "\n\n" +
                 tr("For details on the {0} and {1} commands, run them with the {2} option.", "render", "project", "--help")+'\n'+
                 tr("The remainder of this help page documents the {0} command.", "runjosm")+"\n\n"+
                 tr("options")+":\n"+
@@ -654,7 +704,9 @@ public class MainApplication {
                 "\t--set=<key>=<value>                       "+tr("Set preference key to value")+"\n\n"+
                 "\t--language=<language>                     "+tr("Set the language")+"\n\n"+
                 "\t--version                                 "+tr("Displays the JOSM version and exits")+"\n\n"+
+                "\t--status-report                           "+ShowStatusReportAction.ACTION_DESCRIPTION+"\n\n"+
                 "\t--debug                                   "+tr("Print debugging messages to console")+"\n\n"+
+                "\t--warn                                    "+tr("Print only warning or error messages to console")+"\n\n"+
                 "\t--skip-plugins                            "+tr("Skip loading plugins")+"\n\n"+
                 "\t--offline=" + Arrays.stream(OnlineResource.values()).map(OnlineResource::name).collect(
                         Collectors.joining("|", "<", ">")) + "\n" +
@@ -727,30 +779,33 @@ public class MainApplication {
 
         Level logLevel = args.getLogLevel();
         Logging.setLogLevel(logLevel);
-        if (!args.showVersion() && !args.showHelp()) {
+        if (!args.hasOption(Option.VERSION) && !args.hasOption(Option.STATUS_REPORT) && !args.showHelp()) {
             Logging.info(tr("Log level is at {0} ({1}, {2})", logLevel.getLocalizedName(), logLevel.getName(), logLevel.intValue()));
         }
 
         Optional<String> language = args.getSingle(Option.LANGUAGE);
         I18n.set(language.orElse(null));
 
-        try {
-            Policy.setPolicy(new Policy() {
-                // Permissions for plug-ins loaded when josm is started via webstart
-                private final PermissionCollection pc;
+        // JEP 486 (Java 24) now causes exceptions to be thrown. The security manager is terminally deprecated.
+        if (Utils.getJavaVersion() < 24) {
+            try {
+                Policy.setPolicy(new Policy() {
+                    // Permissions for plug-ins loaded when josm is started via webstart
+                    private final PermissionCollection pc;
 
-                {
-                    pc = new Permissions();
-                    pc.add(new AllPermission());
-                }
+                    {
+                        pc = new Permissions();
+                        pc.add(new AllPermission());
+                    }
 
-                @Override
-                public PermissionCollection getPermissions(CodeSource codesource) {
-                    return pc;
-                }
-            });
-        } catch (SecurityException e) {
-            Logging.log(Logging.LEVEL_ERROR, "Unable to set permissions", e);
+                    @Override
+                    public PermissionCollection getPermissions(CodeSource codesource) {
+                        return pc;
+                    }
+                });
+            } catch (SecurityException e) {
+                Logging.log(Logging.LEVEL_ERROR, "Unable to set permissions", e);
+            }
         }
 
         try {
@@ -769,8 +824,13 @@ public class MainApplication {
         Config.setBaseDirectoriesProvider(JosmBaseDirectories.getInstance());
         Config.setUrlsProvider(JosmUrls.getInstance());
 
-        if (args.showVersion()) {
+        if (args.hasOption(Option.VERSION)) {
             System.out.println(Version.getInstance().getAgentString());
+            return;
+        } else if (args.hasOption(Option.STATUS_REPORT)) {
+            Preferences.main().enableSaveOnPut(false);
+            Preferences.main().init(false);
+            System.out.println(ShowStatusReportAction.getReportHeader());
             return;
         } else if (args.showHelp()) {
             showHelp();
@@ -804,11 +864,27 @@ public class MainApplication {
 
         checkIPv6();
 
+        // After IPv6 check since that may restart JOSM, must be after Preferences.main().init()
+        final int failures = prefs.getInt(PREF_STARTUP_FAILURE_COUNTER, 0);
+        // Always increment failures
+        prefs.putInt(PREF_STARTUP_FAILURE_COUNTER, failures + 1);
+        if (failures > 3) {
+            final int selection = JOptionPane.showOptionDialog(new JDialog(),
+                    tr("JOSM has failed to start up {0} times. Reset JOSM?", failures),
+                    tr("Reset JOSM?"),
+                    JOptionPane.YES_NO_OPTION,
+                    JOptionPane.ERROR_MESSAGE,
+                    null,
+                    null,
+                    null);
+            if (selection == JOptionPane.YES_OPTION) {
+                Preferences.main().init(true);
+            }
+        }
+
         processOffline(args);
 
         PlatformManager.getPlatform().afterPrefStartupHook();
-
-        applyWorkarounds();
 
         FontsManager.initialize();
 
@@ -816,13 +892,18 @@ public class MainApplication {
 
         Handler.install();
 
-        WindowGeometry geometry = WindowGeometry.mainWindow("gui.geometry",
+        WindowGeometry geometry = WindowGeometry.mainWindow(WindowGeometry.PREF_KEY_GUI_GEOMETRY,
                 args.getSingle(Option.GEOMETRY).orElse(null),
                 !args.hasOption(Option.NO_MAXIMIZE) && Config.getPref().getBoolean("gui.maximized", false));
         final MainFrame mainFrame = createMainFrame(geometry);
         final Container contentPane = mainFrame.getContentPane();
         if (contentPane instanceof JComponent) {
             contentPanePrivate = (JComponent) contentPane;
+        }
+        // This should never happen, but it does. See #22183.
+        // Hopefully this code block will be temporary until we figure out what is actually going on.
+        if (!GraphicsEnvironment.isHeadless() && contentPanePrivate == null) {
+            throw new JosmRuntimeException("MainFrame contentPane is " + (contentPane == null ? "null" : contentPane.getClass().getName()));
         }
         mainPanel = mainFrame.getPanel();
 
@@ -875,6 +956,10 @@ public class MainApplication {
         }
         // Configure Look and feel before showing SplashScreen (#19290)
         setupUIManager();
+        // Then apply LaF workarounds
+        applyLaFWorkarounds();
+        // MainFrame created before setting look and feel and not updated (#20771)
+        SwingUtilities.updateComponentTreeUI(mainFrame);
 
         final SplashScreen splash = GuiHelper.runInEDTAndWaitAndReturn(SplashScreen::new);
         // splash can be null sometimes on Linux, in this case try to load JOSM silently
@@ -929,6 +1014,7 @@ public class MainApplication {
                 splash.dispose();
             }
             mainFrame.setVisible(true);
+            Config.getPref().put(PREF_STARTUP_FAILURE_COUNTER, null);
         });
 
         boolean maximized = Config.getPref().getBoolean("gui.maximized", false);
@@ -941,18 +1027,18 @@ public class MainApplication {
 
         SwingUtilities.invokeLater(new GuiFinalizationWorker(args, proxySelector));
 
-        if (RemoteControl.PROP_REMOTECONTROL_ENABLED.get()) {
+        if (Boolean.TRUE.equals(RemoteControl.PROP_REMOTECONTROL_ENABLED.get())) {
             RemoteControl.start();
         }
 
-        if (MessageNotifier.PROP_NOTIFIER_ENABLED.get()) {
+        if (Boolean.TRUE.equals(MessageNotifier.PROP_NOTIFIER_ENABLED.get())) {
             MessageNotifier.start();
         }
 
         ChangesetUpdater.start();
 
         if (Config.getPref().getBoolean("debug.edt-checker.enable", Version.getInstance().isLocalBuild())) {
-            // Repaint manager is registered so late for a reason - there is lots of violation during startup process
+            // Repaint manager is registered so late for a reason - there are lots of violations during startup process
             // but they don't seem to break anything and are difficult to fix
             Logging.info("Enabled EDT checker, wrongful access to gui from non EDT thread will be printed to console");
             RepaintManager.setCurrentManager(new CheckThreadViolationRepaintManager());
@@ -981,19 +1067,6 @@ public class MainApplication {
         }
         Utils.updateSystemProperty("http.agent", Version.getInstance().getAgentString());
         Utils.updateSystemProperty("user.language", Config.getPref().get("language"));
-        // Workaround to fix a Java bug. This ugly hack comes from Sun bug database: https://bugs.openjdk.java.net/browse/JDK-6292739
-        // Force AWT toolkit to update its internal preferences (fix #6345).
-        // Does not work anymore with Java 9, to remove with Java 9 migration
-        if (Utils.getJavaVersion() < 9 && !GraphicsEnvironment.isHeadless()) {
-            try {
-                Field field = Toolkit.class.getDeclaredField("resources");
-                ReflectionUtils.setObjectsAccessible(field);
-                field.set(null, ResourceBundle.getBundle("sun.awt.resources.awt"));
-            } catch (ReflectiveOperationException | RuntimeException e) { // NOPMD
-                // Catch RuntimeException in order to catch InaccessibleObjectException, new in Java 9
-                Logging.log(Logging.LEVEL_WARN, null, e);
-            }
-        }
         // Possibility to disable SNI (not by default) in case of misconfigured https servers
         // See #9875 + http://stackoverflow.com/a/14884941/2257172
         // then https://josm.openstreetmap.de/ticket/12152#comment:5 for details
@@ -1002,6 +1075,11 @@ public class MainApplication {
         }
         // Disable automatic POST retry after 5 minutes, see #17882 / https://bugs.openjdk.java.net/browse/JDK-6382788
         Utils.updateSystemProperty("sun.net.http.retryPost", "false");
+        if (Utils.getJavaVersion() >= 17) {
+            // Allow security manager, otherwise it raises a warning in Java 17 and throws an error with Java 18+
+            // See https://bugs.openjdk.java.net/browse/JDK-8271301 / https://bugs.openjdk.java.net/browse/JDK-8270380
+            Utils.updateSystemProperty("java.security.manager", "allow");
+        }
     }
 
     /**
@@ -1017,30 +1095,16 @@ public class MainApplication {
                 JOSM_WEBSITE_NTV2_SOURCE);
     }
 
-    static void applyWorkarounds() {
-        // Workaround for JDK-8180379: crash on Windows 10 1703 with Windows L&F and java < 8u141 / 9+172
-        // To remove during Java 9 migration
-        if (getSystemProperty("os.name").toLowerCase(Locale.ENGLISH).contains("windows 10") &&
-                PlatformManager.getPlatform().getDefaultStyle().equals(LafPreference.LAF.get())) {
-            try {
-                String build = PlatformHookWindows.getCurrentBuild();
-                if (build != null) {
-                    final int currentBuild = Integer.parseInt(build);
-                    final int javaVersion = Utils.getJavaVersion();
-                    final int javaUpdate = Utils.getJavaUpdate();
-                    final int javaBuild = Utils.getJavaBuild();
-                    // See https://technet.microsoft.com/en-us/windows/release-info.aspx
-                    if (currentBuild >= 15_063 && ((javaVersion == 8 && javaUpdate < 141)
-                            || (javaVersion == 9 && javaUpdate == 0 && javaBuild < 173))) {
-                        // Workaround from https://bugs.openjdk.java.net/browse/JDK-8179014
-                        UIManager.put("FileChooser.useSystemExtensionHiding", Boolean.FALSE);
-                    }
-                }
-            } catch (NumberFormatException | ReflectiveOperationException | JosmRuntimeException e) {
-                Logging.error(e);
-            } catch (ExceptionInInitializerError e) {
-                Logging.log(Logging.LEVEL_ERROR, null, e);
-            }
+    /**
+     * Apply workarounds for LaF and platform specific issues. This must be called <i>after</i> the
+     * LaF is set.
+     */
+    static void applyLaFWorkarounds() {
+        final String laf = UIManager.getLookAndFeel().getID();
+        // See #20850. The upstream bug (JDK-6396936) is unlikely to ever be fixed due to potential compatibility
+        // issues. This affects Windows LaF only (includes Windows Classic, a sub-LaF of Windows LaF).
+        if ("Windows".equals(laf) && "Monospaced".equals(UIManager.getFont("TextArea.font").getFamily())) {
+            UIManager.put("TextArea.font", UIManager.getFont("TextField.font"));
         }
     }
 
@@ -1063,6 +1127,11 @@ public class MainApplication {
         });
     }
 
+    /**
+     * Set up the UI manager
+     */
+    // We want to catch all exceptions here to reset LaF to defaults and report it.
+    @SuppressWarnings("squid:S2221")
     static void setupUIManager() {
         String defaultlaf = PlatformManager.getPlatform().getDefaultStyle();
         String laf = LafPreference.LAF.get();
@@ -1072,7 +1141,7 @@ public class MainApplication {
             // Try to find look and feel in plugin classloaders
             Logging.trace(e);
             Class<?> klass = null;
-            for (ClassLoader cl : PluginHandler.getResourceClassLoaders()) {
+            for (ClassLoader cl : PluginHandler.getPluginClassLoaders()) {
                 try {
                     klass = cl.loadClass(laf);
                     break;
@@ -1089,6 +1158,11 @@ public class MainApplication {
                     Logging.info("Look and Feel not supported: " + laf);
                     LafPreference.LAF.put(defaultlaf);
                     Logging.trace(ex);
+                } catch (Exception ex) {
+                    // We do not want to silently exit if there is an exception.
+                    // Put the default laf in place so that the user can use JOSM.
+                    LafPreference.LAF.put(defaultlaf);
+                    BugReportExceptionHandler.handleException(ex);
                 }
             } else {
                 Logging.info("Look and Feel not found: " + laf);
@@ -1100,13 +1174,18 @@ public class MainApplication {
             Logging.trace(e);
         } catch (InstantiationException | IllegalAccessException e) {
             Logging.error(e);
+        } catch (Exception e) {
+            // We do not want to silently exit if there is an exception.
+            // Put the default laf in place.
+            LafPreference.LAF.put(defaultlaf);
+            BugReportExceptionHandler.handleException(e);
         }
 
         UIManager.put("OptionPane.okIcon", ImageProvider.getIfAvailable("ok"));
         UIManager.put("OptionPane.yesIcon", UIManager.get("OptionPane.okIcon"));
         UIManager.put("OptionPane.cancelIcon", ImageProvider.getIfAvailable("cancel"));
         UIManager.put("OptionPane.noIcon", UIManager.get("OptionPane.cancelIcon"));
-        // Ensures caret color is the same than text foreground color, see #12257
+        // Ensures caret color is the same as text foreground color, see #12257
         // See https://docs.oracle.com/javase/8/docs/api/javax/swing/plaf/synth/doc-files/componentProperties.html
         for (String p : Arrays.asList(
                 "EditorPane", "FormattedTextField", "PasswordField", "TextArea", "TextField", "TextPane")) {
@@ -1118,6 +1197,8 @@ public class MainApplication {
         scaleFonts(Config.getPref().getDouble("gui.scale.list.font", 1.0),
                 "List.font");
         // "Table.font" see org.openstreetmap.josm.gui.util.TableHelper.setFont
+
+        setupTextAntiAliasing();
     }
 
     private static void scaleFonts(double factor, String... fonts) {
@@ -1130,6 +1211,18 @@ public class MainApplication {
                 font = font.deriveFont((float) (font.getSize2D() * factor));
                 UIManager.put(key, new FontUIResource(font));
             }
+        }
+    }
+
+    private static void setupTextAntiAliasing() {
+        // On Linux and running on Java 9+, enable text anti aliasing
+        // if not yet enabled and if neither running on Gnome or KDE desktop
+        if (PlatformManager.isPlatformUnixoid()
+                && UIManager.getLookAndFeelDefaults().get(RenderingHints.KEY_TEXT_ANTIALIASING) == null
+                && System.getProperty("awt.useSystemAAFontSettings") == null
+                && Toolkit.getDefaultToolkit().getDesktopProperty("gnome.Xft/Antialias") == null
+                && Toolkit.getDefaultToolkit().getDesktopProperty("fontconfig/Antialias") == null) {
+            UIManager.getLookAndFeelDefaults().put(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
         }
     }
 
@@ -1156,7 +1249,10 @@ public class MainApplication {
     static void loadLatePlugins(SplashScreen splash, SplashProgressMonitor monitor, Collection<PluginInformation> pluginsToLoad) {
         monitor.indeterminateSubTask(tr("Loading plugins"));
         PluginHandler.loadLatePlugins(splash, pluginsToLoad, monitor.createSubTaskMonitor(1, false));
-        GuiHelper.runInEDTAndWait(() -> toolbar.refreshToolbarControl());
+        GuiHelper.runInEDTAndWait(() -> {
+            toolbar.enableInfoAboutMissingAction();
+            toolbar.refreshToolbarControl();
+        });
     }
 
     private static void processOffline(ProgramArguments args) {
@@ -1168,7 +1264,7 @@ public class MainApplication {
                     Logging.log(Logging.LEVEL_ERROR,
                             tr("''{0}'' is not a valid value for argument ''{1}''. Possible values are {2}, possibly delimited by commas.",
                             s.toUpperCase(Locale.ENGLISH), Option.OFFLINE.getName(), Arrays.toString(OnlineResource.values())), e);
-                    System.exit(1);
+                    Lifecycle.exitJosm(true, 1);
                     return;
                 }
             }
@@ -1205,19 +1301,21 @@ public class MainApplication {
                                 /* in case of routing problems to the main openstreetmap domain don't enable IPv6 */
                                 for (InetAddress b : InetAddress.getAllByName("api.openstreetmap.org")) {
                                     if (b instanceof Inet6Address) {
-                                        if (b.isReachable(1000)) {
-                                            SSLSocketFactory.getDefault().createSocket(b, 443).close();
-                                        } else {
-                                            hasv6 = false;
-                                        }
+                                        //if (b.isReachable(1000)) {
+                                        SSLSocketFactory.getDefault().createSocket(b, 443).close();
+                                        //} else {
+                                        //    hasv6 = false;
+                                        //}
                                         break; /* we're done */
                                     }
                                 }
-                                Utils.updateSystemProperty("java.net.preferIPv6Addresses", "true");
-                                if (!wasv6) {
-                                    Logging.info(tr("Detected useable IPv6 network, preferring IPv6 over IPv4 after next restart."));
-                                } else {
-                                    Logging.info(tr("Detected useable IPv6 network, preferring IPv6 over IPv4."));
+                                if (hasv6) {
+                                    Utils.updateSystemProperty("java.net.preferIPv6Addresses", "true");
+                                    if (!wasv6) {
+                                        Logging.info(tr("Detected usable IPv6 network, preferring IPv6 over IPv4 after next restart."));
+                                    } else {
+                                        Logging.info(tr("Detected usable IPv6 network, preferring IPv6 over IPv4."));
+                                    }
                                 }
                             }
                             break; /* we're done */
@@ -1228,16 +1326,11 @@ public class MainApplication {
                     hasv6 = false;
                     Logging.trace(e);
                 }
+                Config.getPref().putBoolean("validated.ipv6", hasv6); // be sure it is stored before the restart!
                 if (wasv6 && !hasv6) {
-                    Logging.info(tr("Detected no useable IPv6 network, preferring IPv4 over IPv6 after next restart."));
-                    Config.getPref().putBoolean("validated.ipv6", hasv6); // be sure it is stored before the restart!
-                    try {
-                        RestartAction.restartJOSM();
-                    } catch (IOException e) {
-                        Logging.error(e);
-                    }
+                    Logging.info(tr("Detected no usable IPv6 network, preferring IPv4 over IPv6 after next restart."));
+                    RestartAction.restartJOSM();
                 }
-                Config.getPref().putBoolean("validated.ipv6", hasv6);
             }, "IPv6-checker").start();
         }
     }
@@ -1268,7 +1361,7 @@ public class MainApplication {
             tasks.addAll(DownloadParamType.paramType(s).download(s, fileList));
         }
         if (!fileList.isEmpty()) {
-            tasks.add(OpenFileAction.openFiles(fileList, true));
+            tasks.add(OpenFileAction.openFiles(fileList, Options.RECORD_HISTORY));
         }
         for (String s : args.get(Option.DOWNLOADGPS)) {
             tasks.addAll(DownloadParamType.paramType(s).downloadGps(s));
@@ -1313,7 +1406,7 @@ public class MainApplication {
         }
 
         private static void handleAutosave() {
-            if (AutosaveTask.PROP_AUTOSAVE_ENABLED.get()) {
+            if (Boolean.TRUE.equals(AutosaveTask.PROP_AUTOSAVE_ENABLED.get())) {
                 AutosaveTask autosaveTask = new AutosaveTask();
                 List<File> unsavedLayerFiles = autosaveTask.getUnsavedLayersFiles();
                 if (!unsavedLayerFiles.isEmpty()) {
@@ -1394,7 +1487,7 @@ public class MainApplication {
         }
     }
 
-    private static class DefaultNativeOsCallback implements NativeOsCallback {
+    private static final class DefaultNativeOsCallback implements NativeOsCallback {
         @Override
         public void openFiles(List<File> files) {
             Executors.newSingleThreadExecutor(Utils.newThreadFactory("openFiles-%d", Thread.NORM_PRIORITY)).submit(

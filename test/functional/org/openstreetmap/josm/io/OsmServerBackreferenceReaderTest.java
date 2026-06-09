@@ -1,31 +1,30 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.io;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.text.MessageFormat;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
 import java.util.logging.Logger;
 
-import org.junit.Assume;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.Test;
-import org.openstreetmap.josm.JOSMFixture;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.APIDataSet;
 import org.openstreetmap.josm.data.coor.LatLon;
@@ -42,6 +41,9 @@ import org.openstreetmap.josm.data.projection.ProjectionRegistry;
 import org.openstreetmap.josm.data.projection.Projections;
 import org.openstreetmap.josm.gui.progress.NullProgressMonitor;
 import org.openstreetmap.josm.spi.preferences.Config;
+import org.openstreetmap.josm.testutils.annotations.FunctionalTest;
+import org.openstreetmap.josm.testutils.annotations.TestUser;
+import org.openstreetmap.josm.tools.JosmRuntimeException;
 import org.openstreetmap.josm.tools.Logging;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -50,8 +52,11 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
  * Reads primitives referring to a particular primitive (ways including a node, relations referring to a relation)
  * @since 1806
  */
+@FunctionalTest
 @SuppressFBWarnings(value = "CRLF_INJECTION_LOGS")
-public class OsmServerBackreferenceReaderTest {
+@org.openstreetmap.josm.testutils.annotations.OsmApi(org.openstreetmap.josm.testutils.annotations.OsmApi.APIType.DEV)
+@TestUser
+class OsmServerBackreferenceReaderTest {
     private static final Logger logger = Logger.getLogger(OsmServerBackreferenceReader.class.getName());
 
     protected static Node lookupNode(DataSet ds, int i) {
@@ -75,7 +80,7 @@ public class OsmServerBackreferenceReaderTest {
             if (("relation-" + i).equals(r.get("name"))) return r;
         }
         fail("Cannot find relation "+i);
-        return null;
+        throw new JosmRuntimeException("Cannot reach this point due to fail() above");
     }
 
     protected static void populateTestDataSetWithNodes(DataSet ds) {
@@ -157,15 +162,13 @@ public class OsmServerBackreferenceReaderTest {
      * @throws CyclicUploadDependencyException if a cyclic dependency is detected
      * @throws IOException if an I/O error occurs
      */
-    @BeforeClass
+    @BeforeAll
     public static void setUpBeforeClass() throws OsmTransferException, CyclicUploadDependencyException, IOException {
         if (!TestUtils.areCredentialsProvided()) {
             logger.severe("OSM DEV API credentials not provided. Please define them with -Dosm.username and -Dosm.password");
             return;
         }
         logger.info("initializing ...");
-
-        JOSMFixture.createFunctionalTestFixture().init();
 
         Config.getPref().put("osm-server.auth-method", "basic");
 
@@ -196,7 +199,7 @@ public class OsmServerBackreferenceReaderTest {
 
         try (
             PrintWriter pw = new PrintWriter(
-                    new OutputStreamWriter(new FileOutputStream(dataSetCacheOutputFile), StandardCharsets.UTF_8)
+                    new OutputStreamWriter(Files.newOutputStream(dataSetCacheOutputFile.toPath()), StandardCharsets.UTF_8)
         )) {
             logger.info(MessageFormat.format("caching test data set in ''{0}'' ...", dataSetCacheOutputFile.toString()));
             try (OsmWriter w = new OsmWriter(pw, false, testDataSet.getVersion())) {
@@ -216,7 +219,7 @@ public class OsmServerBackreferenceReaderTest {
      * @throws IllegalDataException if an error was found while parsing the OSM data
      * @throws FileNotFoundException if the dataset file cannot be found
      */
-    @Before
+    @BeforeEach
     public void setUp() throws IOException, IllegalDataException, FileNotFoundException {
         if (!TestUtils.areCredentialsProvided()) {
             return;
@@ -234,8 +237,8 @@ public class OsmServerBackreferenceReaderTest {
      * @throws OsmTransferException if an error occurs
      */
     @Test
-    public void testBackreferenceForNode() throws OsmTransferException {
-        Assume.assumeTrue(TestUtils.areCredentialsProvided());
+    void testBackreferenceForNode() throws OsmTransferException {
+        assumeTrue(TestUtils.areCredentialsProvided());
         Node n = lookupNode(ds, 0);
         assertNotNull(n);
         Way w = lookupWay(ds, 0);
@@ -290,8 +293,8 @@ public class OsmServerBackreferenceReaderTest {
      * @throws OsmTransferException if an error occurs
      */
     @Test
-    public void testBackreferenceForNodeFull() throws OsmTransferException {
-        Assume.assumeTrue(TestUtils.areCredentialsProvided());
+    void testBackreferenceForNodeFull() throws OsmTransferException {
+        assumeTrue(TestUtils.areCredentialsProvided());
         Node n = lookupNode(ds, 0);
         assertNotNull(n);
 
@@ -337,8 +340,8 @@ public class OsmServerBackreferenceReaderTest {
      * @throws OsmTransferException if an error occurs
      */
     @Test
-    public void testBackreferenceForWay() throws OsmTransferException {
-        Assume.assumeTrue(TestUtils.areCredentialsProvided());
+    void testBackreferenceForWay() throws OsmTransferException {
+        assumeTrue(TestUtils.areCredentialsProvided());
         Way w = lookupWay(ds, 1);
         assertNotNull(w);
         // way with name "way-1" is referred to by two relations
@@ -380,8 +383,8 @@ public class OsmServerBackreferenceReaderTest {
      * @throws OsmTransferException if an error occurs
      */
     @Test
-    public void testBackreferenceForWayFull() throws OsmTransferException {
-        Assume.assumeTrue(TestUtils.areCredentialsProvided());
+    void testBackreferenceForWayFull() throws OsmTransferException {
+        assumeTrue(TestUtils.areCredentialsProvided());
         Way w = lookupWay(ds, 1);
         assertNotNull(w);
         // way with name "way-1" is referred to by two relations
@@ -417,8 +420,8 @@ public class OsmServerBackreferenceReaderTest {
      * @throws OsmTransferException if an error occurs
      */
     @Test
-    public void testBackreferenceForRelation() throws OsmTransferException {
-        Assume.assumeTrue(TestUtils.areCredentialsProvided());
+    void testBackreferenceForRelation() throws OsmTransferException {
+        assumeTrue(TestUtils.areCredentialsProvided());
         Relation r = lookupRelation(ds, 1);
         assertNotNull(r);
         // way with name "relation-1" is referred to by four relations:
@@ -535,8 +538,8 @@ public class OsmServerBackreferenceReaderTest {
      * @throws OsmTransferException if an error occurs
      */
     @Test
-    public void testBackreferenceForRelationFull() throws OsmTransferException {
-        Assume.assumeTrue(TestUtils.areCredentialsProvided());
+    void testBackreferenceForRelationFull() throws OsmTransferException {
+        assumeTrue(TestUtils.areCredentialsProvided());
         Relation r = lookupRelation(ds, 1);
         assertNotNull(r);
         // way with name "relation-1" is referred to by four relations:

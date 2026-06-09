@@ -13,6 +13,7 @@ import java.lang.management.ManagementFactory;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 
 import org.openstreetmap.josm.gui.HelpAwareOptionPane.ButtonSpec;
@@ -34,6 +35,9 @@ import org.openstreetmap.josm.tools.Shortcut;
  */
 public class RestartAction extends JosmAction {
 
+    private static final String APPLE_OSASCRIPT = "/usr/bin/osascript";
+    private static final String APPLE_APP_PATH = "/JOSM.app/Contents/";
+
     // AppleScript to restart OS X package
     private static final String RESTART_APPLE_SCRIPT =
               "tell application \"System Events\"\n"
@@ -42,6 +46,9 @@ public class RestartAction extends JosmAction {
             + "end repeat\n"
             + "end tell\n"
             + "tell application \"JOSM\" to activate";
+
+    // Make sure we're able to retrieve restart commands before initiating shutdown (#13784)
+    private static final List<String> cmd = determineRestartCommands();
 
     /**
      * Constructs a new {@code RestartAction}.
@@ -59,11 +66,7 @@ public class RestartAction extends JosmAction {
 
     @Override
     public void actionPerformed(ActionEvent e) {
-        try {
-            restartJOSM();
-        } catch (IOException ex) {
-            Logging.error(ex);
-        }
+        restartJOSM();
     }
 
     /**
@@ -72,14 +75,13 @@ public class RestartAction extends JosmAction {
      * @since 5951
      */
     public static boolean isRestartSupported() {
-        return getSystemProperty("sun.java.command") != null;
+        return !cmd.isEmpty();
     }
 
     /**
      * Restarts the current Java application.
-     * @throws IOException in case of any I/O error
      */
-    public static void restartJOSM() throws IOException {
+    public static void restartJOSM() {
         // If JOSM has been started with property 'josm.restart=true' this means
         // it is executed by a start script that can handle restart.
         // Request for restart is indicated by exit code 9.
@@ -88,19 +90,24 @@ public class RestartAction extends JosmAction {
             MainApplication.exitJosm(true, 9, SaveLayersDialog.Reason.RESTART);
         }
 
-        if (isRestartSupported() && !MainApplication.exitJosm(false, 0, SaveLayersDialog.Reason.RESTART)) return;
-        final List<String> cmd;
-        // special handling for OSX .app package
-        if (PlatformManager.isPlatformOsx() && getSystemProperty("java.library.path").contains("/JOSM.app/Contents/MacOS")) {
-            cmd = getAppleCommands();
-        } else {
-            cmd = getCommands();
+        // Log every related environmentvariable for debug purpose
+        if (isDebugSimulation()) {
+            logEnvironment();
         }
         Logging.info("Restart "+cmd);
-        if (Logging.isDebugEnabled() && Config.getPref().getBoolean("restart.debug.simulation")) {
+        if (isDebugSimulation()) {
             Logging.debug("Restart cancelled to get debug info");
             return;
         }
+
+        // Leave early if restart is not possible
+        if (!isRestartSupported())
+            return;
+
+        // Initiate shutdown with a chance for user to cancel
+        if (!MainApplication.exitJosm(false, 0, SaveLayersDialog.Reason.RESTART))
+            return;
+
         // execute the command in a shutdown hook, to be sure that all the
         // resources have been disposed before restarting the application
         Runtime.getRuntime().addShutdownHook(new Thread("josm-restarter") {
@@ -117,9 +124,55 @@ public class RestartAction extends JosmAction {
         System.exit(0);
     }
 
-    private static List<String> getAppleCommands() {
+    private static boolean isDebugSimulation() {
+        return Logging.isDebugEnabled() && Config.getPref().getBoolean("restart.debug.simulation");
+    }
+
+    private static void logEnvironment() {
+        logEnvironmentVariable("java.home");
+        logEnvironmentVariable("java.class.path");
+        logEnvironmentVariable("java.library.path");
+        logEnvironmentVariable("jnlpx.origFilenameArg");
+        logEnvironmentVariable("sun.java.command");
+    }
+
+    private static void logEnvironmentVariable(String var) {
+        Logging.debug("{0}: {1}", var, getSystemProperty(var));
+    }
+
+    private static boolean isExecutableFile(File f) {
+        try {
+            return f.isFile() && f.canExecute();
+        } catch (SecurityException e) {
+            Logging.error(e);
+            return false;
+        }
+    }
+
+    private static List<String> determineRestartCommands() {
+        try {
+            // special handling for OSX .app package (both legacy and jpackage-based)
+            if (PlatformManager.isPlatformOsx() && (
+                    getSystemProperty("java.library.path").contains(APPLE_APP_PATH) ||
+                    getSystemProperty("java.class.path").contains(APPLE_APP_PATH))) {
+                return getAppleCommands();
+            } else if (getSystemProperty("jpackage.app-path") != null) {
+                return Arrays.asList(getSystemProperty("jpackage.app-path"));
+            } else {
+                return getCommands();
+            }
+        } catch (IOException e) {
+            Logging.error(e);
+            return Collections.emptyList();
+        }
+    }
+
+    private static List<String> getAppleCommands() throws IOException {
+        if (!isExecutableFile(new File(APPLE_OSASCRIPT))) {
+            throw new IOException("Unable to find suitable osascript at " + APPLE_OSASCRIPT);
+        }
         final List<String> cmd = new ArrayList<>();
-        cmd.add("/usr/bin/osascript");
+        cmd.add(APPLE_OSASCRIPT);
         for (String line : RESTART_APPLE_SCRIPT.split("\n", -1)) {
             cmd.add("-e");
             cmd.add(line);
@@ -177,7 +230,7 @@ public class RestartAction extends JosmAction {
     private static String getJavaRuntime() throws IOException {
         final String java = getSystemProperty("java.home") + File.separator + "bin" + File.separator +
                 (PlatformManager.isPlatformWindows() ? "java.exe" : "java");
-        if (!new File(java).isFile()) {
+        if (!isExecutableFile(new File(java))) {
             throw new IOException("Unable to find suitable java runtime at "+java);
         }
         return java;

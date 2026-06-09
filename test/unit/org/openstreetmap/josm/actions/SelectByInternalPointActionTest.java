@@ -1,13 +1,12 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.actions;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.coor.EastNorth;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Node;
@@ -17,29 +16,25 @@ import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.layer.Layer;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
+import org.openstreetmap.josm.testutils.annotations.Main;
+import org.openstreetmap.josm.testutils.annotations.Projection;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import net.trajano.commons.testing.UtilityClassTestUtil;
 
 /**
  * Unit tests for class {@link SelectByInternalPointAction}.
  */
-public final class SelectByInternalPointActionTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules rules = new JOSMTestRules().preferences().projection().main();
-
+@BasicPreferences
+@Main
+@Projection
+final class SelectByInternalPointActionTest {
     /**
      * Tests that {@code SelectByInternalPointAction} satisfies utility class criteria.
      * @throws ReflectiveOperationException if an error occurs
      */
     @Test
-    public void testUtilityClass() throws ReflectiveOperationException {
+    void testUtilityClass() throws ReflectiveOperationException {
         UtilityClassTestUtil.assertUtilityClassWellDefined(SelectByInternalPointAction.class);
     }
 
@@ -47,7 +42,7 @@ public final class SelectByInternalPointActionTest {
      * Unit test - no dataset.
      */
     @Test
-    public void testNoDataSet() {
+    void testNoDataSet() {
         assertNull(MainApplication.getLayerManager().getEditDataSet());
         assertEquals(0, SelectByInternalPointAction.getSurroundingObjects(null).size());
         assertNull(SelectByInternalPointAction.getSmallestSurroundingObject(null));
@@ -84,7 +79,7 @@ public final class SelectByInternalPointActionTest {
      * Unit test of {@link SelectByInternalPointAction#getSurroundingObjects} method.
      */
     @Test
-    public void testGetSurroundingObjects() {
+    void testGetSurroundingObjects() {
         initDataSet();
         assertEquals(0, SelectByInternalPointAction.getSurroundingObjects(null).size());
         assertEquals(0, SelectByInternalPointAction.getSurroundingObjects(new EastNorth(0, 0)).size());
@@ -96,7 +91,7 @@ public final class SelectByInternalPointActionTest {
      * Unit test of {@link SelectByInternalPointAction#getSmallestSurroundingObject} method.
      */
     @Test
-    public void testGetSmallestSurroundingObject() {
+    void testGetSmallestSurroundingObject() {
         initDataSet();
         assertNull(SelectByInternalPointAction.getSmallestSurroundingObject(null));
         assertNotNull(SelectByInternalPointAction.getSmallestSurroundingObject(new EastNorth(1.5, 1.5)));
@@ -106,7 +101,7 @@ public final class SelectByInternalPointActionTest {
      * Unit test of {@link SelectByInternalPointAction#performSelection} method.
      */
     @Test
-    public void testPerformSelection() {
+    void testPerformSelection() {
         initDataSet();
         DataSet ds = MainApplication.getLayerManager().getEditDataSet();
 

@@ -28,6 +28,7 @@ import org.openstreetmap.josm.gui.download.BookmarkList.Bookmark;
 import org.openstreetmap.josm.gui.widgets.JMultilineLabel;
 import org.openstreetmap.josm.gui.widgets.JosmTextArea;
 import org.openstreetmap.josm.tools.ImageProvider;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * DownloadAreaSelector which manages a list of "bookmarks", i.e. a list of
@@ -142,7 +143,6 @@ public class BookmarkSelection implements DownloadSelection {
         gc.fill = GridBagConstraints.BOTH;
         gc.weightx = 1.0;
         gc.weighty = 1.0;
-        gc.gridx = 1;
         dlg.add(new JScrollPane(bookmarks), gc);
 
         this.parent = gui;
@@ -202,7 +202,7 @@ public class BookmarkSelection implements DownloadSelection {
                             JOptionPane.QUESTION_MESSAGE)
             );
             b.setArea(currentArea);
-            if (b.getName() != null && !b.getName().isEmpty()) {
+            if (!Utils.isEmpty(b.getName())) {
                 ((DefaultListModel<BookmarkList.Bookmark>) bookmarks.getModel()).addElement(b);
                 bookmarks.save();
             }
@@ -222,7 +222,7 @@ public class BookmarkSelection implements DownloadSelection {
         @Override
         public void actionPerformed(ActionEvent e) {
             List<Bookmark> sels = bookmarks.getSelectedValuesList();
-            if (sels == null || sels.isEmpty())
+            if (Utils.isEmpty(sels))
                 return;
             for (Object sel: sels) {
                 ((DefaultListModel<Bookmark>) bookmarks.getModel()).removeElement(sel);
@@ -307,7 +307,9 @@ public class BookmarkSelection implements DownloadSelection {
             if (idx < 0 || idx >= bookmarks.getModel().getSize())
                 return;
             Bookmark b = bookmarks.getModel().getElementAt(idx);
-            parent.startDownload(b.getArea());
+            if (b != null) {
+                parent.startDownload(b.getArea());
+            }
         }
     }
 }

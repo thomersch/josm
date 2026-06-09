@@ -1,7 +1,8 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.io;
 
-import static org.junit.Assume.assumeFalse;
+import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import java.io.IOException;
 import java.net.URL;
@@ -11,34 +12,27 @@ import java.util.List;
 
 import javax.net.ssl.SSLHandshakeException;
 
-import org.junit.Assert;
-import org.junit.BeforeClass;
-import org.junit.ClassRule;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.openstreetmap.josm.TestUtils;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.testutils.annotations.HTTPS;
+import org.openstreetmap.josm.testutils.annotations.IntegrationTest;
 
 /**
  * Integration tests of {@link CertificateAmendment} class.
  */
-public class CertificateAmendmentTestIT {
-
-    /**
-     * Setup rule
-     */
-    @ClassRule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public static JOSMTestRules test = new JOSMTestRules().https().preferences().timeout(20000);
-
+@HTTPS
+@IntegrationTest
+@Timeout(20)
+class CertificateAmendmentTestIT {
     private static final List<String> errorsToIgnore = new ArrayList<>();
 
     /**
      * Setup test
      * @throws IOException in case of I/O error
      */
-    @BeforeClass
+    @BeforeAll
     public static void beforeClass() throws IOException {
         errorsToIgnore.addAll(TestUtils.getIgnoredErrorMessages(CertificateAmendmentTestIT.class));
     }
@@ -48,7 +42,7 @@ public class CertificateAmendmentTestIT {
      * @throws IOException in case of I/O error
      */
     @Test
-    public void testDefault() throws IOException {
+    void testDefault() throws IOException {
         // something that is not embedded
         connect("https://www.bing.com", true);
     }
@@ -58,13 +52,13 @@ public class CertificateAmendmentTestIT {
      * @throws IOException in case of I/O error
      */
     @Test
-    public void testLetsEncrypt() throws IOException {
+    void testLetsEncrypt() throws IOException {
         // signed by letsencrypt's own ISRG root
         connect("https://valid-isrgrootx1.letsencrypt.org", true);
         // signed by letsencrypt's cross-sign CA
         connect("https://letsencrypt.org", true);
         // signed by letsencrypt's cross-sign CA, requires SNI
-        connect("https://acme-v01.api.letsencrypt.org", true);
+        connect("https://acme-v02.api.letsencrypt.org", true);
     }
 
     /**
@@ -72,7 +66,7 @@ public class CertificateAmendmentTestIT {
      * @throws IOException in case of I/O error
      */
     @Test
-    public void testOverpass() throws IOException {
+    void testOverpass() throws IOException {
         connect("https://overpass-api.de", true);
     }
 
@@ -81,8 +75,8 @@ public class CertificateAmendmentTestIT {
      * @throws IOException in case of I/O error
      */
     @Test
-    public void testDutchGovernment() throws IOException {
-        connect("https://geodata.nationaalgeoregister.nl", true);
+    void testDutchGovernment() throws IOException {
+        connect("https://www.nationaalgeoregister.nl", true);
     }
 
     /**
@@ -90,7 +84,7 @@ public class CertificateAmendmentTestIT {
      * @throws IOException in case of I/O error
      */
     @Test
-    public void testTaiwanGovernment() throws IOException {
+    void testTaiwanGovernment() throws IOException {
         connect("https://grca.nat.gov.tw", true);
     }
 
@@ -110,7 +104,7 @@ public class CertificateAmendmentTestIT {
         String error = "Expected error: " + url;
         assumeFalse(errorsToIgnore.contains(error));
         if (!shouldWork) {
-            Assert.fail(error);
+            fail(error);
         }
     }
 }

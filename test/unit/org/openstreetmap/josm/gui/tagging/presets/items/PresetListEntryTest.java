@@ -1,30 +1,29 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.tagging.presets.items;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import org.junit.BeforeClass;
-import org.junit.Test;
-import org.openstreetmap.josm.JOSMFixture;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests of {@link PresetListEntry} class.
  */
-public class PresetListEntryTest {
-
-    /**
-     * Setup test.
-     */
-    @BeforeClass
-    public static void setUp() {
-        JOSMFixture.createUnitTestFixture().init();
-    }
-
+class PresetListEntryTest {
     /**
      * Non-regression test for ticket <a href="https://josm.openstreetmap.de/ticket/12416">#12416</a>.
      */
     @Test
-    public void testTicket12416() {
-        assertEquals("&nbsp;", new PresetListEntry("").getListDisplay());
+    void testTicket12416() {
+        assertTrue(new PresetListEntry("", null).getListDisplay(200).contains(" "));
+    }
+
+    /**
+     * Non-regression test for ticket <a href="https://josm.openstreetmap.de/ticket/21550">#21550</a>
+     */
+    @Test
+    void testTicket21550() {
+        final PresetListEntry entry = new PresetListEntry("", new Combo());
+        assertDoesNotThrow(entry::getCount);
     }
 }

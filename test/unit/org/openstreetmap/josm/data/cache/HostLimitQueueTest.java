@@ -1,8 +1,8 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.cache;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.net.URL;
@@ -11,27 +11,20 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.commons.jcs3.access.behavior.ICacheAccess;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.openstreetmap.josm.data.imagery.TMSCachedTileLoader;
 import org.openstreetmap.josm.data.imagery.TileJobOptions;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 import org.openstreetmap.josm.tools.Logging;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-
 /**
- * Simple tests for ThreadPoolExecutor / HostLimitQueue veryfing, that this pair works OK
+ * Simple tests for ThreadPoolExecutor / HostLimitQueue verifying, that this pair works OK
  * @author Wiktor Niesiobedzki
  */
-public class HostLimitQueueTest {
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences().timeout(20 * 1000);
-
+@BasicPreferences
+@Timeout(20)
+class HostLimitQueueTest {
     /**
      * Mock class for tests
      */
@@ -78,9 +71,9 @@ public class HostLimitQueueTest {
      * @throws Exception in case of error
      */
     @Test
-    public void testSingleThreadPerHost() throws Exception {
+    void testSingleThreadPerHost() throws Exception {
         ThreadPoolExecutor tpe = TMSCachedTileLoader.getNewThreadPoolExecutor("test-%d", 3, 1);
-        ICacheAccess<String, CacheEntry> cache = JCSCacheManager.getCache("test", 3, 0, "");
+        ICacheAccess<String, CacheEntry> cache = JCSCacheManager.getCache("testHostLimitQueue", 3, 0, "");
         AtomicInteger counter = new AtomicInteger(0);
         long start = System.currentTimeMillis();
         for (int i = 0; i < 10; i++) {
@@ -95,8 +88,8 @@ public class HostLimitQueueTest {
         // first three jobs will be not limited, as they spawn the thread
         // so it should take ~8 seconds to finish
         // if it's shorter, it means that host limit does not work
-        assertTrue("Expected duration between 8 and 11 seconds not met. Actual duration: " + (duration /1000),
-                duration < 11*1000 & duration > 8*1000);
+        assertTrue(duration < 11*1000 & duration > 8*1000,
+                "Expected duration between 8 and 11 seconds not met. Actual duration: " + (duration /1000));
     }
 
     /**
@@ -104,9 +97,9 @@ public class HostLimitQueueTest {
      * @throws Exception in case of error
      */
     @Test
-    public void testMultipleThreadPerHost() throws Exception {
+    void testMultipleThreadPerHost() throws Exception {
         ThreadPoolExecutor tpe = TMSCachedTileLoader.getNewThreadPoolExecutor("test-%d", 3, 2);
-        ICacheAccess<String, CacheEntry> cache = JCSCacheManager.getCache("test", 3, 0, "");
+        ICacheAccess<String, CacheEntry> cache = JCSCacheManager.getCache("testHostLimitQueue", 3, 0, "");
         AtomicInteger counter = new AtomicInteger(0);
         long start = System.currentTimeMillis();
         for (int i = 0; i < 10; i++) {
@@ -120,8 +113,8 @@ public class HostLimitQueueTest {
         // although there are 3 threads, we can make only 2 parallel call to localhost
         // so it should take ~5 seconds to finish
         // if it's shorter, it means that host limit does not work
-        assertTrue("Expected duration between 4 and 6 seconds not met. Actual duration: " + (duration /1000),
-                duration < 6*1000 & duration > 4*1000);
+        assertTrue(duration < 6*1000 & duration > 4*1000,
+                "Expected duration between 4 and 6 seconds not met. Actual duration: " + (duration /1000));
     }
 
     /**
@@ -129,9 +122,9 @@ public class HostLimitQueueTest {
      * @throws Exception in case of error
      */
     @Test
-    public void testTwoHosts() throws Exception {
+    void testTwoHosts() throws Exception {
         ThreadPoolExecutor tpe = TMSCachedTileLoader.getNewThreadPoolExecutor("test-%d", 3, 1);
-        ICacheAccess<String, CacheEntry> cache = JCSCacheManager.getCache("test", 3, 0, "");
+        ICacheAccess<String, CacheEntry> cache = JCSCacheManager.getCache("testHostLimitQueue", 3, 0, "");
         AtomicInteger counter = new AtomicInteger(0);
         long start = System.currentTimeMillis();
         for (int i = 0; i < 10; i++) {
@@ -146,7 +139,7 @@ public class HostLimitQueueTest {
         // although there are 3 threads, we can make only 1 parallel per host, and we have 2 hosts
         // so it should take ~5 seconds to finish
         // if it's shorter, it means that host limit does not work
-        assertTrue("Expected duration between 4 and 6 seconds not met. Actual duration: " + (duration /1000),
-                duration < 6*1000 & duration > 4*1000);
+        assertTrue(duration < 6*1000 & duration > 4*1000,
+                "Expected duration between 4 and 6 seconds not met. Actual duration: " + (duration /1000));
     }
 }

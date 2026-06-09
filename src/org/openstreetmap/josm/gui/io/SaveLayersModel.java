@@ -21,6 +21,9 @@ import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 public class SaveLayersModel extends DefaultTableModel {
     public static final String MODE_PROP = SaveLayerInfo.class.getName() + ".mode";
 
+    /**
+     * The status of the editor
+     */
     public enum Mode {
         EDITING_DATA,
         UPLOADING_AND_SAVING
@@ -99,7 +102,7 @@ public class SaveLayersModel extends DefaultTableModel {
     @Override
     public void setValueAt(Object value, int row, int column) {
         final SaveLayerInfo info = this.layerInfo.get(row);
-        switch(column) {
+        switch (column) {
         case columnFilename:
             info.setFile((File) value);
             if (info.isSavable()) {

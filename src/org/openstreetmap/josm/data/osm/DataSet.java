@@ -5,6 +5,7 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.awt.geom.Area;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -202,34 +203,7 @@ public final class DataSet implements OsmData<OsmPrimitive, Node, Way, Relation>
         this();
         copyFrom.getReadLock().lock();
         try {
-            Map<OsmPrimitive, OsmPrimitive> primMap = new HashMap<>();
-            for (Node n : copyFrom.getNodes()) {
-                Node newNode = new Node(n);
-                primMap.put(n, newNode);
-                addPrimitive(newNode);
-            }
-            for (Way w : copyFrom.getWays()) {
-                Way newWay = new Way(w, false, false);
-                primMap.put(w, newWay);
-                List<Node> newNodes = w.getNodes().stream()
-                        .map(n -> (Node) primMap.get(n))
-                        .collect(Collectors.toList());
-                newWay.setNodes(newNodes);
-                addPrimitive(newWay);
-            }
-            // Because relations can have other relations as members we first clone all relations
-            // and then get the cloned members
-            Collection<Relation> relations = copyFrom.getRelations();
-            for (Relation r : relations) {
-                Relation newRelation = new Relation(r, false, false);
-                primMap.put(r, newRelation);
-                addPrimitive(newRelation);
-            }
-            for (Relation r : relations) {
-                ((Relation) primMap.get(r)).setMembers(r.getMembers().stream()
-                        .map(rm -> new RelationMember(rm.getRole(), primMap.get(rm.getMember())))
-                        .collect(Collectors.toList()));
-            }
+            clonePrimitives(copyFrom.getNodes(), copyFrom.getWays(), copyFrom.getRelations());
             DataSourceAddedEvent addedEvent = new DataSourceAddedEvent(this,
                     new LinkedHashSet<>(dataSources), copyFrom.dataSources.stream());
             for (DataSource source : copyFrom.dataSources) {
@@ -257,6 +231,45 @@ public final class DataSet implements OsmData<OsmPrimitive, Node, Way, Relation>
                 addPrimitive(o);
             }
         });
+    }
+
+    /**
+     * Clones the specified primitives into this data set.
+     * @param nodes nodes to clone
+     * @param ways ways to clone
+     * @param relations relations to clone
+     * @return the map of cloned primitives indexed by their original version
+     * @since 18001
+     */
+    public Map<OsmPrimitive, OsmPrimitive> clonePrimitives(Iterable<Node> nodes, Iterable<Way> ways, Iterable<Relation> relations) {
+        Map<OsmPrimitive, OsmPrimitive> primMap = new HashMap<>();
+        for (Node n : nodes) {
+            Node newNode = new Node(n);
+            primMap.put(n, newNode);
+            addPrimitive(newNode);
+        }
+        for (Way w : ways) {
+            Way newWay = new Way(w, false, false);
+            primMap.put(w, newWay);
+            List<Node> newNodes = w.getNodes().stream()
+                    .map(n -> (Node) primMap.get(n))
+                    .collect(Collectors.toList());
+            newWay.setNodes(newNodes);
+            addPrimitive(newWay);
+        }
+        // Because relations can have other relations as members we first clone all relations
+        // and then get the cloned members
+        for (Relation r : relations) {
+            Relation newRelation = new Relation(r, false, false);
+            primMap.put(r, newRelation);
+            addPrimitive(newRelation);
+        }
+        for (Relation r : relations) {
+            ((Relation) primMap.get(r)).setMembers(r.getMembers().stream()
+                    .map(rm -> new RelationMember(rm.getRole(), primMap.get(rm.getMember())))
+                    .collect(Collectors.toList()));
+        }
+        return primMap;
     }
 
     /**
@@ -302,6 +315,8 @@ public final class DataSet implements OsmData<OsmPrimitive, Node, Way, Relation>
      *
      * @return list of history entries
      */
+    // This needs to return something like a Sequenced Collection (Java 21)
+    @SuppressWarnings({"NonApiType", "squid:S1319"})
     public LinkedList<Collection<? extends OsmPrimitive>> getSelectionHistory() {
         return selectionHistory;
     }
@@ -360,8 +375,8 @@ public final class DataSet implements OsmData<OsmPrimitive, Node, Way, Relation>
     private final Map<String, String> changeSetTags = new HashMap<>();
 
     /**
-     * Replies the set of changeset tags to be applied when or if this is ever uploaded.
-     * @return the set of changeset tags
+     * Replies the map of changeset tags to be applied when or if this is ever uploaded.
+     * @return the map of changeset tags
      * @see #addChangeSetTag
      */
     public Map<String, String> getChangeSetTags() {
@@ -375,7 +390,11 @@ public final class DataSet implements OsmData<OsmPrimitive, Node, Way, Relation>
      * @see #getChangeSetTags
      */
     public void addChangeSetTag(String k, String v) {
-        this.changeSetTags.put(k, v);
+        if (v != null) {
+            this.changeSetTags.put(k, v);
+        } else {
+            this.changeSetTags.remove(k);
+        }
     }
 
     @Override
@@ -507,8 +526,29 @@ public final class DataSet implements OsmData<OsmPrimitive, Node, Way, Relation>
     }
 
     /**
+     * Adds recursively a primitive, and all its children, to the dataset.
+     *
+     * @param primitive the primitive.
+     * @throws IllegalStateException if the dataset is read-only
+     * @since 17981
+     */
+    public void addPrimitiveRecursive(OsmPrimitive primitive) {
+        Stream<OsmPrimitive> children;
+        if (primitive instanceof Way) {
+            children = ((Way) primitive).getNodes().stream().map(OsmPrimitive.class::cast);
+        } else if (primitive instanceof Relation) {
+            children = ((Relation) primitive).getMembers().stream().map(RelationMember::getMember);
+        } else {
+            children = Stream.empty();
+        }
+        // Relations may have the same member multiple times.
+        children.filter(p -> !Objects.equals(this, p.getDataSet())).forEach(this::addPrimitiveRecursive);
+        addPrimitive(primitive);
+    }
+
+    /**
      * Removes a primitive from the dataset. This method only removes the
-     * primitive form the respective collection of primitives managed
+     * primitive from the respective collection of primitives managed
      * by this dataset, i.e. from {@code store.nodes}, {@code store.ways}, or
      * {@code store.relations}. References from other primitives to this
      * primitive are left unchanged.
@@ -527,11 +567,65 @@ public final class DataSet implements OsmData<OsmPrimitive, Node, Way, Relation>
         });
     }
 
+    /**
+     * Removes primitives from the dataset. This method only removes the
+     * primitives from the respective collection of primitives managed
+     * by this dataset, i.e. from {@code store.nodes}, {@code store.ways}, or
+     * {@code store.relations}. References from other primitives to this
+     * primitive are left unchanged.
+     *
+     * @param primitiveIds the ids of the primitive
+     * @throws IllegalStateException if the dataset is read-only
+     * @since 18724
+     */
+    public void removePrimitives(PrimitiveId... primitiveIds) {
+        this.removePrimitives(Arrays.asList(primitiveIds));
+    }
+
+    /**
+     * Removes primitives from the dataset. This method only removes the
+     * primitives from the respective collection of primitives managed
+     * by this dataset, i.e. from {@code store.nodes}, {@code store.ways}, or
+     * {@code store.relations}. References from other primitives to this
+     * primitive are left unchanged.
+     *
+     * @param primitiveIds the ids of the primitive
+     * @throws IllegalStateException if the dataset is read-only
+     * @since 18724
+     */
+    public void removePrimitives(Collection<PrimitiveId> primitiveIds) {
+        checkModifiable();
+        final List<PrimitiveId> selected = new ArrayList<>();
+        update(() -> {
+            clearSelection(primitiveIds);
+            final List<OsmPrimitive> removed = new ArrayList<>(primitiveIds.size());
+            for (PrimitiveId primitiveId : primitiveIds) {
+                OsmPrimitive primitive = this.getPrimitiveByIdChecked(primitiveId);
+                if (primitive == null) {
+                    continue;
+                } else if (primitive.isSelected()) {
+                    selected.add(primitive);
+                }
+                this.removePrimitiveFromStorage(primitive);
+                removed.add(primitive);
+            }
+            firePrimitivesRemoved(removed, false);
+        });
+        if (!selected.isEmpty()) {
+            throw new DataIntegrityProblemException("Primitives were re-selected by a selection listener: "
+            + selected.stream().map(PrimitiveId::toString).collect(Collectors.joining(", ")));
+        }
+    }
+
     private void removePrimitiveImpl(OsmPrimitive primitive) {
         clearSelection(primitive.getPrimitiveId());
         if (primitive.isSelected()) {
             throw new DataIntegrityProblemException("Primitive was re-selected by a selection listener: " + primitive);
         }
+        this.removePrimitiveFromStorage(primitive);
+    }
+
+    private void removePrimitiveFromStorage(OsmPrimitive primitive) {
         store.removePrimitive(primitive);
         allPrimitives.remove(primitive);
         primitive.setDataset(null);
@@ -566,6 +660,17 @@ public final class DataSet implements OsmData<OsmPrimitive, Node, Way, Relation>
     public Collection<OsmPrimitive> getSelectedNodesAndWays() {
         return new SubclassFilteredCollection<>(getSelected(),
                 primitive -> primitive instanceof Node || primitive instanceof Way);
+    }
+
+    /**
+     * Returns the way selected last or null if no way primitives were selected or selection is empty.
+     * @return last way in selection or null
+     * @since 18468
+     */
+    public Way getLastSelectedWay() {
+        Way lastWay = null;
+        for (Way way: getSelectedWays()) lastWay = way;
+        return lastWay;
     }
 
     @Override
@@ -764,11 +869,10 @@ public final class DataSet implements OsmData<OsmPrimitive, Node, Way, Relation>
     private OsmPrimitive getPrimitiveByIdChecked(PrimitiveId primitiveId) {
         OsmPrimitive result = getPrimitiveById(primitiveId);
         if (result == null && primitiveId != null) {
-            Logging.warn(tr(
+            Logging.error(new IllegalStateException(tr(
                     "JOSM expected to find primitive [{0} {1}] in dataset but it is not there. Please report this "
                             + "at {2}. This is not a critical error, it should be safe to continue in your work.",
-                    primitiveId.getType(), Long.toString(primitiveId.getUniqueId()), Config.getUrls().getJOSMWebsite()));
-            Logging.error(new Exception());
+                    primitiveId.getType(), Long.toString(primitiveId.getUniqueId()), Config.getUrls().getJOSMWebsite())));
         }
 
         return result;
@@ -791,8 +895,14 @@ public final class DataSet implements OsmData<OsmPrimitive, Node, Way, Relation>
         return update(() -> {
             Set<Way> result = new HashSet<>();
             for (Way way : node.getParentWays()) {
-                List<Node> wayNodes = way.getNodes();
-                if (wayNodes.removeIf(node::equals)) {
+                List<Node> wayNodes;
+                if (!way.isIncomplete()) {
+                    wayNodes = way.calculateRemoveNodes(Collections.singleton(node));
+                } else {
+                    wayNodes = way.getNodes();
+                    wayNodes.removeIf(node::equals);
+                }
+                if (wayNodes.size() < way.getNodesCount()) {
                     if (wayNodes.size() < 2) {
                         deleteWay(way);
                     } else {
@@ -881,7 +991,7 @@ public final class DataSet implements OsmData<OsmPrimitive, Node, Way, Relation>
      * Can be called before bigger changes on dataset. Events are disabled until {@link #endUpdate()}.
      * {@link DataSetListener#dataChanged(DataChangedEvent event)} event is triggered after end of changes
      * <br>
-     * Typical usecase should look like this:
+     * Typical use case should look like this:
      * <pre>
      * ds.beginUpdate();
      * try {
@@ -900,7 +1010,7 @@ public final class DataSet implements OsmData<OsmPrimitive, Node, Way, Relation>
     /**
      * Must be called after a previous call to {@link #beginUpdate()} to fire change events.
      * <br>
-     * Typical usecase should look like this:
+     * Typical use case should look like this:
      * <pre>
      * ds.beginUpdate();
      * try {
@@ -1101,6 +1211,7 @@ public final class DataSet implements OsmData<OsmPrimitive, Node, Way, Relation>
             }
             store.clear();
             allPrimitives.clear();
+            conflicts.get().clear();
         });
     }
 
@@ -1143,7 +1254,7 @@ public final class DataSet implements OsmData<OsmPrimitive, Node, Way, Relation>
                     DataSourceRemovedEvent clearEvent = new DataSourceRemovedEvent(
                             this, new LinkedHashSet<>(from.dataSources), from.dataSources.stream());
                     if (from.dataSources.stream().filter(dataSource -> !dataSources.contains(dataSource))
-                            .map(dataSources::add).filter(Boolean.TRUE::equals).count() > 0) {
+                            .anyMatch(dataSources::add)) {
                         cachedDataSourceArea = null;
                         cachedDataSourceBounds = null;
                     }
@@ -1178,7 +1289,7 @@ public final class DataSet implements OsmData<OsmPrimitive, Node, Way, Relation>
     }
 
     /* --------------------------------------------------------------------------------- */
-    /* interface ProjectionChangeListner                                                 */
+    /* interface ProjectionChangeListener                                                */
     /* --------------------------------------------------------------------------------- */
     @Override
     public void projectionChanged(Projection oldValue, Projection newValue) {

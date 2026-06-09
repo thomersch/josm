@@ -1,34 +1,43 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.dialogs.relation.actions;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.Component;
 import java.awt.Container;
+
 import javax.swing.Icon;
 import javax.swing.JOptionPane;
 import javax.swing.text.JTextComponent;
 
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
+import org.openstreetmap.josm.data.coor.LatLon;
+import org.openstreetmap.josm.data.osm.DataSet;
+import org.openstreetmap.josm.data.osm.IRelation;
+import org.openstreetmap.josm.data.osm.Node;
+import org.openstreetmap.josm.data.osm.Relation;
+import org.openstreetmap.josm.data.osm.RelationMember;
 import org.openstreetmap.josm.gui.ConditionalOptionPaneUtil;
+import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.testutils.mockers.JOptionPaneSimpleMocker;
 
 import mockit.Mock;
 import mockit.MockUp;
 
-import org.junit.Test;
-
 /**
  * Unit tests for relation editor actions.
  */
-public class RelationEditorActionsTest extends AbstractRelationEditorActionTest {
+class RelationEditorActionsTest extends AbstractRelationEditorActionTest {
 
     /**
      * Check that all dialog-less actions do not crash.
      */
     @Test
-    public void testNoDialogActions() {
+    void testNoDialogActions() {
         new AddSelectedAfterSelection(relationEditorAccess).actionPerformed(null);
         new AddSelectedBeforeSelection(relationEditorAccess).actionPerformed(null);
         new AddSelectedAtStartAction(relationEditorAccess).actionPerformed(null);
@@ -39,7 +48,8 @@ public class RelationEditorActionsTest extends AbstractRelationEditorActionTest 
         new OKAction(relationEditorAccess).actionPerformed(null);
         new CancelAction(relationEditorAccess).actionPerformed(null);
 
-        new CopyMembersAction(relationEditorAccess).actionPerformed(null);
+        new CopyMembersAction(relationEditorAccess, true).actionPerformed(null);
+        new CopyMembersAction(relationEditorAccess, false).actionPerformed(null);
         new PasteMembersAction(relationEditorAccess).actionPerformed(null);
 
         new SelectAction(relationEditorAccess).actionPerformed(null);
@@ -68,9 +78,10 @@ public class RelationEditorActionsTest extends AbstractRelationEditorActionTest 
      * Test DeleteCurrentRelationAction
      */
     @Test
-    public void testDeleteCurrentRelationAction() {
+    void testDeleteCurrentRelationAction() {
         TestUtils.assumeWorkingJMockit();
         final JOptionPaneSimpleMocker jopsMocker = new JOptionPaneSimpleMocker() {
+            @Override
             public String getStringFromOriginalMessage(Object originalMessage) {
                 return ((JTextComponent) ((Container) originalMessage).getComponent(0)).getText();
             }
@@ -104,13 +115,13 @@ public class RelationEditorActionsTest extends AbstractRelationEditorActionTest 
      * Test SetRoleAction
      */
     @Test
-    public void testSetRoleAction() {
+    void testSetRoleAction() {
         TestUtils.assumeWorkingJMockit();
         final JOptionPaneSimpleMocker.MessagePanelMocker mpMocker = new JOptionPaneSimpleMocker.MessagePanelMocker();
         // JOptionPaneSimpleMocker doesn't handle showOptionDialog calls because of their potential
         // complexity, but this is quite a simple use of showOptionDialog which we can mock from scratch.
         final boolean[] jopMockerCalled = new boolean[] {false};
-        final MockUp<JOptionPane> jopMocker = new MockUp<JOptionPane>() {
+        new MockUp<JOptionPane>() {
             @Mock
             public int showOptionDialog(
                 Component parentComponent,
@@ -139,5 +150,31 @@ public class RelationEditorActionsTest extends AbstractRelationEditorActionTest 
         new SetRoleAction(relationEditorAccess).actionPerformed(null);
 
         assertTrue(jopMockerCalled[0]);
+    }
+
+    /**
+     * Non-regression test for JOSM #22024.
+     * This is due to a race condition between uploading and refreshing the relation in the editor.
+     */
+    @Test
+    void testNonRegression22024() {
+        final DataSet ds = new DataSet();
+        final Node node = new Node(LatLon.ZERO);
+        Relation relation = TestUtils.newRelation("type=restriction", new RelationMember("", node));
+        ds.addPrimitive(node);
+        ds.addPrimitive(relation);
+        MainApplication.getLayerManager().prepareLayerForUpload(new OsmDataLayer(ds, "testNonRegression22024", null));
+        // Sanity check that behavior hasn't changed
+        assertTrue(ds.isLocked(), "The dataset should be locked when it is being uploaded.");
+        relationEditorAccess.getEditor().setRelation(relation);
+        relationEditorAccess.getMemberTableModel().populate(relation);
+        relationEditorAccess.getTagModel().initFromPrimitive(relation);
+        relationEditorAccess.getEditor().reloadDataFromRelation();
+
+        assertDoesNotThrow(() -> {
+            IRelation<?> tempRelation = relationEditorAccess.getChangedRelation();
+            if (tempRelation.getDataSet() == null)
+                tempRelation.setMembers(null); // see #19885
+        });
     }
 }

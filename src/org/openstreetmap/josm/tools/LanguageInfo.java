@@ -65,16 +65,21 @@ public final class LanguageInfo {
                     return "";
                 }
             }
-            if ("nb".equals(code)) { /* OSM-Wiki has "no", but no "nb" */
-                return "No:";
-            } else if ("sr@latin".equals(code)) { /* OSM-Wiki has "Sr-latn" and not Sr-latin */
-                return "Sr-latn:";
-            } else if ("de".equals(code) || "es".equals(code) || "fr".equals(code)
-                    || "it".equals(code) || "nl".equals(code) || "ru".equals(code)
-                    || "ja".equals(code)) {
-                return code.toUpperCase(Locale.ENGLISH) + ":";
-            } else {
-                return code.substring(0, 1).toUpperCase(Locale.ENGLISH) + code.substring(1) + ":";
+            switch (code) {
+                case "nb": case "nn":     /* OSM-Wiki has "no", but no "nb" */
+                    return "No:";
+                case "sr@latin":    /* OSM-Wiki has "Sr-latn" and not Sr-latin */
+                    return "Sr-latn:";
+                case "de":
+                case "es":
+                case "fr":
+                case "it":
+                case "nl":
+                case "ru":
+                case "ja":
+                    return code.toUpperCase(Locale.ENGLISH) + ":";
+                default:
+                    return code.substring(0, 1).toUpperCase(Locale.ENGLISH) + code.substring(1) + ":";
             }
         }
 
@@ -90,7 +95,7 @@ public final class LanguageInfo {
             return null;
         } else if (code.matches(".+@.+")) {
             return code.substring(0, 1).toUpperCase(Locale.ENGLISH)
-                    + code.substring(1, 2)
+                    + code.charAt(1)
                     + '-'
                     + code.substring(3, 4).toUpperCase(Locale.ENGLISH)
                     + code.substring(4)
@@ -122,11 +127,11 @@ public final class LanguageInfo {
 
     /**
      * Replies the locale code used by JOSM for a given locale.
-     *
+     * <p>
      * In most cases JOSM uses the 2-character ISO 639 language code ({@link Locale#getLanguage()}
      * to identify the locale of a localized resource, but in some cases it may use the
      * programmatic name for locales, as replied by {@link Locale#toString()}.
-     *
+     * <p>
      * For unknown country codes and variants this function already does fallback to
      * internally known translations.
      *
@@ -149,8 +154,54 @@ public final class LanguageInfo {
     }
 
     /**
-     * Replies the locale code used by Java for a given locale.
+     * Replies the OSM locale codes for the default locale.
      *
+     * @param prefix a prefix like {@code name:}.
+     * @return the OSM locale codes for the default locale
+     * @see #getOSMLocaleCodes(String, Locale)
+     * @since 19045
+     */
+    public static String[] getOSMLocaleCodes(String prefix) {
+        return getOSMLocaleCodes(prefix, Locale.getDefault());
+    }
+
+    /**
+     * Replies the locale codes used by OSM for a given locale.
+     * <p>
+     * In most cases OSM uses the 2-character ISO 639 language code ({@link Locale#getLanguage()}
+     * to identify the locale of a localized resource, but in some cases it may use the
+     * programmatic name for locales, as replied by {@link Locale#toString()}.
+     * <p>
+     * For unknown country codes and variants this function already does fallback to
+     * internally known translations.
+     *
+     * @param prefix a prefix like {@code name:}.
+     * @param locale the locale. Replies "en" if null.
+     * @return the OSM codes for the given locale
+     * @since 19045
+     */
+    public static String[] getOSMLocaleCodes(String prefix, Locale locale) {
+        if (prefix == null) {
+            prefix = "";
+        }
+        String main = getJOSMLocaleCode(locale);
+        switch (main) {
+            case "zh_CN":
+                return new String[]{prefix+"zh-Hans-CN", prefix+"zh-Hans", prefix+"zh"};
+            case "zh_TW":
+                return new String[]{prefix+"zh-Hant-TW", prefix+"zh-Hant", prefix+"zh"};
+            default:
+                ArrayList<String> r = new ArrayList<>();
+                for (String s : LanguageInfo.getLanguageCodes(null)) {
+                    r.add(prefix + s);
+                }
+                return r.toArray(String[]::new);
+        }
+    }
+
+    /**
+     * Replies the locale code used by Java for a given locale.
+     * <p>
      * In most cases JOSM and Java uses the same codes, but for some exceptions this is needed.
      *
      * @param localeName the locale. Replies "en" if null.
@@ -159,21 +210,23 @@ public final class LanguageInfo {
      */
     public static String getJavaLocaleCode(String localeName) {
         if (localeName == null) return "en";
-        if ("ca@valencia".equals(localeName)) {
-            localeName = "ca__valencia";
-        } else if ("sr@latin".equals(localeName)) {
-            localeName = "sr__latin";
-        } else if ("he".equals(localeName)) {
-            localeName = "iw_IL";
-        } else if ("id".equals(localeName)) {
-            localeName = "in";
+        switch (localeName) {
+            case "ca@valencia":
+                return "ca__valencia";
+            case "sr@latin":
+                return "sr__latin";
+            case "he":
+                return "iw_IL";
+            case "id":
+                return "in";
+            default:
+                return localeName;
         }
-        return localeName;
     }
 
     /**
      * Replies the display string used by JOSM for a given locale.
-     *
+     * <p>
      * In most cases returns text replied by {@link Locale#getDisplayName()}, for some
      * locales an override is used (i.e. when unsupported by Java).
      *
@@ -193,7 +246,7 @@ public final class LanguageInfo {
 
     /**
      * Replies the locale used by Java for a given language code.
-     *
+     * <p>
      * Accepts JOSM and Java codes as input.
      *
      * @param localeName the locale code.
@@ -205,7 +258,7 @@ public final class LanguageInfo {
 
     /**
      * Replies the locale used by Java for a given language code.
-     *
+     * <p>
      * Accepts JOSM, Java and POSIX codes as input.
      *
      * @param localeName the locale code.
@@ -299,7 +352,7 @@ public final class LanguageInfo {
         String v = l.getVariant();
         if (c.isEmpty())
             c = null;
-        if (v != null && !v.isEmpty()) {
+        if (!Utils.isEmpty(v)) {
             if (c != null)
                 list.add(lang+'_'+c+'@'+v);
             list.add(lang+'@'+v);

@@ -42,6 +42,7 @@ import org.openstreetmap.josm.data.validation.TestError;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.tools.Destroyable;
 import org.openstreetmap.josm.tools.ListenerList;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * A panel that displays the error tree. The selection manager
@@ -167,12 +168,15 @@ public class ValidatorTreePanel extends JTree implements Destroyable, DataSetLis
     public void buildTree(boolean expandAgain) {
         if (resetScheduled)
             return;
+        buildTreeInternal(expandAgain);
+        invalidationListeners.fireEvent(Runnable::run);
+    }
+
+    private void buildTreeInternal(boolean expandAgain) {
         final DefaultMutableTreeNode rootNode = new DefaultMutableTreeNode();
 
-        if (errors == null || errors.isEmpty()) {
-            GuiHelper.runInEDTAndWait(() -> valTreeModel.setRoot(rootNode));
-            return;
-        }
+        if (errors == null)
+            errors = new ArrayList<>();
 
         // Remember first selected tree row
         TreePath selPath = getSelectionPath();
@@ -198,7 +202,7 @@ public class ValidatorTreePanel extends JTree implements Destroyable, DataSetLis
         }
 
         Predicate<TestError> filterToUse = e -> !e.isIgnored();
-        if (!ValidatorPrefHelper.PREF_OTHER.get()) {
+        if (!Boolean.TRUE.equals(ValidatorPrefHelper.PREF_OTHER.get())) {
             filterToUse = filterToUse.and(e -> e.getSeverity() != Severity.OTHER);
         }
         if (filter != null) {
@@ -256,7 +260,7 @@ public class ValidatorTreePanel extends JTree implements Destroyable, DataSetLis
                     final String searchMsg;
                     if (groupNode != null) {
                         searchMsg = description;
-                    } else if (description == null || description.isEmpty()) {
+                    } else if (Utils.isEmpty(description)) {
                         searchMsg = message;
                     } else {
                         searchMsg = message + " - " + description;
@@ -325,8 +329,6 @@ public class ValidatorTreePanel extends JTree implements Destroyable, DataSetLis
             setSelectionRow(selRow);
             scrollRowToVisible(selRow);
         }
-
-        invalidationListeners.fireEvent(Runnable::run);
     }
 
     private static String addSize(String msg, Collection<?> coll) {
@@ -429,7 +431,7 @@ public class ValidatorTreePanel extends JTree implements Destroyable, DataSetLis
 
     /**
      * Returns the filter list
-     * @return the list of primitives used for filtering
+     * @return the set of primitives used for filtering
      */
     public Set<? extends OsmPrimitive> getFilter() {
         return filter;

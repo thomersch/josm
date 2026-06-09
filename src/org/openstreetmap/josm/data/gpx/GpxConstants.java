@@ -3,7 +3,6 @@ package org.openstreetmap.josm.data.gpx;
 
 import java.awt.Color;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -100,6 +99,12 @@ public interface GpxConstants {
     String META_BOUNDS = META_PREFIX + "bounds";
 
     /**
+     * The creator element that will be written when exporting a GPX file
+     * @since 18287
+     */
+    String JOSM_CREATOR_NAME = "JOSM GPX export";
+
+    /**
      * Namespace for the XSD
      */
     String XML_URI_XSD = "http://www.w3.org/2001/XMLSchema-instance";
@@ -135,10 +140,15 @@ public interface GpxConstants {
     String PT_ELE = "ele";
 
     /** Creation/modification timestamp for the point.
-     *  Date and time in are in Univeral Coordinated Time (UTC), not local time!
+     *  Date and time in are in Coordinated Universal Time (UTC), not local time!
      *  Conforms to ISO 8601 specification for date/time representation.
      *  Fractional seconds are allowed for millisecond timing in tracklogs. */
     String PT_TIME = "time";
+
+    /** True Course/Bearing angle over ground.
+     * @since 19387
+     */
+    String PT_COURSE = "course";
 
     /** Magnetic variation (in degrees) at the point. 0.0 &lt;= value &lt; 360.0 */
     String PT_MAGVAR = "magvar";
@@ -173,12 +183,18 @@ public interface GpxConstants {
     /** Represents a differential GPS station. 0 &lt;= value &lt;= 1023 */
     String PT_DGPSID = "dgpsid";
 
+    /** Standard horizontal major deviation */
+    String PT_STD_HDEV = "stdhdev";
+    
+    /** Standard vertical major deviation */
+    String PT_STD_VDEV = "stdvdev";
+    
     /**
      * Ordered list of all possible waypoint keys.
      */
     List<String> WPT_KEYS = Collections.unmodifiableList(Arrays.asList(PT_ELE, PT_TIME, PT_MAGVAR, PT_GEOIDHEIGHT,
-            GPX_NAME, GPX_CMT, GPX_DESC, GPX_SRC, META_LINKS, PT_SYM, PT_TYPE,
-            PT_FIX, PT_SAT, PT_HDOP, PT_VDOP, PT_PDOP, PT_AGEOFDGPSDATA, PT_DGPSID));
+            GPX_NAME, GPX_CMT, GPX_DESC, GPX_SRC, META_LINKS, PT_SYM, PT_TYPE, PT_FIX, PT_SAT, PT_COURSE,
+            PT_HDOP, PT_VDOP, PT_PDOP, PT_AGEOFDGPSDATA, PT_DGPSID, PT_STD_HDEV, PT_STD_VDEV));
 
     /**
      * Ordered list of all possible route and track keys.
@@ -246,7 +262,7 @@ public interface GpxConstants {
     /**
      * Possible fix values. NMEA 0183 Version 4.00
      */
-    Collection<String> FIX_VALUES = Collections.unmodifiableList(
+    List<String> FIX_VALUES = Collections.unmodifiableList(
             Arrays.asList("none", "2d", "3d", "dgps", "pps", "rtk", "float rtk", "estimated", "manual", "simulated"));
 
     /**

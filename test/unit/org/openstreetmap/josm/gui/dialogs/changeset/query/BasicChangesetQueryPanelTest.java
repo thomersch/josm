@@ -1,31 +1,22 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.dialogs.changeset.query;
 
-import static org.junit.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests of {@link BasicChangesetQueryPanel} class.
  */
-public class BasicChangesetQueryPanelTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences();
-
+@BasicPreferences
+class BasicChangesetQueryPanelTest {
     /**
      * Unit test of {@link BasicChangesetQueryPanel#BasicChangesetQueryPanel}.
      */
     @Test
-    public void testBasicChangesetQueryPanel() {
+    void testBasicChangesetQueryPanel() {
         assertNotNull(new BasicChangesetQueryPanel());
     }
 }

@@ -3,6 +3,7 @@ package org.openstreetmap.josm.gui.history;
 
 import static org.openstreetmap.josm.tools.I18n.tr;
 
+import java.awt.Color;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
@@ -43,7 +44,7 @@ import org.openstreetmap.josm.gui.layer.MainLayerManager.ActiveLayerChangeListen
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.util.ChangeNotifier;
 import org.openstreetmap.josm.tools.CheckParameterUtil;
-import org.openstreetmap.josm.tools.Logging;
+import org.openstreetmap.josm.tools.ColorScale;
 
 /**
  * This is the model used by the history browser.
@@ -88,6 +89,7 @@ public class HistoryBrowserModel extends ChangeNotifier implements ActiveLayerCh
     private final DiffTableModel referenceRelationMemberTableModel;
     private final DiffTableModel referenceNodeListTableModel;
     private final DiffTableModel currentNodeListTableModel;
+    private final ColorScale dateScale;
 
     /**
      * constructor
@@ -100,6 +102,7 @@ public class HistoryBrowserModel extends ChangeNotifier implements ActiveLayerCh
         currentNodeListTableModel = new DiffTableModel();
         currentRelationMemberTableModel = new DiffTableModel();
         referenceRelationMemberTableModel = new DiffTableModel();
+        dateScale = ColorScale.createHSBScale(256);
 
         DataSet ds = MainApplication.getLayerManager().getActiveDataSet();
         if (ds != null) {
@@ -137,14 +140,6 @@ public class HistoryBrowserModel extends ChangeNotifier implements ActiveLayerCh
             return false;
         if (primitive.isNew() || !primitive.isUsable())
             return false;
-
-        //try creating a history primitive. if that fails, the primitive cannot be used.
-        try {
-            HistoryOsmPrimitive.forOsmPrimitive(primitive);
-        } catch (IllegalArgumentException ign) {
-            Logging.trace(ign);
-            return false;
-        }
 
         if (history == null)
             return false;
@@ -191,6 +186,11 @@ public class HistoryBrowserModel extends ChangeNotifier implements ActiveLayerCh
                 current = newLatest;
             }
             setLatest(newLatest);
+        }
+        if (!history.isEmpty()) {
+            this.dateScale.setRange(
+                    history.getEarliest().getInstant().toEpochMilli(),
+                    history.getLatest().getInstant().toEpochMilli());
         }
         initTagTableModels();
         fireModelChange();
@@ -688,4 +688,22 @@ public class HistoryBrowserModel extends ChangeNotifier implements ActiveLayerCh
         }
     }
 
+    /**
+     * Returns the color for the primitive in the given row
+     * @param row row number
+     * @return the color for the primitive in the given row
+     */
+    public Color getVersionColor(int row) {
+        HistoryOsmPrimitive primitive = getPrimitive(row);
+        return primitive != null && primitive.getInstant() != null ? getVersionColor(primitive) : null;
+    }
+
+    /**
+     * Returns the color for the given primitive timestamp
+     * @param primitive the history primitive
+     * @return the color for the given primitive timestamp
+     */
+    public Color getVersionColor(HistoryOsmPrimitive primitive) {
+        return dateScale.getColor(isLatest(primitive) ? System.currentTimeMillis() : primitive.getInstant().toEpochMilli());
+    }
 }

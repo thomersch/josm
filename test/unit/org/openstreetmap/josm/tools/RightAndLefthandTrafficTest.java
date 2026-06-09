@@ -1,33 +1,27 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.tools;
 
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.fail;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.coor.LatLon;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.Projection;
+import org.openstreetmap.josm.testutils.annotations.Territories;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import net.trajano.commons.testing.UtilityClassTestUtil;
 
 /**
  * Unit tests of {@link RightAndLefthandTraffic} class.
  */
-public class RightAndLefthandTrafficTest {
-    /**
-     * Test rules.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules rules = new JOSMTestRules().projection().territories();
-
+@Projection
+@Territories
+class RightAndLefthandTrafficTest {
     /**
      * Tests that {@code RightAndLefthandTraffic} satisfies utility class criteria.
      * @throws ReflectiveOperationException if an error occurs
      */
     @Test
-    public void testUtilityClass() throws ReflectiveOperationException {
+    void testUtilityClass() throws ReflectiveOperationException {
         UtilityClassTestUtil.assertUtilityClassWellDefined(RightAndLefthandTraffic.class);
     }
 
@@ -35,7 +29,7 @@ public class RightAndLefthandTrafficTest {
      * Test of {@link RightAndLefthandTraffic#isRightHandTraffic} method.
      */
     @Test
-    public void testIsRightHandTraffic() {
+    void testIsRightHandTraffic() {
         check(true, "Paris", 48.8567, 2.3508);
         check(true, "Berlin", 52.5167, 13.383);
         check(true, "New York", 40.7127, -74.0059);
@@ -85,6 +79,7 @@ public class RightAndLefthandTrafficTest {
         check(false, "Brunei", 4.5, 114.666667);
         check(false, "East Timor", -8.833333, 125.916667);
         check(false, "Hong Kong", 22.3, 114.2);
+        check(false, "Hong Kong (Shenzhen Bay)", 22.495, 113.945);
         check(false, "Indonesia", -5, 120);
         check(false, "India", 21, 78);
         check(false, "Japan", 35, 136);

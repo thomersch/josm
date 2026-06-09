@@ -6,7 +6,6 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 import java.awt.Component;
 import java.awt.Font;
 
-import javax.swing.DefaultComboBoxModel;
 import javax.swing.ImageIcon;
 import javax.swing.JLabel;
 import javax.swing.JTable;
@@ -15,6 +14,7 @@ import javax.swing.table.TableCellRenderer;
 
 import org.openstreetmap.josm.gui.conflict.ConflictColors;
 import org.openstreetmap.josm.gui.widgets.JosmComboBox;
+import org.openstreetmap.josm.gui.widgets.JosmComboBoxModel;
 import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.Logging;
 
@@ -26,7 +26,7 @@ public class MultiValueCellRenderer extends JLabel implements TableCellRenderer 
 
     private final ImageIcon iconDecided;
     private final ImageIcon iconUndecided;
-    private final DefaultComboBoxModel<Object> model;
+    private final JosmComboBoxModel<Object> model;
     private final JosmComboBox<Object> cbDecisionRenderer;
 
     /**
@@ -36,7 +36,7 @@ public class MultiValueCellRenderer extends JLabel implements TableCellRenderer 
         setOpaque(true);
         iconDecided = ImageProvider.get("dialogs/conflict", "tagconflictresolved");
         iconUndecided = ImageProvider.get("dialogs/conflict", "tagconflictunresolved");
-        model = new DefaultComboBoxModel<>();
+        model = new JosmComboBoxModel<>();
         cbDecisionRenderer = new JosmComboBox<>(model);
     }
 
@@ -131,6 +131,8 @@ public class MultiValueCellRenderer extends JLabel implements TableCellRenderer 
             toolTipText = tr("All values joined as ''{0}'' are going to be applied for key ''{1}''",
                     decision.getChosenValue(), decision.getKey());
             break;
+        default:
+            throw new AssertionError("Unknown decision type in renderToolTipText(): " + decision.getDecisionType());
         }
         setToolTipText(toolTipText);
         cbDecisionRenderer.setToolTipText(toolTipText);
@@ -154,7 +156,7 @@ public class MultiValueCellRenderer extends JLabel implements TableCellRenderer 
         boolean conflict = tagModel.getKeysWithConflicts().contains(tagModel.getKey(row));
         renderColors(decision, isSelected, conflict);
         renderToolTipText(decision);
-        switch(column) {
+        switch (column) {
         case 0:
             if (decision.isDecided()) {
                 setIcon(iconDecided);
@@ -170,7 +172,9 @@ public class MultiValueCellRenderer extends JLabel implements TableCellRenderer 
         case 2:
             renderValue(decision);
             return cbDecisionRenderer;
+
+        default:
+            return this;
         }
-        return this;
     }
 }

@@ -20,6 +20,7 @@ import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
 import javax.swing.JSeparator;
 
 import org.openstreetmap.josm.actions.ExpertToggleAction;
@@ -35,6 +36,7 @@ import org.openstreetmap.josm.data.projection.ProjectionRegistry;
 import org.openstreetmap.josm.data.projection.Projections;
 import org.openstreetmap.josm.gui.ExtendedDialog;
 import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.help.HelpUtil;
 import org.openstreetmap.josm.gui.preferences.DefaultTabPreferenceSetting;
 import org.openstreetmap.josm.gui.preferences.PreferenceSetting;
 import org.openstreetmap.josm.gui.preferences.PreferenceSettingFactory;
@@ -48,15 +50,15 @@ import org.openstreetmap.josm.tools.Logging;
 
 /**
  * Projection preferences.
- *
+ * <p>
  * How to add new Projections:
  *  - Find EPSG code for the projection.
- *  - Look up the parameter string for Proj4, e.g. on http://spatialreference.org/
+ *  - Look up the parameter string for Proj4, e.g. on <a href="https://spatialreference.org">https://spatialreference.org</a>/
  *      and add it to the file 'data/projection/epsg' in JOSM trunk
  *  - Search for official references and verify the parameter values. These
  *      documents are often available in the local language only.
  *  - Use {@link #registerProjectionChoice}, to make the entry known to JOSM.
- *
+ * <p>
  * In case there is no EPSG code:
  *  - override {@link AbstractProjectionChoice#getProjection()} and provide
  *    a manual implementation of the projection. Use {@link CustomProjection}
@@ -84,57 +86,57 @@ public class ProjectionPreference extends DefaultTabPreferenceSetting {
 
     /**
      * Mercator Projection.
-     *
+     * <p>
      * The center of the mercator projection is always the 0 grad coordinate.
-     *
-     * See also USGS Bulletin 1532 (http://pubs.usgs.gov/bul/1532/report.pdf)
-     * initially EPSG used 3785 but that has been superseded by 3857, see https://www.epsg-registry.org/
+     * <p>
+     * See also <a href="https://pubs.usgs.gov/bul/1532/report.pdf">USGS Bulletin 1532</a>
+     * initially EPSG used 3785 but that has been superseded by 3857, see <a href="https://www.epsg-registry.org/">epsg-registry.org</a>
      */
     public static final ProjectionChoice mercator = registerProjectionChoice(tr("Mercator"), "core:mercator", 3857);
 
     /**
      * Lambert conic conform 4 zones using the French geodetic system NTF.
-     *
-     * This newer version uses the grid translation NTF&lt;-&gt;RGF93 provided by IGN for a submillimetric accuracy.
+     * <p>
+     * This newer version uses the grid translation NTF ⟷ RGF93 provided by IGN for a submillimetric accuracy.
      * (RGF93 is the French geodetic system similar to WGS84 but not mathematically equal)
-     *
-     * Source: http://geodesie.ign.fr/contenu/fichiers/Changement_systeme_geodesique.pdf
+     * <p>
+     * Source: <a href="https://geodesie.ign.fr/contenu/fichiers/Changement_systeme_geodesique.pdf">Changement_systeme_geodesique.pdf</a>
      */
     public static final ProjectionChoice lambert = new LambertProjectionChoice();
 
     /**
-     * French departements in the Caribbean Sea and Indian Ocean.
-     *
+     * French regions in the Caribbean Sea and Indian Ocean.
+     * <p>
      * Using the UTM transvers Mercator projection and specific geodesic settings.
      */
     public static final ProjectionChoice utm_france_dom = new UTMFranceDOMProjectionChoice();
 
     /**
      * Lambert Conic Conform 9 Zones projection.
-     *
+     * <p>
      * As specified by the IGN in this document
-     * http://geodesie.ign.fr/contenu/fichiers/documentation/rgf93/cc9zones.pdf
+     * <a href="https://geodesie.ign.fr/contenu/fichiers/documentation/rgf93/cc9zones.pdf">cc9zones.pdf</a>
      */
     public static final ProjectionChoice lambert_cc9 = new LambertCC9ZonesProjectionChoice();
 
     static {
 
-        /************************
+        /* ***********************
          * Global projections.
          */
 
-        /**
+        /* *
          * UTM.
          */
         registerProjectionChoice(new UTMProjectionChoice());
 
-        /************************
+        /* ***********************
          * Regional - alphabetical order by country code.
          */
 
-        /**
+        /*
          * Belgian Lambert 72 projection.
-         *
+         * <p>
          * As specified by the Belgian IGN in this document:
          * http://www.ngi.be/Common/Lambert2008/Transformation_Geographic_Lambert_FR.pdf
          *
@@ -142,9 +144,9 @@ public class ProjectionPreference extends DefaultTabPreferenceSetting {
          */
         registerProjectionChoice(tr("Belgian Lambert 1972"), "core:belgianLambert1972", 31370);     // BE
 
-        /**
+        /*
          * Belgian Lambert 2008 projection.
-         *
+         * <p>
          * As specified by the Belgian IGN in this document:
          * http://www.ngi.be/Common/Lambert2008/Transformation_Geographic_Lambert_FR.pdf
          *
@@ -152,12 +154,12 @@ public class ProjectionPreference extends DefaultTabPreferenceSetting {
          */
         registerProjectionChoice(tr("Belgian Lambert 2008"), "core:belgianLambert2008", 3812);      // BE
 
-        /**
+        /*
          * SwissGrid CH1903 / L03, see https://en.wikipedia.org/wiki/Swiss_coordinate_system.
-         *
+         * <p>
          * Actually, what we have here, is CH1903+ (EPSG:2056), but without
          * the additional false easting of 2000km and false northing 1000 km.
-         *
+         * <p>
          * To get to CH1903, a shift file is required. So currently, there are errors
          * up to 1.6m (depending on the location).
          */
@@ -165,89 +167,89 @@ public class ProjectionPreference extends DefaultTabPreferenceSetting {
 
         registerProjectionChoice(new GaussKruegerProjectionChoice());                               // DE
 
-        /**
+        /*
          * Estonian Coordinate System of 1997.
-         *
+         * <p>
          * Thanks to Johan Montagnat and its geoconv java converter application
          * (https://www.i3s.unice.fr/~johan/gps/ , published under GPL license)
          * from which some code and constants have been reused here.
          */
         registerProjectionChoice(tr("Lambert Zone (Estonia)"), "core:lambertest", 3301);            // EE
 
-        /**
+        /*
          * Lambert conic conform 4 zones using the French geodetic system NTF.
-         *
+         * <p>
          * This newer version uses the grid translation NTF<->RGF93 provided by IGN for a submillimetric accuracy.
          * (RGF93 is the French geodetic system similar to WGS84 but not mathematically equal)
-         *
-         * Source: http://geodesie.ign.fr/contenu/fichiers/Changement_systeme_geodesique.pdf
+         * <p>
+         * Source: https://geodesie.ign.fr/contenu/fichiers/Changement_systeme_geodesique.pdf
          * @author Pieren
          */
         registerProjectionChoice(lambert);                                                          // FR
 
-        /**
+        /*
          * Lambert 93 projection.
-         *
+         * <p>
          * As specified by the IGN in this document
-         * http://geodesie.ign.fr/contenu/fichiers/documentation/rgf93/Lambert-93.pdf
+         * https://geodesie.ign.fr/contenu/fichiers/documentation/rgf93/Lambert-93.pdf
          * @author Don-vip
          */
         registerProjectionChoice(tr("Lambert 93 (France)"), "core:lambert93", 2154);                // FR
 
-        /**
+        /*
          * Lambert Conic Conform 9 Zones projection.
-         *
+         * <p>
          * As specified by the IGN in this document
-         * http://geodesie.ign.fr/contenu/fichiers/documentation/rgf93/cc9zones.pdf
+         * https://geodesie.ign.fr/contenu/fichiers/documentation/rgf93/cc9zones.pdf
          * @author Pieren
          */
         registerProjectionChoice(lambert_cc9);                                                      // FR
 
-        /**
+        /*
          * French departements in the Caribbean Sea and Indian Ocean.
-         *
+         * <p>
          * Using the UTM transvers Mercator projection and specific geodesic settings.
          */
         registerProjectionChoice(utm_france_dom);                                                   // FR
 
-        /**
+        /*
          * LKS-92/ Latvia TM projection.
-         *
+         * <p>
          * Based on data from spatialreference.org.
-         * http://spatialreference.org/ref/epsg/3059/
+         * https://spatialreference.org/ref/epsg/3059/
          *
          * @author Viesturs Zarins
          */
         registerProjectionChoice(tr("LKS-92 (Latvia TM)"), "core:tmerclv", 3059);                   // LV
 
-        /**
+        /*
          * Netherlands RD projection
          *
          * @author vholten
          */
         registerProjectionChoice(tr("Rijksdriehoekscoördinaten (Netherlands)"), "core:dutchrd", 28992); // NL
 
-        /**
+        /*
          * PUWG 1992 and 2000 are the official cordinate systems in Poland.
-         *
+         * <p>
          * They use the same math as UTM only with different constants.
          *
          * @author steelman
          */
         registerProjectionChoice(new PuwgProjectionChoice());                                       // PL
 
-        /**
+        /*
          * SWEREF99 projections. Official coordinate system in Sweden.
          */
         registerProjectionChoice(tr("SWEREF99 TM / EPSG:3006 (Sweden)"), "core:sweref99tm", 3006);  // SE
         registerProjectionChoice(tr("SWEREF99 13 30 / EPSG:3008 (Sweden)"), "core:sweref99", 3008); // SE
 
-        /************************
+        /* ***********************
          * Projection by Code.
          */
         registerProjectionChoice(new CodeProjectionChoice());
 
-        /************************
+        /* ***********************
          * Custom projection.
          */
         registerProjectionChoice(new CustomProjectionChoice());
@@ -368,7 +370,6 @@ public class ProjectionPreference extends DefaultTabPreferenceSetting {
 
         unitsCombo.setSelectedItem(SystemOfMeasurement.getSystemOfMeasurement());
 
-        projPanel.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
         projPanel.add(new JLabel(tr("Projection method")), GBC.std().insets(5, 5, 0, 5));
         projPanel.add(GBC.glue(5, 0), GBC.std().fill(GBC.HORIZONTAL));
         projPanel.add(projectionCombo, GBC.eop().fill(GBC.HORIZONTAL).insets(0, 5, 5, 5));
@@ -412,7 +413,9 @@ public class ProjectionPreference extends DefaultTabPreferenceSetting {
         projPanel.add(unitsCombo, GBC.eop().fill(GBC.HORIZONTAL).insets(0, 5, 5, 5));
         projPanel.add(GBC.glue(1, 1), GBC.std().fill(GBC.HORIZONTAL).weight(1.0, 1.0));
 
-        gui.createPreferenceTab(this).add(projPanel.getVerticalScrollPane(), GBC.std().fill());
+        JScrollPane scrollPane = projPanel.getVerticalScrollPane();
+        scrollPane.setBorder(BorderFactory.createEmptyBorder());
+        gui.createPreferenceTab(this).add(scrollPane, GBC.std().fill());
 
         selectedProjectionChanged(pc);
     }
@@ -449,8 +452,9 @@ public class ProjectionPreference extends DefaultTabPreferenceSetting {
 
         setProjection(id, prefs, false);
 
-        if (PROP_COORDINATES.put(((ICoordinateFormat) coordinatesCombo.getSelectedItem()).getId())) {
-            CoordinateFormatManager.setCoordinateFormat((ICoordinateFormat) coordinatesCombo.getSelectedItem());
+        ICoordinateFormat selectedItem = (ICoordinateFormat) coordinatesCombo.getSelectedItem();
+        if (selectedItem != null && PROP_COORDINATES.put(selectedItem.getId())) {
+            CoordinateFormatManager.setCoordinateFormat(selectedItem);
         }
 
         SystemOfMeasurement.setSystemOfMeasurement(((SystemOfMeasurement) unitsCombo.getSelectedItem()));
@@ -582,5 +586,10 @@ public class ProjectionPreference extends DefaultTabPreferenceSetting {
         if (projectionCombo != null && projection != null) {
             projectionCombo.setSelectedItem(projection);
         }
+    }
+
+    @Override
+    public String getHelpContext() {
+        return HelpUtil.ht("/Preferences/Map");
     }
 }

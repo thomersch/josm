@@ -5,6 +5,7 @@ import java.awt.geom.Rectangle2D;
 import java.util.Objects;
 
 import org.openstreetmap.josm.data.Bounds;
+import org.openstreetmap.josm.data.IBounds;
 import org.openstreetmap.josm.data.coor.ILatLon;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.coor.QuadTiling;
@@ -14,7 +15,7 @@ import org.openstreetmap.josm.data.coor.QuadTiling;
  *
  * In contrast to a {@link Bounds} object, a BBox can represent an invalid (empty) area.
  */
-public class BBox {
+public class BBox implements IBounds {
 
     protected double xmin = Double.POSITIVE_INFINITY;
     protected double xmax = Double.NEGATIVE_INFINITY;
@@ -146,10 +147,7 @@ public class BBox {
      */
     public final void add(double x, double y) {
         if (!Double.isNaN(x) && !Double.isNaN(y)) {
-            xmin = Math.min(xmin, x);
-            xmax = Math.max(xmax, x);
-            ymin = Math.min(ymin, y);
-            ymax = Math.max(ymax, y);
+            set(Math.min(xmin, x), Math.max(xmax, x), Math.min(ymin, y), Math.max(ymax, y));
         }
     }
 
@@ -159,11 +157,15 @@ public class BBox {
      */
     public final void add(BBox other) {
         if (other.isValid()) {
-            xmin = Math.min(xmin, other.xmin);
-            xmax = Math.max(xmax, other.xmax);
-            ymin = Math.min(ymin, other.ymin);
-            ymax = Math.max(ymax, other.ymax);
+            set(Math.min(xmin, other.xmin), Math.max(xmax, other.xmax), Math.min(ymin, other.ymin), Math.max(ymax, other.ymax));
         }
+    }
+
+    protected void set(double xmin, double xmax, double ymin, double ymax) {
+        this.xmin = xmin;
+        this.xmax = xmax;
+        this.ymin = ymin;
+        this.ymax = ymax;
     }
 
     /**
@@ -172,9 +174,19 @@ public class BBox {
      * @param extraSpace the value to extend the primitives bbox. Unit is in LatLon degrees.
      */
     public void addPrimitive(OsmPrimitive primitive, double extraSpace) {
-        BBox primBbox = primitive.getBBox();
-        add(primBbox.xmin - extraSpace, primBbox.ymin - extraSpace);
-        add(primBbox.xmax + extraSpace, primBbox.ymax + extraSpace);
+        this.addPrimitive((IPrimitive) primitive, extraSpace);
+    }
+
+    /**
+     * Extends this bbox to include the bbox of the primitive extended by extraSpace.
+     * @param primitive an primitive
+     * @param extraSpace the value to extend the primitives bbox. Unit is in LatLon degrees.
+     * @since 17862
+     */
+    public void addPrimitive(IPrimitive primitive, double extraSpace) {
+        IBounds primBbox = primitive.getBBox();
+        add(primBbox.getMinLon() - extraSpace, primBbox.getMinLat() - extraSpace);
+        add(primBbox.getMaxLon() + extraSpace, primBbox.getMaxLat() + extraSpace);
     }
 
     /**
@@ -195,6 +207,11 @@ public class BBox {
      * @return The difference between ymax and ymin. 0 for invalid bboxes.
      */
     public double height() {
+        return getHeight();
+    }
+
+    @Override
+    public double getHeight() {
         if (isValid()) {
             return ymax - ymin;
         } else {
@@ -207,6 +224,11 @@ public class BBox {
      * @return The difference between xmax and xmin. 0 for invalid bboxes.
      */
     public double width() {
+        return getWidth();
+    }
+
+    @Override
+    public double getWidth() {
         if (isValid()) {
             return xmax - xmin;
         } else {
@@ -228,8 +250,7 @@ public class BBox {
      * @return {@code true} if {@code b} lies completely inside this bbox
      */
     public boolean bounds(BBox b) {
-        return xmin <= b.xmin && xmax >= b.xmax
-            && ymin <= b.ymin && ymax >= b.ymax;
+        return contains(b);
     }
 
     /**
@@ -238,8 +259,7 @@ public class BBox {
      * @return {@code true} if {@code c} lies within the bbox
      */
     public boolean bounds(LatLon c) {
-        return xmin <= c.lon() && xmax >= c.lon()
-            && ymin <= c.lat() && ymax >= c.lat();
+        return contains(c);
     }
 
     /**
@@ -249,8 +269,7 @@ public class BBox {
      * @return {@code true} if this bbox intersects with the other
      */
     public boolean intersects(BBox b) {
-        return xmin <= b.xmax && xmax >= b.xmin
-            && ymin <= b.ymax && ymax >= b.ymin;
+        return intersects((IBounds) b);
     }
 
     /**
@@ -267,6 +286,11 @@ public class BBox {
      * @since 6203
      */
     public double getTopLeftLat() {
+        return getMaxLat();
+    }
+
+    @Override
+    public double getMaxLat() {
         return ymax;
     }
 
@@ -276,6 +300,11 @@ public class BBox {
      * @since 6203
      */
     public double getTopLeftLon() {
+        return getMinLon();
+    }
+
+    @Override
+    public double getMinLon() {
         return xmin;
     }
 
@@ -293,6 +322,11 @@ public class BBox {
      * @since 6203
      */
     public double getBottomRightLat() {
+        return getMinLat();
+    }
+
+    @Override
+    public double getMinLat() {
         return ymin;
     }
 
@@ -302,6 +336,11 @@ public class BBox {
      * @since 6203
      */
     public double getBottomRightLon() {
+        return getMaxLon();
+    }
+
+    @Override
+    public double getMaxLon() {
         return xmax;
     }
 
@@ -309,6 +348,7 @@ public class BBox {
      * Gets the center of this BBox.
      * @return The center.
      */
+    @Override
     public LatLon getCenter() {
         return new LatLon(ymin + (ymax-ymin)/2.0, xmin + (xmax-xmin)/2.0);
     }
@@ -341,14 +381,14 @@ public class BBox {
     }
 
     @Override
-    public int hashCode() {
+    public final int hashCode() {
         return Objects.hash(xmin, xmax, ymin, ymax);
     }
 
     @Override
-    public boolean equals(Object o) {
+    public final boolean equals(Object o) {
         if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (!(o instanceof BBox)) return false;
         BBox b = (BBox) o;
         return Double.compare(b.xmax, xmax) == 0 && Double.compare(b.ymax, ymax) == 0
             && Double.compare(b.xmin, xmin) == 0 && Double.compare(b.ymin, ymin) == 0;
@@ -390,6 +430,7 @@ public class BBox {
      * Height and width must be non-negative, but may (both) be 0.
      * @since 11269
      */
+    @Override
     public boolean isValid() {
         return xmin <= xmax && ymin <= ymax;
     }
@@ -419,5 +460,31 @@ public class BBox {
                 LatLon.cDdFormatter.format(ymin),
                 LatLon.cDdFormatter.format(xmax),
                 LatLon.cDdFormatter.format(ymax));
+    }
+
+    /**
+     * Returns an immutable version of this bbox, i.e., modifying calls throw an {@link UnsupportedOperationException}.
+     * @return an immutable version of this bbox
+     * @since 17862 (interface)
+     */
+    public BBox toImmutable() {
+        return new Immutable(this);
+    }
+
+    private static class Immutable extends BBox {
+
+        Immutable(BBox copy) {
+            super(copy);
+        }
+
+        @Override
+        protected void set(double xmin, double xmax, double ymin, double ymax) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public BBox toImmutable() {
+            return this;
+        }
     }
 }

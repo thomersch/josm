@@ -1,58 +1,41 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.osm;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 
-import org.junit.Assert;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.data.DataSource;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.event.DataSourceAddedEvent;
 import org.openstreetmap.josm.data.osm.event.DataSourceRemovedEvent;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
  * Unit tests for class {@link DataSet}.
  */
-public class DataSetTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+class DataSetTest {
     /**
      * Unit test of method {@link DataSet#searchRelations}.
      */
     @Test
-    public void testSearchRelations() {
+    void testSearchRelations() {
         final DataSet ds = new DataSet();
         // null bbox => empty list
-        Assert.assertTrue(
-            "Empty data set should produce an empty list.",
-            ds.searchRelations(null).isEmpty()
-        );
+        assertTrue(ds.searchRelations(null).isEmpty(), "Empty data set should produce an empty list.");
 
         // empty data set, any bbox => empty list
         BBox bbox = new BBox(new LatLon(-180, -90), new LatLon(180, 90));
-        Assert.assertTrue(
-            "Empty data set should produce an empty list.",
-            ds.searchRelations(bbox).isEmpty()
-        );
+        assertTrue(ds.searchRelations(bbox).isEmpty(), "Empty data set should produce an empty list.");
 
         // data set with elements in the given bbox => these elements
         Node node = new Node(LatLon.ZERO);
@@ -63,22 +46,22 @@ public class DataSetTest {
         ds.addPrimitive(r);
         bbox = new BBox(new LatLon(-1.0, -1.0), new LatLon(1.0, 1.0));
         List<Relation> result = ds.searchRelations(bbox);
-        Assert.assertEquals("We should have found only one item.", 1, result.size());
-        Assert.assertTrue("The item found is relation r.", result.contains(r));
+        assertEquals(1, result.size(), "We should have found only one item.");
+        assertTrue(result.contains(r), "The item found is relation r.");
     }
 
     /**
      * Unit test for {@link DataSet#searchPrimitives}
      */
     @Test
-    public void testSearchPrimitives() {
+    void testSearchPrimitives() {
         final DataSet ds = new DataSet();
         // null bbox => empty list
-        Assert.assertTrue("Empty data set should produce an empty list.", ds.searchPrimitives(null).isEmpty());
+        assertTrue(ds.searchPrimitives(null).isEmpty(), "Empty data set should produce an empty list.");
 
         // empty data set, any bbox => empty list
         BBox bbox = new BBox(new LatLon(-180, -90), new LatLon(180, 90));
-        Assert.assertTrue("Empty data set should produce an empty list.", ds.searchPrimitives(bbox).isEmpty());
+        assertTrue(ds.searchPrimitives(bbox).isEmpty(), "Empty data set should produce an empty list.");
         // data set with elements in the given bbox => these elements
         Node node = new Node(LatLon.ZERO);
         Node node2 = new Node(new LatLon(-0.01, -0.01));
@@ -91,14 +74,14 @@ public class DataSetTest {
         ds.addPrimitive(r);
         bbox = new BBox(new LatLon(-1.0, -1.0), new LatLon(1.0, 1.0));
         List<OsmPrimitive> result = ds.searchPrimitives(bbox);
-        Assert.assertEquals("We should have found four items.", 4, result.size());
+        assertEquals(4, result.size(), "We should have found four items.");
     }
 
     /**
      * Unit test of methods {@link DataSet#addChangeSetTag} / {@link DataSet#getChangeSetTags}.
      */
     @Test
-    public void testChangesetTags() {
+    void testChangesetTags() {
         final DataSet ds = new DataSet();
         assertTrue(ds.getChangeSetTags().isEmpty());
         ds.addChangeSetTag("foo", "bar");
@@ -111,7 +94,7 @@ public class DataSetTest {
      *                    / {@link DataSet#allNonDeletedPhysicalPrimitives}.
      */
     @Test
-    public void testAllNonDeleted() {
+    void testAllNonDeleted() {
         final DataSet ds = new DataSet();
         assertTrue(ds.allNonDeletedPrimitives().isEmpty());
         assertTrue(ds.allNonDeletedCompletePrimitives().isEmpty());
@@ -141,7 +124,7 @@ public class DataSetTest {
      * Non-regression test for <a href="https://josm.openstreetmap.de/ticket/14186">Bug #14186</a>.
      */
     @Test
-    public void testTicket14186() {
+    void testTicket14186() {
         final DataSet ds = new DataSet();
         Node n1 = new Node(1);
         Node n2 = new Node(2);
@@ -162,19 +145,25 @@ public class DataSetTest {
      * Non-regression test for <a href="https://josm.openstreetmap.de/ticket/14186">Bug #14186</a>.
      */
     @Test
-    public void testTicket19438() {
+    void testTicket19438() {
         final DataSet ds = new DataSet();
         Node n1 = new Node(1);
         Node n2 = new Node(2);
         Node n3 = new Node(3);
+        Node n4 = new Node(4);
         Way w1 = new Way(1);
-        w1.setNodes(Arrays.asList(n1, n2, n3, n1));
+        w1.setNodes(Arrays.asList(n1, n2, n3, n4, n1));
+        w1.setIncomplete(false);
+        assertEquals(5, w1.getNodesCount());
+        assertTrue(w1.isClosed());
         ds.addPrimitive(n1);
         ds.addPrimitive(n2);
         ds.addPrimitive(n3);
+        ds.addPrimitive(n4);
         ds.addPrimitive(w1);
         ds.unlinkNodeFromWays(n1);
-        assertEquals(2, w1.getRealNodesCount());
+        assertTrue(w1.isClosed());
+        assertEquals(4, w1.getNodesCount());
     }
 
     /**
@@ -183,7 +172,7 @@ public class DataSetTest {
      * @since 12069
      */
     @Test
-    public void testSelectionOrderPreserved() {
+    void testSelectionOrderPreserved() {
         final DataSet ds = new DataSet();
         Node n1 = new Node(1);
         Node n2 = new Node(2);
@@ -192,13 +181,13 @@ public class DataSetTest {
         ds.addPrimitive(n2);
         ds.addPrimitive(n3);
 
-        assertEquals(Arrays.asList(), new ArrayList<>(ds.getSelected()));
+        assertEquals(Collections.emptyList(), new ArrayList<>(ds.getSelected()));
 
         ds.setSelected(n1.getPrimitiveId(), n2.getPrimitiveId());
         assertEquals(Arrays.asList(n1, n2), new ArrayList<>(ds.getSelected()));
 
         ds.clearSelection();
-        assertEquals(Arrays.asList(), new ArrayList<>(ds.getSelected()));
+        assertEquals(Collections.emptyList(), new ArrayList<>(ds.getSelected()));
 
         ds.addSelected(n3.getPrimitiveId());
         ds.addSelected(n1.getPrimitiveId(), n2.getPrimitiveId());
@@ -221,7 +210,7 @@ public class DataSetTest {
      * Unit test for {@link DataSet#DataSet(DataSet)}.
      */
     @Test
-    public void testCopyConstructor() {
+    void testCopyConstructor() {
         DataSet ds = new DataSet();
         assertEqualsDataSet(ds, new DataSet(ds));
 
@@ -248,7 +237,7 @@ public class DataSetTest {
      * Unit test for {@link DataSet#mergeFrom} - Policies.
      */
     @Test
-    public void testMergePolicies() {
+    void testMergePolicies() {
         DataSet ds1 = new DataSet();
         DataSet ds2 = new DataSet();
 
@@ -292,7 +281,7 @@ public class DataSetTest {
      * Checks that enum values are defined in the correct order.
      */
     @Test
-    public void testEnumOrder() {
+    void testEnumOrder() {
         assertTrue(DownloadPolicy.BLOCKED.compareTo(DownloadPolicy.NORMAL) > 0);
         assertTrue(UploadPolicy.BLOCKED.compareTo(UploadPolicy.NORMAL) > 0);
         assertTrue(UploadPolicy.BLOCKED.compareTo(UploadPolicy.DISCOURAGED) > 0);
@@ -303,13 +292,8 @@ public class DataSetTest {
      * Checks that data source listeners get called when a data source is added
      */
     @Test
-    public void testAddDataSourceListener() {
-        DataSourceListener addListener = new DataSourceListener() {
-            @Override
-            public void dataSourceChange(DataSourceChangeEvent event) {
-                assertTrue(event instanceof DataSourceAddedEvent);
-            }
-        };
+    void testAddDataSourceListener() {
+        DataSourceListener addListener = event -> assertInstanceOf(DataSourceAddedEvent.class, event);
 
         DataSet ds = new DataSet();
         ds.addDataSourceListener(addListener);
@@ -321,13 +305,8 @@ public class DataSetTest {
      * Checks that data source listeners get called when a data source is removed
      */
     @Test
-    public void testRemoveDataSourceListener() {
-        DataSourceListener removeListener = new DataSourceListener() {
-            @Override
-            public void dataSourceChange(DataSourceChangeEvent event) {
-                assertTrue(event instanceof DataSourceRemovedEvent);
-            }
-        };
+    void testRemoveDataSourceListener() {
+        DataSourceListener removeListener = event -> assertInstanceOf(DataSourceRemovedEvent.class, event);
 
         DataSet ds = new DataSet();
         ds.addDataSource(new DataSource(new Bounds(0, 0, 0.1, 0.1), "fake source"));
@@ -339,7 +318,7 @@ public class DataSetTest {
      * Checks that a read-only dataset can be cloned.
      */
     @Test
-    public void testCloneReadOnly() {
+    void testCloneReadOnly() {
         DataSet ds = new DataSet();
         Node n1 = new Node(LatLon.SOUTH_POLE);
         Node n2 = new Node(LatLon.NORTH_POLE);
@@ -349,7 +328,7 @@ public class DataSetTest {
         w.setNodes(Arrays.asList(n1, n2));
         ds.addPrimitive(w);
         Relation r = new Relation();
-        r.setMembers(Arrays.asList(new RelationMember(null, w)));
+        r.setMembers(Collections.singletonList(new RelationMember(null, w)));
         ds.addPrimitive(r);
         ds.lock();
 

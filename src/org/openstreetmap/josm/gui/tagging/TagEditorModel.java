@@ -1,6 +1,7 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.tagging;
 
+import static java.util.function.Predicate.not;
 import static org.openstreetmap.josm.tools.I18n.trn;
 
 import java.beans.PropertyChangeListener;
@@ -30,6 +31,7 @@ import org.openstreetmap.josm.data.osm.TagMap;
 import org.openstreetmap.josm.data.osm.Tagged;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetType;
 import org.openstreetmap.josm.tools.CheckParameterUtil;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * TagEditorModel is a table model to use with {@link TagEditorPanel}.
@@ -53,12 +55,12 @@ public class TagEditorModel extends AbstractTableModel {
 
     private transient OsmPrimitive primitive;
 
-    private EndEditListener endEditListener;
+    private transient EndEditListener endEditListener;
 
     /**
      * Creates a new tag editor model. Internally allocates two selection models
      * for row selection and column selection.
-     *
+     * <p>
      * To create a {@link javax.swing.JTable} with this model:
      * <pre>
      *    TagEditorModel model = new TagEditorModel();
@@ -155,7 +157,7 @@ public class TagEditorModel extends AbstractTableModel {
     public void setValueAt(Object value, int row, int col) {
         TagModel tag = get(row);
         if (tag != null) {
-            switch(col) {
+            switch (col) {
             case 0:
                 updateTagName(tag, (String) value);
                 break;
@@ -217,10 +219,10 @@ public class TagEditorModel extends AbstractTableModel {
 
     /**
      * adds a tag given by a name/value pair to the tag editor model.
-     *
+     * <p>
      * If there is no tag with name <code>name</code> yet, a new {@link TagModel} is created
      * and append to this model.
-     *
+     * <p>
      * If there is a tag with name <code>name</code>, <code>value</code> is merged to the list
      * of values for this tag.
      *
@@ -278,8 +280,6 @@ public class TagEditorModel extends AbstractTableModel {
      * @param tagIndices a list of tag indices
      */
     public void deleteTagNames(int... tagIndices) {
-        if (tags == null)
-            return;
         commitPendingEdit();
         for (int tagIdx : tagIndices) {
             TagModel tag = tags.get(tagIdx);
@@ -297,8 +297,6 @@ public class TagEditorModel extends AbstractTableModel {
      * @param tagIndices the lit of tag indices
      */
     public void deleteTagValues(int... tagIndices) {
-        if (tags == null)
-            return;
         commitPendingEdit();
         for (int tagIdx : tagIndices) {
             TagModel tag = tags.get(tagIdx);
@@ -332,8 +330,6 @@ public class TagEditorModel extends AbstractTableModel {
      * @param tagIndices the list of tag indices
      */
     public void deleteTags(int... tagIndices) {
-        if (tags == null)
-            return;
         commitPendingEdit();
         List<TagModel> toDelete = Arrays.stream(tagIndices).mapToObj(tags::get).filter(Objects::nonNull).collect(Collectors.toList());
         toDelete.forEach(tags::remove);
@@ -367,10 +363,7 @@ public class TagEditorModel extends AbstractTableModel {
     public void initFromPrimitive(Tagged primitive) {
         commitPendingEdit();
         this.tags.clear();
-        for (String key : primitive.keySet()) {
-            String value = primitive.get(key);
-            this.tags.add(new TagModel(key, value));
-        }
+        primitive.visitKeys((p, key, value) -> this.tags.add(new TagModel(key, value)));
         sort();
         TagModel tag = new TagModel();
         tags.add(tag);
@@ -444,12 +437,19 @@ public class TagEditorModel extends AbstractTableModel {
             if (tag.getValueCount() > 1) {
                 continue;
             }
+            boolean isKeyEmpty = Utils.isStripEmpty(tag.getName());
+            boolean isValueEmpty = Utils.isStripEmpty(tag.getValue());
 
-            // tag name holds an empty key. Don't apply it to the selection.
-            if (!keepEmpty && (tag.getName().trim().isEmpty() || tag.getValue().trim().isEmpty())) {
+            // just the empty line at the bottom of the JTable
+            if (isKeyEmpty && isValueEmpty) {
                 continue;
             }
-            result.put(tag.getName().trim(), tag.getValue().trim());
+
+            // tag name holds an empty key. Don't apply it to the selection.
+            if (!keepEmpty && (isKeyEmpty || isValueEmpty)) {
+                continue;
+            }
+            result.put(Utils.strip(tag.getName()), Utils.strip(tag.getValue()));
         }
         return result;
     }
@@ -499,7 +499,7 @@ public class TagEditorModel extends AbstractTableModel {
 
         // tag name holds an empty key. Don't apply it to the selection.
         //
-        if (tag.getName().trim().isEmpty())
+        if (Utils.isStripEmpty(tag.getName()))
             return null;
 
         return new ChangePropertyCommand(primitives, tag.getName(), tag.getValue());
@@ -511,11 +511,11 @@ public class TagEditorModel extends AbstractTableModel {
         List<Command> commands = new ArrayList<>();
 
         for (OsmPrimitive prim : primitives) {
-            for (String oldkey : prim.keySet()) {
+            prim.visitKeys((p, oldkey, value) -> {
                 if (!currentkeys.contains(oldkey)) {
                     commands.add(new ChangePropertyCommand(prim, oldkey, null));
                 }
-            }
+            });
         }
 
         return commands.isEmpty() ? null : new SequenceCommand(
@@ -531,8 +531,8 @@ public class TagEditorModel extends AbstractTableModel {
      */
     public List<String> getKeys() {
         return tags.stream()
-                .filter(tag -> !tag.getName().trim().isEmpty())
                 .map(TagModel::getName)
+                .filter(not(Utils::isStripEmpty))
                 .collect(Collectors.toList());
     }
 
@@ -648,7 +648,7 @@ public class TagEditorModel extends AbstractTableModel {
         this.endEditListener = endEditListener;
     }
 
-    private void commitPendingEdit() {
+    protected void commitPendingEdit() {
         if (endEditListener != null) {
             endEditListener.endCellEditing();
         }

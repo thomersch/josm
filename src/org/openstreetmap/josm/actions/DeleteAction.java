@@ -9,12 +9,16 @@ import java.awt.GridBagLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
 import java.util.Collection;
+import java.util.Collections;
 
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 
 import org.openstreetmap.josm.command.DeleteCommand.DeletionCallback;
 import org.openstreetmap.josm.data.osm.DefaultNameFormatter;
+import org.openstreetmap.josm.data.osm.INode;
+import org.openstreetmap.josm.data.osm.IRelation;
+import org.openstreetmap.josm.data.osm.IWay;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Relation;
 import org.openstreetmap.josm.data.osm.RelationToChildReference;
@@ -22,7 +26,9 @@ import org.openstreetmap.josm.gui.ConditionalOptionPaneUtil;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.MapFrame;
 import org.openstreetmap.josm.gui.dialogs.DeleteFromRelationConfirmationDialog;
+import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.widgets.JMultilineLabel;
+import org.openstreetmap.josm.tools.Pair;
 import org.openstreetmap.josm.tools.Shortcut;
 
 /**
@@ -49,8 +55,15 @@ public final class DeleteAction extends JosmAction {
 
         @Override
         public boolean confirmDeletionFromRelation(Collection<RelationToChildReference> references) {
+            return this.confirmDeletionFromRelation(references, Collections.emptyList());
+        }
+
+        @Override
+        public boolean confirmDeletionFromRelation(Collection<RelationToChildReference> references,
+                Collection<Pair<Relation, Boolean>> parentsToDelete) {
             DeleteFromRelationConfirmationDialog dialog = DeleteFromRelationConfirmationDialog.getInstance();
             dialog.getModel().populate(references);
+            dialog.getDeletedRelationsModel().populate(parentsToDelete);
             dialog.setVisible(true);
             return !dialog.isCanceled();
         }
@@ -62,7 +75,7 @@ public final class DeleteAction extends JosmAction {
     public DeleteAction() {
         super(tr("Delete"), "dialogs/delete", tr("Delete selected objects."),
                 Shortcut.registerShortcut("system:delete", tr("Edit: {0}", tr("Delete")), KeyEvent.VK_DELETE, Shortcut.DIRECT), true);
-        setHelpId(ht("/Action/Delete"));
+        setHelpId(ht("/Action/EditDelete"));
     }
 
     @Override
@@ -93,18 +106,32 @@ public final class DeleteAction extends JosmAction {
      */
     public static boolean checkAndConfirmOutlyingDelete(Collection<? extends OsmPrimitive> primitives,
             Collection<? extends OsmPrimitive> ignore) {
-        return checkAndConfirmOutlyingOperation("delete",
+        final boolean nodes = primitives.stream().anyMatch(INode.class::isInstance);
+        final boolean ways = primitives.stream().anyMatch(IWay.class::isInstance);
+        final boolean relations = primitives.stream().anyMatch(IRelation.class::isInstance);
+        final String type;
+        if (nodes && !ways && !relations) {
+            type = tr("You are about to delete nodes which can have other referrers not yet downloaded.");
+        } else if (!nodes && ways && !relations) {
+            type = tr("You are about to delete ways which can have other referrers not yet downloaded.");
+        } else if (!nodes && !ways && relations) {
+            type = tr("You are about to delete relations which can have other referrers not yet downloaded.");
+        } else {
+            // OK. We have multiple types being deleted.
+            type = tr("You are about to delete primitives which can have other referrers not yet downloaded.");
+        }
+        return Boolean.TRUE.equals(GuiHelper.runInEDTAndWaitAndReturn(() -> checkAndConfirmOutlyingOperation("delete",
                 tr("Delete confirmation"),
-                tr("You are about to delete nodes which can have other referrers not yet downloaded."
+                tr("{0}"
                         + "<br>"
                         + "This can cause problems because other objects (that you do not see) might use them."
                         + "<br>"
-                        + "Do you really want to delete?"),
+                        + "Do you really want to delete?", type),
                 tr("You are about to delete incomplete objects."
                         + "<br>"
                         + "This will cause problems because you don''t see the real object."
                         + "<br>" + "Do you really want to delete?"),
-                primitives, ignore);
+                primitives, ignore)));
     }
 
     /**

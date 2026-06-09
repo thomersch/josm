@@ -195,7 +195,7 @@ public class OsmApiException extends OsmTransferException {
             String eb = errorBody != null ? tr(errorBody.trim()) : "";
             if (!eb.isEmpty() && !eb.equals(eh)) {
                 sb.append(", Error Body=<")
-                .append(eb)
+                .append(eb.replaceAll("<[^>]+>", ""))
                 .append('>');
             }
         } catch (IllegalArgumentException e) {
@@ -214,13 +214,13 @@ public class OsmApiException extends OsmTransferException {
         StringBuilder sb = new StringBuilder();
         String header = Utils.strip(errorHeader);
         String body = Utils.strip(errorBody);
-        if ((header == null || header.isEmpty()) && (body == null || body.isEmpty())) {
+        if (Utils.isEmpty(header) && Utils.isEmpty(body)) {
             sb.append(tr("The server replied an error with code {0}.", responseCode));
         } else {
-            if (header != null && !header.isEmpty()) {
+            if (!Utils.isEmpty(header)) {
                 sb.append(tr(header));
             }
-            if (body != null && !body.isEmpty() && !body.equals(header)) {
+            if (!Utils.isEmpty(body) && !body.equals(header)) {
                 if (sb.length() > 0) {
                     sb.append(". ");
                 }

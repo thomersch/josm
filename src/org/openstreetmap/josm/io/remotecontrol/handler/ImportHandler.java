@@ -49,7 +49,7 @@ public class ImportHandler extends RequestHandler.RawURLParseRequestHandler {
                 }
             }
             LoadAndZoomHandler.parseChangesetTags(args);
-        } catch (RuntimeException ex) { // NOPMD
+        } catch (RuntimeException ex) {
             Logging.warn("RemoteControl: Error parsing import remote control request:");
             Logging.error(ex);
             throw new RequestHandlerErrorException(ex);
@@ -85,7 +85,7 @@ public class ImportHandler extends RequestHandler.RawURLParseRequestHandler {
         // (Example with OSM-FR website that makes calls to the OSM-FR API)
         // For user-friendliness, let's try to decode these OSM API calls to give a better confirmation message.
         Set<String> taskMessages = new LinkedHashSet<>();
-        if (suitableDownloadTasks != null && !suitableDownloadTasks.isEmpty()) {
+        if (!Utils.isEmpty(suitableDownloadTasks)) {
             for (DownloadTask task : suitableDownloadTasks) {
                 taskMessages.add(Utils.firstNonNull(task.getConfirmationMessage(url), url.toString()));
             }

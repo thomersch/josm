@@ -4,7 +4,9 @@ package org.openstreetmap.josm.gui.widgets;
 import javax.swing.text.JTextComponent;
 
 import org.openstreetmap.josm.gui.datatransfer.ClipboardUtils;
+import org.openstreetmap.josm.gui.tagging.ac.AutoCompTextField;
 import org.openstreetmap.josm.tools.Logging;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * An abstract class for ID text fields.
@@ -12,7 +14,7 @@ import org.openstreetmap.josm.tools.Logging;
  * @param <T> The ID validator class
  * @since 5765
  */
-public abstract class AbstractIdTextField<T extends AbstractTextComponentValidator> extends JosmTextField {
+public abstract class AbstractIdTextField<T extends AbstractTextComponentValidator> extends AutoCompTextField<String> {
 
     protected final transient T validator;
 
@@ -75,11 +77,11 @@ public abstract class AbstractIdTextField<T extends AbstractTextComponentValidat
 
     /**
      * Tries to set text from given contents (no effect with invalid or empty contents)
-     * @param contents The text to interprete as ID(s)
+     * @param contents The text to interpret as ID(s)
      * @return true if text has been pasted and valid ids have been read
      */
     public boolean tryToPasteFrom(String contents) {
-        if (contents != null && !contents.trim().isEmpty()) {
+        if (!Utils.isStripEmpty(contents)) {
             setText(contents.trim());
             clearTextIfInvalid();
             return readIds();

@@ -1,7 +1,7 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.dialogs.properties;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.function.IntFunction;
 
@@ -9,29 +9,19 @@ import javax.swing.JLabel;
 import javax.swing.JTable;
 import javax.swing.table.DefaultTableModel;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
 /**
  * Unit tests of {@link PropertiesCellRenderer} class.
  */
-public class PropertiesCellRendererTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences();
-
+@BasicPreferences
+class PropertiesCellRendererTest {
     /**
      * Test of color rendering.
      */
     @Test
-    public void testColorRendering() {
+    void testColorRendering() {
         PropertiesCellRenderer renderer = new PropertiesCellRenderer();
         DefaultTableModel tableModel = new DefaultTableModel(new Object[][]{
                 new Object[]{"colour", "red"},

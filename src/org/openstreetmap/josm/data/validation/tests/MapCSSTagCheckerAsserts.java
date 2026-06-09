@@ -1,7 +1,6 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.validation.tests;
 
-import java.lang.reflect.Method;
 import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -11,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import org.openstreetmap.josm.command.Command;
@@ -18,13 +18,9 @@ import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.OsmUtils;
-import org.openstreetmap.josm.data.osm.Relation;
-import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.data.validation.TestError;
-import org.openstreetmap.josm.gui.mappaint.Environment;
 import org.openstreetmap.josm.gui.mappaint.mapcss.ConditionFactory;
 import org.openstreetmap.josm.gui.mappaint.mapcss.ExpressionFactory;
-import org.openstreetmap.josm.gui.mappaint.mapcss.Functions;
 import org.openstreetmap.josm.gui.mappaint.mapcss.LiteralExpression;
 import org.openstreetmap.josm.gui.mappaint.mapcss.Selector;
 import org.openstreetmap.josm.tools.DefaultGeoProperty;
@@ -34,7 +30,7 @@ import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.Territories;
 
 /**
- * Utility class for checking rule assertions of {@link MapCSSTagChecker.TagCheck}.
+ * Utility class for checking rule assertions of {@link MapCSSTagCheckerRule}.
  */
 final class MapCSSTagCheckerAsserts {
 
@@ -42,7 +38,7 @@ final class MapCSSTagCheckerAsserts {
         // private constructor
     }
 
-    private static final ArrayList<MapCSSTagChecker.TagCheck> previousChecks = new ArrayList<>();
+    private static final ArrayList<MapCSSTagCheckerRule> previousChecks = new ArrayList<>();
 
     /**
      * Checks that rule assertions are met for the given set of TagChecks.
@@ -50,37 +46,37 @@ final class MapCSSTagCheckerAsserts {
      * @param assertions The assertions to check (map values correspond to expected result)
      * @param assertionConsumer The handler for assertion error messages
      */
-    static void checkAsserts(final MapCSSTagChecker.TagCheck check, final Map<String, Boolean> assertions,
-                                    final MapCSSTagChecker.AssertionConsumer assertionConsumer) {
-        final Method insideMethod = getFunctionMethod("inside");
+    static void checkAsserts(final MapCSSTagCheckerRule check, final Map<String, Boolean> assertions,
+                             final Consumer<String> assertionConsumer) {
         final DataSet ds = new DataSet();
         Logging.debug("Check: {0}", check);
         for (final Map.Entry<String, Boolean> i : assertions.entrySet()) {
             Logging.debug("- Assertion: {0}", i);
-            final OsmPrimitive p = OsmUtils.createPrimitive(i.getKey(), getLocation(check, insideMethod), true);
+            final OsmPrimitive p = OsmUtils.createPrimitive(i.getKey(), getLocation(check), true);
             // Build minimal ordered list of checks to run to test the assertion
-            List<Set<MapCSSTagChecker.TagCheck>> checksToRun = new ArrayList<>();
-            Set<MapCSSTagChecker.TagCheck> checkDependencies = getTagCheckDependencies(check, previousChecks);
+            List<Set<MapCSSTagCheckerRule>> checksToRun = new ArrayList<>();
+            Set<MapCSSTagCheckerRule> checkDependencies = getTagCheckDependencies(check, previousChecks);
             if (!checkDependencies.isEmpty()) {
                 checksToRun.add(checkDependencies);
             }
             checksToRun.add(Collections.singleton(check));
             // Add primitive to dataset to avoid DataIntegrityProblemException when evaluating selectors
-            addPrimitive(ds, p);
+            ds.addPrimitiveRecursive(p);
             final Collection<TestError> pErrors = MapCSSTagChecker.getErrorsForPrimitive(p, true, checksToRun);
             Logging.debug("- Errors: {0}", pErrors);
             final boolean isError = pErrors.stream().anyMatch(e -> e.getTester() instanceof MapCSSTagChecker.MapCSSTagCheckerAndRule
                     && ((MapCSSTagChecker.MapCSSTagCheckerAndRule) e.getTester()).rule.equals(check.rule));
-            if (isError != i.getValue()) {
+            final boolean iValue = Boolean.TRUE.equals(i.getValue());
+            if (isError != iValue) {
                 assertionConsumer.accept(MessageFormat.format("Expecting test ''{0}'' (i.e., {1}) to {2} {3} (i.e., {4})",
-                        check.getMessage(p), check.rule.selectors, i.getValue() ? "match" : "not match", i.getKey(), p.getKeys()));
+                        check.getMessage(null, p), check.rule.selectors, iValue ? "match" : "not match", i.getKey(), p.getKeys()));
             }
             if (isError) {
                 // Check that autofix works as expected
                 Command fix = check.fixPrimitive(p);
                 if (fix != null && fix.executeCommand() && !MapCSSTagChecker.getErrorsForPrimitive(p, true, checksToRun).isEmpty()) {
-                    assertionConsumer.accept(MessageFormat.format("Autofix does not work for test ''{0}'' (i.e., {1})",
-                            check.getMessage(p), check.rule.selectors));
+                    assertionConsumer.accept(MessageFormat.format("Autofix does not work for test ''{0}'' (i.e., {1}). Failing test: {2}",
+                            check.getMessage(null, p), check.rule.selectors, i.getKey()));
                 }
             }
             ds.removePrimitive(p);
@@ -88,31 +84,16 @@ final class MapCSSTagCheckerAsserts {
         previousChecks.add(check);
     }
 
+    /**
+     * Clear previous checks (remove from memory)
+     */
     public static void clear() {
         previousChecks.clear();
         previousChecks.trimToSize();
     }
 
-    private static Method getFunctionMethod(String method) {
-        try {
-            return Functions.class.getDeclaredMethod(method, Environment.class, String.class);
-        } catch (NoSuchMethodException | SecurityException e) {
-            Logging.error(e);
-            return null;
-        }
-    }
-
-    private static void addPrimitive(DataSet ds, OsmPrimitive p) {
-        if (p instanceof Way) {
-            ((Way) p).getNodes().forEach(n -> addPrimitive(ds, n));
-        } else if (p instanceof Relation) {
-            ((Relation) p).getMembers().forEach(m -> addPrimitive(ds, m.getMember()));
-        }
-        ds.addPrimitive(p);
-    }
-
-    private static LatLon getLocation(MapCSSTagChecker.TagCheck check, Method insideMethod) {
-        Optional<String> inside = getFirstInsideCountry(check, insideMethod);
+    private static LatLon getLocation(MapCSSTagCheckerRule check) {
+        Optional<String> inside = getFirstInsideCountry(check);
         if (inside.isPresent()) {
             GeoPropertyIndex<Boolean> index = Territories.getGeoPropertyIndex(inside.get());
             if (index != null) {
@@ -125,19 +106,18 @@ final class MapCSSTagCheckerAsserts {
         return LatLon.ZERO;
     }
 
-    private static Optional<String> getFirstInsideCountry(MapCSSTagChecker.TagCheck check, Method insideMethod) {
+    private static Optional<String> getFirstInsideCountry(MapCSSTagCheckerRule check) {
         return check.rule.selectors.stream()
                 .filter(s -> s instanceof Selector.GeneralSelector)
-                .flatMap(s -> ((Selector.GeneralSelector) s).getConditions().stream())
+                .flatMap(s -> s.getConditions().stream())
                 .filter(c -> c instanceof ConditionFactory.ExpressionCondition)
                 .map(c -> ((ConditionFactory.ExpressionCondition) c).getExpression())
-                .filter(c -> c instanceof ExpressionFactory.ParameterFunction)
-                .map(c -> (ExpressionFactory.ParameterFunction) c)
-                .filter(c -> c.getMethod().equals(insideMethod))
-                .flatMap(c -> c.getArgs().stream())
-                .filter(e -> e instanceof LiteralExpression)
+                .filter(c -> c instanceof ExpressionFactory.IsInsideFunction)
+                .map(c -> (ExpressionFactory.IsInsideFunction) c)
+                .map(ExpressionFactory.IsInsideFunction::getArg)
+                .filter(LiteralExpression.class::isInstance)
                 .map(e -> ((LiteralExpression) e).getLiteral())
-                .filter(l -> l instanceof String)
+                .filter(String.class::isInstance)
                 .map(l -> ((String) l).split(",", -1)[0])
                 .findFirst();
     }
@@ -145,13 +125,13 @@ final class MapCSSTagCheckerAsserts {
     /**
      * Returns the set of tagchecks on which this check depends on.
      * @param check the tagcheck
-     * @param schecks the collection of tagcheks to search in
+     * @param schecks the collection of tagchecks to search in
      * @return the set of tagchecks on which this check depends on
      * @since 7881
      */
-    private static Set<MapCSSTagChecker.TagCheck> getTagCheckDependencies(MapCSSTagChecker.TagCheck check,
-                                                                          Collection<MapCSSTagChecker.TagCheck> schecks) {
-        Set<MapCSSTagChecker.TagCheck> result = new HashSet<>();
+    private static Set<MapCSSTagCheckerRule> getTagCheckDependencies(MapCSSTagCheckerRule check,
+                                                                     Collection<MapCSSTagCheckerRule> schecks) {
+        Set<MapCSSTagCheckerRule> result = new HashSet<>();
         Set<String> classes = check.rule.selectors.stream()
                 .filter(s -> s instanceof Selector.AbstractSelector)
                 .flatMap(s -> ((Selector.AbstractSelector) s).getConditions().stream())

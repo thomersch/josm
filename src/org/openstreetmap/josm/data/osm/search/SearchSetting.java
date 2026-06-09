@@ -6,6 +6,7 @@ import static org.openstreetmap.josm.tools.I18n.trc;
 import java.util.Objects;
 
 import org.openstreetmap.josm.tools.Logging;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * This class defines a set of parameters that is used to
@@ -49,6 +50,15 @@ public class SearchSetting {
 
     @Override
     public String toString() {
+        return text;
+    }
+
+    /**
+     * A more talkative version of toString.
+     * @return a bit more info than toString
+     * @since 18173
+     */
+    public String toStringEx() {
         String cs = caseSensitive ?
                 /*case sensitive*/  trc("search", "CS") :
                     /*case insensitive*/  trc("search", "CI");
@@ -76,7 +86,7 @@ public class SearchSetting {
 
     @Override
     public int hashCode() {
-        return Objects.hash(text, mode, caseSensitive, regexSearch, mapCSSSearch, allElements);
+        return Objects.hash(text, mode != null ? mode.getCode() : null, caseSensitive, regexSearch, mapCSSSearch, allElements);
     }
 
     /**
@@ -139,12 +149,30 @@ public class SearchSetting {
     }
 
     /**
+     * Build a SearchSetting from a plain unformatted string.
+     * <p>
+     * All attributes are defaulted, only the search string is set. This function is used in
+     * {@link org.openstreetmap.josm.gui.download.OverpassQueryWizardDialog}.
+     *
+     * @param s The string
+     * @return The instance
+     * @since 18173
+     */
+    public static SearchSetting fromString(String s) {
+        if (s.isEmpty())
+            return null;
+        SearchSetting result = new SearchSetting();
+        result.text = s;
+        return result;
+    }
+
+    /**
      * Builds a string representation of the {@code SearchSetting} object,
      * see {@link #readFromString(String)} for more details.
      * @return A string representation of the {@code SearchSetting} object.
      */
     public String writeToString() {
-        if (text == null || text.isEmpty())
+        if (Utils.isEmpty(text))
             return "";
 
         StringBuilder result = new StringBuilder();

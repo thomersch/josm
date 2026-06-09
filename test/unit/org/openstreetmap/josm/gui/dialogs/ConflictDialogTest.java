@@ -1,14 +1,13 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.dialogs;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Node;
@@ -18,35 +17,28 @@ import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.dialogs.ConflictDialog.ConflictPainter;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.testutils.annotations.Main;
+import org.openstreetmap.josm.testutils.annotations.Projection;
 
 /**
  * Unit tests of {@link ConflictDialog} class.
  */
-public class ConflictDialogTest {
-
-    /**
-     * Setup tests
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().main().projection();
-
+@Main
+@Projection
+class ConflictDialogTest {
     /**
      * Unit test of {@link ConflictDialog#ConflictDialog}.
      */
     @Test
-    public void testConflictDialog() {
-        assertNotNull(new ConflictDialog());
+    void testConflictDialog() {
+        assertDoesNotThrow(ConflictDialog::new);
     }
 
     /**
      * Unit test of {@link ConflictDialog#getColor} method.
      */
     @Test
-    public void testGetColor() {
+    void testGetColor() {
         assertEquals(Color.gray, ConflictDialog.getColor());
     }
 
@@ -54,7 +46,7 @@ public class ConflictDialogTest {
      * Unit tests of {@link ConflictPainter} class.
      */
     @Test
-    public void testConflictPainter() {
+    void testConflictPainter() {
         MainApplication.getLayerManager().addLayer(new OsmDataLayer(new DataSet(), "", null));
         ConflictPainter cp = new ConflictPainter(MainApplication.getMap().mapView,
                 new BufferedImage(800, 600, BufferedImage.TYPE_3BYTE_BGR).createGraphics());

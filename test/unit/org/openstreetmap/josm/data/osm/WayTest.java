@@ -1,37 +1,28 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.osm;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 
-import org.junit.BeforeClass;
-import org.junit.Test;
-import org.openstreetmap.josm.JOSMFixture;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.coor.LatLon;
 
 /**
  * Unit tests of the {@code Way} class.
  * @since 11270
  */
-public class WayTest {
-
-    /**
-     * Setup test.
-     */
-    @BeforeClass
-    public static void setUpBeforeClass() {
-        JOSMFixture.createUnitTestFixture().init();
-    }
-
+class WayTest {
     /**
      * Test BBox calculation with Way
      */
     @Test
-    public void testBBox() {
+    void testBBox() {
         DataSet ds = new DataSet();
         Node n1 = new Node(1);
         Node n2 = new Node(2);
@@ -47,9 +38,9 @@ public class WayTest {
         ds.addPrimitive(n4);
         Way way = new Way(1);
         assertFalse(way.getBBox().isValid());
-        way.setNodes(Arrays.asList(n1));
+        way.setNodes(Collections.singletonList(n1));
         assertFalse(way.getBBox().isValid());
-        way.setNodes(Arrays.asList(n2));
+        way.setNodes(Collections.singletonList(n2));
         assertTrue(way.getBBox().isValid());
         way.setNodes(Arrays.asList(n1, n2));
         assertTrue(way.getBBox().isValid());
@@ -60,7 +51,7 @@ public class WayTest {
      * Test remove node
      */
     @Test
-    public void testRemoveNode() {
+    void testRemoveNode() {
         DataSet ds = new DataSet();
         Node n1 = new Node(1);
         Node n2 = new Node(2);
@@ -86,14 +77,13 @@ public class WayTest {
         way.setNodes(Arrays.asList(n1, n2, n3, n4, n1));
         way.removeNode(n1);
         assertEquals(Arrays.asList(n2, n3, n4, n2), way.getNodes());
-
     }
 
     /**
      * Test remove node
      */
     @Test
-    public void testRemoveNodes() {
+    void testRemoveNodes() {
         DataSet ds = new DataSet();
         Node n1 = new Node(1);
         Node n2 = new Node(2);
@@ -115,23 +105,47 @@ public class WayTest {
         way.removeNodes(new HashSet<>(Arrays.asList(n3, n4)));
         assertEquals(Arrays.asList(n1, n2, n1), way.getNodes());
         way.setNodes(Arrays.asList(n1, n2, n3, n4, n1));
-        way.removeNodes(new HashSet<>(Arrays.asList(n1)));
+        way.removeNodes(new HashSet<>(Collections.singletonList(n1)));
         assertEquals(Arrays.asList(n2, n3, n4, n2), way.getNodes());
     }
 
     /**
      * Test that {@link Way#cloneFrom} throws IAE for invalid arguments
      */
-    @Test(expected = IllegalArgumentException.class)
-    public void testCloneFromIAE() {
-        new Way().cloneFrom(new Node());
+    @Test
+    void testCloneFromIAE() {
+        assertThrows(IllegalArgumentException.class, () -> new Way().cloneFrom(new Node()));
     }
 
     /**
      * Test that {@link Way#load} throws IAE for invalid arguments
      */
-    @Test(expected = IllegalArgumentException.class)
-    public void testLoadIAE() {
-        new Way().load(new NodeData());
+    @Test
+    void testLoadIAE() {
+        assertThrows(IllegalArgumentException.class, () -> new Way().load(new NodeData()));
+    }
+
+    @Test
+    void getLongestSegmentLength() {
+        DataSet ds = new DataSet();
+        Node n1 = new Node(1);
+        Node n2 = new Node(2);
+        Node n3 = new Node(3);
+        Node n4 = new Node(4);
+        n1.setCoor(new LatLon(0.01, 0.01));
+        n2.setCoor(new LatLon(0.02, 0.02));
+        n3.setCoor(new LatLon(0.03, 0.03));
+        n4.setCoor(new LatLon(0.05, 0.05));
+        ds.addPrimitive(n1);
+        ds.addPrimitive(n2);
+        ds.addPrimitive(n3);
+        ds.addPrimitive(n4);
+        Way way = new Way(1);
+        ds.addPrimitive(way);
+
+        assertEquals(0.0, way.getLongestSegmentLength());
+        way.setNodes(Arrays.asList(n1, n2, n2, n3, n4));
+
+        assertEquals(3148.5902810874577, way.getLongestSegmentLength());
     }
 }

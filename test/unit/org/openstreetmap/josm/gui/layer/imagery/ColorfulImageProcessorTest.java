@@ -1,8 +1,8 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.layer.imagery;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.Color;
 import java.awt.Graphics2D;
@@ -10,17 +10,13 @@ import java.awt.image.BufferedImage;
 import java.awt.image.DataBuffer;
 import java.awt.image.IndexColorModel;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests for the {@link ColorfulImageProcessor} class.
  * @author Michael Zangl
  */
-public class ColorfulImageProcessorTest {
+class ColorfulImageProcessorTest {
 
     private static final int TEST_IMAGE_SIZE = 5;
 
@@ -41,17 +37,10 @@ public class ColorfulImageProcessorTest {
     private static final IndexColorModel COLOR_MODEL = new IndexColorModel(8, PALETTE.length, PALETTE, 0, true, 255, DataBuffer.TYPE_BYTE);
 
     /**
-     * No special rules
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
-    /**
      * Test {@link ColorfulImageProcessor#setColorfulness(double)} and {@link ColorfulImageProcessor#getColorfulness()}
      */
     @Test
-    public void testSetGet() {
+    void testSetGet() {
         ColorfulImageProcessor processor = new ColorfulImageProcessor();
 
         assertEquals(1, processor.getColorfulness(), 0.001);
@@ -79,7 +68,7 @@ public class ColorfulImageProcessorTest {
      *
      */
     @Test
-    public void testProcessing() {
+    void testProcessing() {
         for (ConversionData data : new ConversionData[] {
                 new ConversionData(Color.BLACK, 1.5, Color.BLACK),
                 new ConversionData(Color.WHITE, 0.5, Color.WHITE),
@@ -97,7 +86,8 @@ public class ColorfulImageProcessorTest {
                     BufferedImage.TYPE_3BYTE_BGR,
                     BufferedImage.TYPE_4BYTE_ABGR,
                     BufferedImage.TYPE_4BYTE_ABGR_PRE,
-                    BufferedImage.TYPE_BYTE_INDEXED }) {
+                    BufferedImage.TYPE_BYTE_INDEXED,
+                    BufferedImage.TYPE_BYTE_BINARY}) {
                 assertTrue(runProcessing(data, type));
             }
         }
@@ -113,16 +103,16 @@ public class ColorfulImageProcessorTest {
         for (int x = 0; x < TEST_IMAGE_SIZE; x++) {
             for (int y = 0; y < TEST_IMAGE_SIZE; y++) {
                 Color color = new Color(image.getRGB(x, y));
-                assertEquals(data + ":" + type + ": red", data.getExpectedColor().getRed(), color.getRed(), 1.05);
-                assertEquals(data + ":" + type + ": green", data.getExpectedColor().getGreen(), color.getGreen(), 1.05);
-                assertEquals(data + ":" + type + ": blue", data.getExpectedColor().getBlue(), color.getBlue(), 1.05);
+                assertEquals(data.getExpectedColor().getRed(), color.getRed(), 1.05, data + ":" + type + ": red");
+                assertEquals(data.getExpectedColor().getGreen(), color.getGreen(), 1.05, data + ":" + type + ": green");
+                assertEquals(data.getExpectedColor().getBlue(), color.getBlue(), 1.05, data + ":" + type + ": blue");
             }
         }
         return true;
     }
 
     private BufferedImage createImage(Color color, int type) {
-        BufferedImage image = type == BufferedImage.TYPE_BYTE_INDEXED
+        BufferedImage image = type == BufferedImage.TYPE_BYTE_INDEXED || type == BufferedImage.TYPE_BYTE_BINARY
                 ? new BufferedImage(TEST_IMAGE_SIZE, TEST_IMAGE_SIZE, type, COLOR_MODEL)
                 : new BufferedImage(TEST_IMAGE_SIZE, TEST_IMAGE_SIZE, type);
         Graphics2D graphics = image.createGraphics();
@@ -170,7 +160,7 @@ public class ColorfulImageProcessorTest {
      * Test {@link ColorfulImageProcessor#toString()}
      */
     @Test
-    public void testToString() {
+    void testToString() {
         ColorfulImageProcessor processor = new ColorfulImageProcessor();
         assertEquals("ColorfulImageProcessor [colorfulness=1.0]", processor.toString());
     }

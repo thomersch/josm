@@ -1,34 +1,34 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
-import org.junit.Rule;
-import org.junit.Test;
+import java.util.function.Function;
+import java.util.stream.Stream;
+
 import org.openstreetmap.josm.data.osm.User;
 import org.openstreetmap.josm.data.osm.UserInfo;
 import org.openstreetmap.josm.spi.preferences.Config;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * Unit tests of {@link UserIdentityManager} class.
  */
-public class UserIdentityManagerTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences();
-
+@BasicPreferences
+class UserIdentityManagerTest {
     private static UserInfo newUserInfo() {
         return newUserInfo(1, "a description");
     }
@@ -44,7 +44,7 @@ public class UserIdentityManagerTest {
      * Test singleton access.
      */
     @Test
-    public void testSingletonAccess() {
+    void testSingletonAccess() {
 
         UserIdentityManager im = UserIdentityManager.getInstance();
 
@@ -61,7 +61,7 @@ public class UserIdentityManagerTest {
      * Unit test of {@link UserIdentityManager#setAnonymous}.
      */
     @Test
-    public void testSetAnonymous() {
+    void testSetAnonymous() {
         UserIdentityManager im = UserIdentityManager.getInstance();
 
         im.setPartiallyIdentified("test");
@@ -81,7 +81,7 @@ public class UserIdentityManagerTest {
      * Unit test of {@link UserIdentityManager#setPartiallyIdentified} - nominal case.
      */
     @Test
-    public void testSetPartiallyIdentified() {
+    void testSetPartiallyIdentified() {
         UserIdentityManager im = UserIdentityManager.getInstance();
         im.setPartiallyIdentified("test");
 
@@ -100,33 +100,33 @@ public class UserIdentityManagerTest {
     /**
      * Unit test of {@link UserIdentityManager#setPartiallyIdentified} - null case.
      */
-    @Test(expected = IllegalArgumentException.class)
+    @Test
     @SuppressFBWarnings(value = "NP_NULL_PARAM_DEREF_ALL_TARGETS_DANGEROUS")
-    public void testSetPartiallyIdentifiedNull() {
-        UserIdentityManager.getInstance().setPartiallyIdentified(null);
+    void testSetPartiallyIdentifiedNull() {
+        assertThrows(IllegalArgumentException.class, () -> UserIdentityManager.getInstance().setPartiallyIdentified(null));
     }
 
     /**
      * Unit test of {@link UserIdentityManager#setPartiallyIdentified} - empty case.
      */
-    @Test(expected = IllegalArgumentException.class)
-    public void testSetPartiallyIdentifiedEmpty() {
-        UserIdentityManager.getInstance().setPartiallyIdentified("");
+    @Test
+    void testSetPartiallyIdentifiedEmpty() {
+        assertThrows(IllegalArgumentException.class, () -> UserIdentityManager.getInstance().setPartiallyIdentified(""));
     }
 
     /**
      * Unit test of {@link UserIdentityManager#setPartiallyIdentified} - blank case.
      */
-    @Test(expected = IllegalArgumentException.class)
-    public void testSetPartiallyIdentifiedBlank() {
-        UserIdentityManager.getInstance().setPartiallyIdentified("  \t  ");
+    @Test
+    void testSetPartiallyIdentifiedBlank() {
+        assertThrows(IllegalArgumentException.class, () -> UserIdentityManager.getInstance().setPartiallyIdentified("  \t  "));
     }
 
     /**
      * Unit test of {@link UserIdentityManager#setFullyIdentified} - nominal case.
      */
     @Test
-    public void testSetFullyIdentified() {
+    void testSetFullyIdentified() {
         UserIdentityManager im = UserIdentityManager.getInstance();
 
         UserInfo userInfo = newUserInfo();
@@ -148,41 +148,56 @@ public class UserIdentityManagerTest {
     /**
      * Unit test of {@link UserIdentityManager#setFullyIdentified} - null name case.
      */
-    @Test(expected = IllegalArgumentException.class)
+    @Test
     @SuppressFBWarnings(value = "NP_NULL_PARAM_DEREF_ALL_TARGETS_DANGEROUS")
-    public void testSetFullyIdentifiedNullName() {
-        UserIdentityManager.getInstance().setFullyIdentified(null, newUserInfo());
+    void testSetFullyIdentifiedNullName() {
+        assertThrows(IllegalArgumentException.class, () -> UserIdentityManager.getInstance().setFullyIdentified(null, newUserInfo()));
     }
 
     /**
      * Unit test of {@link UserIdentityManager#setFullyIdentified} - empty name case.
      */
-    @Test(expected = IllegalArgumentException.class)
-    public void testSetFullyIdentifiedEmptyName() {
-        UserIdentityManager.getInstance().setFullyIdentified("", newUserInfo());
+    @Test
+    void testSetFullyIdentifiedEmptyName() {
+        assertThrows(IllegalArgumentException.class, () -> UserIdentityManager.getInstance().setFullyIdentified("", newUserInfo()));
     }
 
     /**
      * Unit test of {@link UserIdentityManager#setFullyIdentified} - blank name case.
      */
-    @Test(expected = IllegalArgumentException.class)
-    public void testSetFullyIdentifiedBlankName() {
-        UserIdentityManager.getInstance().setFullyIdentified(" \t ", newUserInfo());
+    @Test
+    void testSetFullyIdentifiedBlankName() {
+        assertThrows(IllegalArgumentException.class, () -> UserIdentityManager.getInstance().setFullyIdentified(" \t ", newUserInfo()));
     }
 
     /**
      * Unit test of {@link UserIdentityManager#setFullyIdentified} - null info case.
      */
-    @Test(expected = IllegalArgumentException.class)
-    public void testSetFullyIdentifiedNullInfo() {
-        UserIdentityManager.getInstance().setFullyIdentified("test", null);
+    @Test
+    void testSetFullyIdentifiedNullInfo() {
+        assertThrows(IllegalArgumentException.class, () -> UserIdentityManager.getInstance().setFullyIdentified("test", null));
     }
 
-    /**
-     * Preferences include neither an url nor a user name => we have an anonymous user
-     */
-    @Test
-    public void testInitFromPreferences1() {
+    static Stream<Arguments> testInitFromPreferences() {
+        return Stream.of(
+          Arguments.of((Function<UserIdentityManager, Boolean>) UserIdentityManager::isAnonymous,
+            new String[] {"osm-server.url", null, "osm-server.username", null},
+            "Preferences include neither an url nor a user name => we have an anonymous user"),
+          Arguments.of((Function<UserIdentityManager, Boolean>) UserIdentityManager::isAnonymous,
+            new String[] {"osm-server.url", "http://api.openstreetmap.org", "osm-server.username", null},
+            "Preferences include neither an url nor a user name => we have an anonymous user"),
+          Arguments.of((Function<UserIdentityManager, Boolean>) UserIdentityManager::isPartiallyIdentified,
+            new String[] {"osm-server.url", "http://api.openstreetmap.org", "osm-server.username", "test"},
+            "Preferences include an user name => we have a partially identified user")
+        );
+    }
+
+    @ParameterizedTest
+    @MethodSource
+    void testInitFromPreferences(Function<UserIdentityManager, Boolean> verifier, String[] config, String failureMessage) {
+        if (config.length % 2 != 0) {
+            fail("The arguments must be paired");
+        }
         UserIdentityManager im = UserIdentityManager.getInstance();
 
         // reset it
@@ -192,62 +207,13 @@ public class UserIdentityManagerTest {
         Config.getPref().removePreferenceChangeListener(im);
 
         try {
-            Config.getPref().put("osm-server.url", null);
-            Config.getPref().put("osm-server.username", null);
+            for (int i = 0; i < config.length / 2; i++) {
+                Config.getPref().put(config[2 * i], config[2 * i + 1]);
+            }
 
             im.initFromPreferences();
 
-            assertTrue(im.isAnonymous());
-        } finally {
-            Config.getPref().addPreferenceChangeListener(im);
-        }
-    }
-
-    /**
-     * Preferences include neither an url nor a user name => we have an anonymous user
-     */
-    @Test
-    public void testInitFromPreferences2() {
-        UserIdentityManager im = UserIdentityManager.getInstance();
-
-        // reset it
-        im.setAnonymous();
-
-        // for this test we disable the listener
-        Config.getPref().removePreferenceChangeListener(im);
-
-        try {
-            Config.getPref().put("osm-server.url", "http://api.openstreetmap.org");
-            Config.getPref().put("osm-server.username", null);
-
-            im.initFromPreferences();
-
-            assertTrue(im.isAnonymous());
-        } finally {
-            Config.getPref().addPreferenceChangeListener(im);
-        }
-    }
-
-    /**
-     * Preferences include an user name => we have a partially identified user
-     */
-    @Test
-    public void testInitFromPreferences3() {
-        UserIdentityManager im = UserIdentityManager.getInstance();
-
-        // for this test we disable the listener
-        Config.getPref().removePreferenceChangeListener(im);
-
-        try {
-            // reset it
-            im.setAnonymous();
-
-            Config.getPref().put("osm-server.url", "http://api.openstreetmap.org");
-            Config.getPref().put("osm-server.username", "test");
-
-            im.initFromPreferences();
-
-            assertTrue(im.isPartiallyIdentified());
+            assertTrue(verifier.apply(im), failureMessage);
         } finally {
             Config.getPref().addPreferenceChangeListener(im);
         }
@@ -257,9 +223,11 @@ public class UserIdentityManagerTest {
      * Preferences include an user name which is different from the current
      * user name and we are currently fully identifed => josm user becomes
      * partially identified
+     *
+     * Note: Test #4 since the other three are parameterized
      */
     @Test
-    public void testInitFromPreferences4() {
+    void testInitFromPreferences4() {
         UserIdentityManager im = UserIdentityManager.getInstance();
 
         // for this test we disable the listener
@@ -285,7 +253,7 @@ public class UserIdentityManagerTest {
      * fully identified
      */
     @Test
-    public void testInitFromPreferences5() {
+    void testInitFromPreferences5() {
         UserIdentityManager im = UserIdentityManager.getInstance();
 
         // for this test we disable the listener
@@ -306,7 +274,7 @@ public class UserIdentityManagerTest {
     }
 
     @Test
-    public void testApiUrlChanged() {
+    void testApiUrlChanged() {
         UserIdentityManager im = UserIdentityManager.getInstance();
 
         // reset it
@@ -343,7 +311,7 @@ public class UserIdentityManagerTest {
     }
 
     @Test
-    public void testUserNameChanged() {
+    void testUserNameChanged() {
         UserIdentityManager im = UserIdentityManager.getInstance();
 
         // reset it

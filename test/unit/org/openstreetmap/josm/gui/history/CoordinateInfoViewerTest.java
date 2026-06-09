@@ -1,39 +1,31 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.history;
 
-import static org.junit.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests of {@link CoordinateInfoViewer} class.
  */
-public class CoordinateInfoViewerTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences();
-
+@BasicPreferences
+class CoordinateInfoViewerTest {
     /**
      * Test for {@link CoordinateInfoViewer#CoordinateInfoViewer} - {@code null} handling.
      */
-    @Test(expected = IllegalArgumentException.class)
-    public void testCoordinateInfoViewerNull() {
-        new CoordinateInfoViewer(null);
+    @Test
+    void testCoordinateInfoViewerNull() {
+        assertThrows(IllegalArgumentException.class, () -> new CoordinateInfoViewer(null));
     }
 
     /**
      * Test for {@link CoordinateInfoViewer#CoordinateInfoViewer} - nominal case.
      */
     @Test
-    public void testCoordinateInfoViewerNominal() {
+    void testCoordinateInfoViewerNominal() {
         assertNotNull(new CoordinateInfoViewer(new HistoryBrowserModel()));
     }
 }

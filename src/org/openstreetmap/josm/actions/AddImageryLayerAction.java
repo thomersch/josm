@@ -6,6 +6,7 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.awt.Dimension;
 import java.awt.GraphicsEnvironment;
+import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.event.ActionEvent;
 import java.io.IOException;
@@ -19,18 +20,22 @@ import java.util.List;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 
+import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.imagery.DefaultLayer;
 import org.openstreetmap.josm.data.imagery.ImageryInfo;
 import org.openstreetmap.josm.data.imagery.ImageryInfo.ImageryType;
 import org.openstreetmap.josm.data.imagery.LayerDetails;
+import org.openstreetmap.josm.data.imagery.TemplatedWMSTileSource;
 import org.openstreetmap.josm.data.imagery.WMTSTileSource;
 import org.openstreetmap.josm.data.imagery.WMTSTileSource.Layer;
 import org.openstreetmap.josm.data.imagery.WMTSTileSource.WMTSGetCapabilitiesException;
+import org.openstreetmap.josm.data.projection.ProjectionRegistry;
 import org.openstreetmap.josm.gui.ExtendedDialog;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.layer.AlignImageryPanel;
@@ -44,6 +49,7 @@ import org.openstreetmap.josm.tools.CheckParameterUtil;
 import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.Logging;
+import org.openstreetmap.josm.tools.Utils;
 import org.openstreetmap.josm.tools.bugreport.ReportedException;
 
 /**
@@ -60,7 +66,7 @@ public class AddImageryLayerAction extends JosmAction implements AdaptableAction
             scrollPane.setPreferredSize(new Dimension(400, 400));
             final JPanel panel = new JPanel(new GridBagLayout());
             panel.add(scrollPane, GBC.eol().fill());
-            panel.add(formats, GBC.eol().fill(GBC.HORIZONTAL));
+            panel.add(formats, GBC.eol().fill(GridBagConstraints.HORIZONTAL));
             setContent(panel);
         }
     }
@@ -109,17 +115,17 @@ public class AddImageryLayerAction extends JosmAction implements AdaptableAction
                 info.setDate(userDate);
                 // TODO persist new {time} value (via ImageryLayerInfo.save?)
             }
-            switch(info.getImageryType()) {
+            switch (info.getImageryType()) {
             case WMS_ENDPOINT:
                 // convert to WMS type
-                if (info.getDefaultLayers() == null || info.getDefaultLayers().isEmpty()) {
+                if (Utils.isEmpty(info.getDefaultLayers())) {
                     return getWMSLayerInfo(info);
                 } else {
                     return info;
                 }
             case WMTS:
                 // specify which layer to use
-                if (info.getDefaultLayers() == null || info.getDefaultLayers().isEmpty()) {
+                if (Utils.isEmpty(info.getDefaultLayers())) {
                     WMTSTileSource tileSource = new WMTSTileSource(info);
                     DefaultLayer layerId = tileSource.userSelectLayer();
                     if (layerId != null) {
@@ -162,11 +168,11 @@ public class AddImageryLayerAction extends JosmAction implements AdaptableAction
             final ImageryInfo infoToAdd = convertImagery(info);
             if (infoToAdd != null) {
                 layer = ImageryLayer.create(infoToAdd);
-                getLayerManager().addLayer(layer);
+                getLayerManager().addLayer(layer, false);
                 AlignImageryPanel.addNagPanelIfNeeded(infoToAdd);
             }
         } catch (IllegalArgumentException | ReportedException ex) {
-            if (ex.getMessage() == null || ex.getMessage().isEmpty() || GraphicsEnvironment.isHeadless()) {
+            if (Utils.isEmpty(ex.getMessage()) || GraphicsEnvironment.isHeadless()) {
                 throw ex;
             } else {
                 Logging.error(ex);
@@ -202,12 +208,23 @@ public class AddImageryLayerAction extends JosmAction implements AdaptableAction
 
     private static LayerSelection askToSelectLayers(WMSImagery wms) {
         final WMSLayerTree tree = new WMSLayerTree();
-        tree.updateTree(wms);
 
         Collection<String> wmsFormats = wms.getFormats();
         final JComboBox<String> formats = new JComboBox<>(wmsFormats.toArray(new String[0]));
         formats.setSelectedItem(wms.getPreferredFormat());
         formats.setToolTipText(tr("Select image format for WMS layer"));
+
+        JCheckBox checkBounds = new JCheckBox(tr("Show only layers for current view"), true);
+        Runnable updateTree = () -> {
+            LatLon latLon = checkBounds.isSelected() && MainApplication.isDisplayingMapView()
+                    ? MainApplication.getMap().mapView.getProjection().eastNorth2latlon(MainApplication.getMap().mapView.getCenter())
+                    : null;
+            tree.setCheckBounds(latLon);
+            tree.updateTree(wms);
+            System.out.println(wms);
+        };
+        checkBounds.addActionListener(ignore -> updateTree.run());
+        updateTree.run();
 
         if (!GraphicsEnvironment.isHeadless()) {
             ExtendedDialog dialog = new ExtendedDialog(MainApplication.getMainFrame(),
@@ -216,7 +233,8 @@ public class AddImageryLayerAction extends JosmAction implements AdaptableAction
             scrollPane.setPreferredSize(new Dimension(400, 400));
             final JPanel panel = new JPanel(new GridBagLayout());
             panel.add(scrollPane, GBC.eol().fill());
-            panel.add(formats, GBC.eol().fill(GBC.HORIZONTAL));
+            panel.add(checkBounds, GBC.eol().fill(GridBagConstraints.HORIZONTAL));
+            panel.add(formats, GBC.eol().fill(GridBagConstraints.HORIZONTAL));
             dialog.setContent(panel);
 
             if (dialog.showDialog().getValue() != 1) {
@@ -264,7 +282,9 @@ public class AddImageryLayerAction extends JosmAction implements AdaptableAction
     public static ImageryInfo getWMSLayerInfo(ImageryInfo info, Function<WMSImagery, LayerSelection> choice)
             throws IOException, WMSGetCapabilitiesException {
         CheckParameterUtil.ensureThat(ImageryType.WMS_ENDPOINT == info.getImageryType(), "wms_endpoint imagery type expected");
-        final WMSImagery wms = new WMSImagery(info.getUrl(), info.getCustomHttpHeaders());
+        // We need to get the URL with {apikey} replaced. See #22642.
+        final TemplatedWMSTileSource tileSource = new TemplatedWMSTileSource(info, ProjectionRegistry.getProjection());
+        final WMSImagery wms = new WMSImagery(tileSource.getBaseUrl(), info.getCustomHttpHeaders());
         LayerSelection selection = choice.apply(wms);
         if (selection == null) {
             return null;

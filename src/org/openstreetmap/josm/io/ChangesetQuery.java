@@ -1,15 +1,14 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.io;
 
+import static org.openstreetmap.josm.tools.I18n.marktr;
 import static org.openstreetmap.josm.tools.I18n.tr;
 
-import java.text.DateFormat;
 import java.text.MessageFormat;
-import java.text.ParseException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -21,6 +20,7 @@ import org.openstreetmap.josm.data.UserIdentityManager;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.tools.CheckParameterUtil;
 import org.openstreetmap.josm.tools.Logging;
+import org.openstreetmap.josm.tools.UncheckedParseException;
 import org.openstreetmap.josm.tools.Utils;
 import org.openstreetmap.josm.tools.date.DateUtils;
 
@@ -31,6 +31,9 @@ import org.openstreetmap.josm.tools.date.DateUtils;
  * @see <a href="https://wiki.openstreetmap.org/wiki/API_v0.6#Query:_GET_.2Fapi.2F0.6.2Fchangesets">OSM API 0.6 call "/changesets?"</a>
  */
 public class ChangesetQuery {
+    private static final String ERROR_UNEXPECTED_VALUE_CHANGESET_QUERY_URL =
+            marktr("Unexpected value for ''{0}'' in changeset query url, got {1}");
+    private static final String DISPLAY_NAME = "display_name";
 
     /**
      * Maximum number of changesets returned by the OSM API call "/changesets?"
@@ -44,9 +47,9 @@ public class ChangesetQuery {
     /** the bounding box this query is restricted to. null, if no restriction to a bounding box applies */
     private Bounds bounds;
     /** the date after which changesets have been closed this query is restricted to. null, if no restriction to closure date applies */
-    private Date closedAfter;
+    private Instant closedAfter;
     /** the date before which changesets have been created this query is restricted to. null, if no restriction to creation date applies */
-    private Date createdBefore;
+    private Instant createdBefore;
     /** indicates whether only open changesets are queried. null, if no restrictions regarding open changesets apply */
     private Boolean open;
     /** indicates whether only closed changesets are queried. null, if no restrictions regarding closed changesets apply */
@@ -102,7 +105,7 @@ public class ChangesetQuery {
 
     /**
      * Restricts the query to changesets owned by the user with user name <code>username</code>.
-     *
+     * <p>
      * Caveat: for historical reasons the username might not be unique! It is recommended to use
      * {@link #forUser(int)} to restrict the query to a specific user.
      *
@@ -154,8 +157,8 @@ public class ChangesetQuery {
      *         {@code null}, if no restriction to closure date applies
      * @since 14039
      */
-    public Date getClosedAfter() {
-        return DateUtils.cloneDate(closedAfter);
+    public Instant getClosedAfter() {
+        return closedAfter;
     }
 
     /**
@@ -165,8 +168,8 @@ public class ChangesetQuery {
      *         {@code null}, if no restriction to creation date applies
      * @since 14039
      */
-    public Date getCreatedBefore() {
-        return DateUtils.cloneDate(createdBefore);
+    public Instant getCreatedBefore() {
+        return createdBefore;
     }
 
     /**
@@ -226,7 +229,7 @@ public class ChangesetQuery {
         if (!LatLon.isValidLat(minLat))
             throw new IllegalArgumentException(tr("Illegal latitude value for parameter ''{0}'', got {1}", "minLat", minLat));
         if (!LatLon.isValidLat(maxLat))
-            throw new IllegalArgumentException(tr("Illegal longitude value for parameter ''{0}'', got {1}", "maxLat", maxLat));
+            throw new IllegalArgumentException(tr("Illegal latitude value for parameter ''{0}'', got {1}", "maxLat", maxLat));
 
         return inBbox(new LatLon(minLon, minLat), new LatLon(maxLon, maxLat));
     }
@@ -235,7 +238,7 @@ public class ChangesetQuery {
      * Replies a query which is restricted to a bounding box.
      *
      * @param min the min lat/lon coordinates of the bounding box. Must not be null.
-     * @param max the max lat/lon coordiantes of the bounding box. Must not be null.
+     * @param max the max lat/lon coordinates of the bounding box. Must not be null.
      *
      * @return the restricted changeset query
      * @throws IllegalArgumentException if min is null
@@ -265,19 +268,19 @@ public class ChangesetQuery {
      * Restricts the result to changesets which have been closed after the date given by <code>d</code>.
      * <code>d</code> d is a date relative to the current time zone.
      *
-     * @param d the date . Must not be null.
+     * @param d the date. Must not be null.
      * @return the restricted changeset query
      * @throws IllegalArgumentException if d is null
      */
-    public ChangesetQuery closedAfter(Date d) {
+    public ChangesetQuery closedAfter(Instant d) {
         CheckParameterUtil.ensureParameterNotNull(d, "d");
-        this.closedAfter = DateUtils.cloneDate(d);
+        this.closedAfter = d;
         return this;
     }
 
     /**
      * Restricts the result to changesets which have been closed after <code>closedAfter</code> and which
-     * habe been created before <code>createdBefore</code>. Both dates are expressed relative to the current
+     * have been created before <code>createdBefore</code>. Both dates are expressed relative to the current
      * time zone.
      *
      * @param closedAfter only reply changesets closed after this date. Must not be null.
@@ -286,11 +289,11 @@ public class ChangesetQuery {
      * @throws IllegalArgumentException if closedAfter is null
      * @throws IllegalArgumentException if createdBefore is null
      */
-    public ChangesetQuery closedAfterAndCreatedBefore(Date closedAfter, Date createdBefore) {
+    public ChangesetQuery closedAfterAndCreatedBefore(Instant closedAfter, Instant createdBefore) {
         CheckParameterUtil.ensureParameterNotNull(closedAfter, "closedAfter");
         CheckParameterUtil.ensureParameterNotNull(createdBefore, "createdBefore");
-        this.closedAfter = DateUtils.cloneDate(closedAfter);
-        this.createdBefore = DateUtils.cloneDate(createdBefore);
+        this.closedAfter = closedAfter;
+        this.createdBefore = createdBefore;
         return this;
     }
 
@@ -356,22 +359,20 @@ public class ChangesetQuery {
             if (sb.length() > 0) {
                 sb.append('&');
             }
-            DateFormat df = DateUtils.newIsoDateTimeFormat();
-            sb.append("time=").append(df.format(closedAfter));
-            sb.append(',').append(df.format(createdBefore));
+            sb.append("time=").append(closedAfter)
+                    .append(',').append(createdBefore);
         } else if (closedAfter != null) {
             if (sb.length() > 0) {
                 sb.append('&');
             }
-            DateFormat df = DateUtils.newIsoDateTimeFormat();
-            sb.append("time=").append(df.format(closedAfter));
+            sb.append("time=").append(closedAfter);
         }
 
         if (open != null) {
             if (sb.length() > 0) {
                 sb.append('&');
             }
-            sb.append("open=").append(Boolean.toString(open));
+            sb.append("open=").append(open);
         } else if (closed != null) {
             if (sb.length() > 0) {
                 sb.append('&');
@@ -434,65 +435,55 @@ public class ChangesetQuery {
      */
     public static class ChangesetQueryUrlParser {
         protected int parseUid(String value) throws ChangesetQueryUrlException {
-            if (value == null || value.trim().isEmpty())
-                throw new ChangesetQueryUrlException(
-                        tr("Unexpected value for ''{0}'' in changeset query url, got {1}", "uid", value));
+            if (Utils.isStripEmpty(value))
+                throw new ChangesetQueryUrlException(tr(ERROR_UNEXPECTED_VALUE_CHANGESET_QUERY_URL, "uid", value));
             int id;
             try {
                 id = Integer.parseInt(value);
                 if (id <= 0)
-                    throw new ChangesetQueryUrlException(
-                            tr("Unexpected value for ''{0}'' in changeset query url, got {1}", "uid", value));
+                    throw new ChangesetQueryUrlException(tr(ERROR_UNEXPECTED_VALUE_CHANGESET_QUERY_URL, "uid", value));
             } catch (NumberFormatException e) {
-                throw new ChangesetQueryUrlException(
-                        tr("Unexpected value for ''{0}'' in changeset query url, got {1}", "uid", value), e);
+                throw new ChangesetQueryUrlException(tr(ERROR_UNEXPECTED_VALUE_CHANGESET_QUERY_URL, "uid", value), e);
             }
             return id;
         }
 
         protected boolean parseBoolean(String value, String parameter) throws ChangesetQueryUrlException {
-            if (value == null || value.trim().isEmpty())
-                throw new ChangesetQueryUrlException(
-                        tr("Unexpected value for ''{0}'' in changeset query url, got {1}", parameter, value));
+            if (Utils.isStripEmpty(value))
+                throw new ChangesetQueryUrlException(tr(ERROR_UNEXPECTED_VALUE_CHANGESET_QUERY_URL, parameter, value));
             switch (value) {
             case "true":
                 return true;
             case "false":
                 return false;
             default:
-                throw new ChangesetQueryUrlException(
-                        tr("Unexpected value for ''{0}'' in changeset query url, got {1}", parameter, value));
+                throw new ChangesetQueryUrlException(tr(ERROR_UNEXPECTED_VALUE_CHANGESET_QUERY_URL, parameter, value));
             }
         }
 
-        protected Date parseDate(String value, String parameter) throws ChangesetQueryUrlException {
-            if (value == null || value.trim().isEmpty())
-                throw new ChangesetQueryUrlException(
-                        tr("Unexpected value for ''{0}'' in changeset query url, got {1}", parameter, value));
-            DateFormat formatter = DateUtils.newIsoDateTimeFormat();
+        protected Instant parseDate(String value, String parameter) throws ChangesetQueryUrlException {
+            if (Utils.isStripEmpty(value))
+                throw new ChangesetQueryUrlException(tr(ERROR_UNEXPECTED_VALUE_CHANGESET_QUERY_URL, parameter, value));
             try {
-                return formatter.parse(value);
-            } catch (ParseException e) {
-                throw new ChangesetQueryUrlException(
-                        tr("Unexpected value for ''{0}'' in changeset query url, got {1}", parameter, value), e);
+                return DateUtils.parseInstant(value);
+            } catch (UncheckedParseException e) {
+                throw new ChangesetQueryUrlException(tr(ERROR_UNEXPECTED_VALUE_CHANGESET_QUERY_URL, parameter, value), e);
             }
         }
 
-        protected Date[] parseTime(String value) throws ChangesetQueryUrlException {
+        protected Instant[] parseTime(String value) throws ChangesetQueryUrlException {
             String[] dates = value.split(",", -1);
             if (dates.length == 0 || dates.length > 2)
-                throw new ChangesetQueryUrlException(
-                        tr("Unexpected value for ''{0}'' in changeset query url, got {1}", "time", value));
+                throw new ChangesetQueryUrlException(tr(ERROR_UNEXPECTED_VALUE_CHANGESET_QUERY_URL, "time", value));
             if (dates.length == 1)
-                return new Date[]{parseDate(dates[0], "time")};
-            else if (dates.length == 2)
-                return new Date[]{parseDate(dates[0], "time"), parseDate(dates[1], "time")};
-            return new Date[]{};
+                return new Instant[]{parseDate(dates[0], "time")};
+            // This will always have length 2, due to the (dates.length == 0 || dates.length > 2) check above.
+            return new Instant[]{parseDate(dates[0], "time"), parseDate(dates[1], "time")};
         }
 
         protected Collection<Long> parseLongs(String value) {
-            if (value == null || value.isEmpty()) {
-                return Collections.<Long>emptySet();
+            if (Utils.isEmpty(value)) {
+                return Collections.emptySet();
             } else {
                 return Stream.of(value.split(",", -1)).map(Long::valueOf).collect(Collectors.toSet());
             }
@@ -503,18 +494,18 @@ public class ChangesetQuery {
 
             for (Entry<String, String> entry: queryParams.entrySet()) {
                 String k = entry.getKey();
-                switch(k) {
+                switch (k) {
                 case "uid":
-                    if (queryParams.containsKey("display_name"))
+                    if (queryParams.containsKey(DISPLAY_NAME))
                         throw new ChangesetQueryUrlException(
                                 tr("Cannot create a changeset query including both the query parameters ''uid'' and ''display_name''"));
                     csQuery.forUser(parseUid(queryParams.get("uid")));
                     break;
-                case "display_name":
+                case DISPLAY_NAME:
                     if (queryParams.containsKey("uid"))
                         throw new ChangesetQueryUrlException(
                                 tr("Cannot create a changeset query including both the query parameters ''uid'' and ''display_name''"));
-                    csQuery.forUser(queryParams.get("display_name"));
+                    csQuery.forUser(queryParams.get(DISPLAY_NAME));
                     break;
                 case "open":
                     csQuery.beingOpen(parseBoolean(entry.getValue(), "open"));
@@ -523,8 +514,8 @@ public class ChangesetQuery {
                     csQuery.beingClosed(parseBoolean(entry.getValue(), "closed"));
                     break;
                 case "time":
-                    Date[] dates = parseTime(entry.getValue());
-                    switch(dates.length) {
+                    Instant[] dates = parseTime(entry.getValue());
+                    switch (dates.length) {
                     case 1:
                         csQuery.closedAfter(dates[0]);
                         break;
@@ -569,11 +560,11 @@ public class ChangesetQuery {
 
         /**
          * Parses the changeset query given as URL query parameters and replies a {@link ChangesetQuery}.
-         *
-         * <code>query</code> is the query part of a API url for querying changesets,
+         * <p>
+         * <code>query</code> is the query part of an API url for querying changesets,
          * see <a href="http://wiki.openstreetmap.org/wiki/API_v0.6#Query:_GET_.2Fapi.2F0.6.2Fchangesets">OSM API</a>.
-         *
-         * Example for an query string:<br>
+         * <p>
+         * Example for a query string:<br>
          * <pre>
          *    uid=1234&amp;open=true
          * </pre>

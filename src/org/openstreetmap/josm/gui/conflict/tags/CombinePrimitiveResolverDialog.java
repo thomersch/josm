@@ -50,6 +50,7 @@ import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.InputMapUtils;
 import org.openstreetmap.josm.tools.StreamUtils;
 import org.openstreetmap.josm.tools.UserCancelException;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * This dialog helps to resolve conflicts occurring when ways are combined or
@@ -343,7 +344,7 @@ public class CombinePrimitiveResolverDialog extends JDialog {
         }
 
         getContentPane().add(pnlButtons, BorderLayout.SOUTH);
-        validate();
+        getContentPane().validate();
         adjustDividerLocation();
         pnlRelationMemberConflictResolver.prepareForEditing();
     }
@@ -444,10 +445,17 @@ public class CombinePrimitiveResolverDialog extends JDialog {
     private void adjustDividerLocation() {
         int numTagDecisions = modelTagConflictResolver.getNumDecisions();
         int numRelationDecisions = modelRelConflictResolver.getNumDecisions();
-        if (numTagDecisions > 0 && numRelationDecisions > 0) {
-            double nTop = 1.0 + numTagDecisions;
-            double nBottom = 2.5 + numRelationDecisions;
-            spTagConflictTypes.setDividerLocation(nTop/(nTop+nBottom));
+
+        if (numTagDecisions > 0 && numRelationDecisions > 0 && getHeight() > 0) {
+            // see #12536: Take the space for buttons and checkbox into account.
+            double hPopup = getHeight();
+            double h1 = pnlRelationMemberConflictResolver.getHeight() + pnlTagConflictResolver.getHeight();
+            double correction = h1 > 0 && hPopup > h1 ? ((hPopup-h1)/hPopup) : 0;
+
+            double nTop = 3.5 + numTagDecisions;
+            double nBottom = 5.5 + numRelationDecisions;
+            double ratio = nTop/(nTop+nBottom);
+            spTagConflictTypes.setDividerLocation(ratio > correction ? ratio - correction : ratio);
         }
     }
 
@@ -581,7 +589,7 @@ public class CombinePrimitiveResolverDialog extends JDialog {
                 DefaultNameFormatter.getInstance().formatAsHtmlUnorderedList(parentRelations, 20));
 
         if (!ConditionalOptionPaneUtil.showConfirmationDialog(
-                "combine_tags",
+                "combine_relation_member",
                 MainApplication.getMainFrame(),
                 "<html>" + msg + "</html>",
                 tr("Combine confirmation"),
@@ -629,7 +637,7 @@ public class CombinePrimitiveResolverDialog extends JDialog {
     private static String getKeyDescription(String key, TagCollection normalizedTags) {
         String values = normalizedTags.getValues(key)
                 .stream()
-                .map(x -> (x == null || x.isEmpty()) ? tr("<i>missing</i>") : x)
+                .map(x -> Utils.isEmpty(x) ? tr("<i>missing</i>") : x)
                 .collect(Collectors.joining(tr(", ")));
         return tr("{0} ({1})", key, values);
     }

@@ -1,6 +1,7 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.tagging.presets.items;
 
+import static org.openstreetmap.josm.tools.I18n.marktr;
 import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.util.Collection;
@@ -8,8 +9,8 @@ import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.NoSuchElementException;
-import java.util.SortedSet;
-import java.util.TreeSet;
+import java.util.SortedMap;
+import java.util.TreeMap;
 
 import javax.swing.JPopupMenu;
 
@@ -24,11 +25,14 @@ import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetItem;
 /**
  * Preset item associated to an OSM key.
  */
-public abstract class KeyedItem extends TextItem {
+public abstract class KeyedItem extends TextItem implements RegionSpecific {
 
-    /** Translation of "&lt;different&gt;". Use in combo boxes to display an entry matching several different values. */
-    protected static final String DIFFERENT = tr("<different>");
+    /** The constant value {@code "<different>"}. */
+    protected static final String DIFFERENT = marktr("<different>");
+    /** Translation of {@code "<different>"}. */
+    public static final String DIFFERENT_I18N = tr(DIFFERENT);
 
+    /** True if the default value should also be set on primitives that already have tags.  */
     protected static final BooleanProperty PROP_FILL_DEFAULT = new BooleanProperty("taggingpreset.fill-default-for-tagged-primitives", false);
 
     /** Last value of each key used in presets, used for prefilling corresponding fields */
@@ -47,7 +51,16 @@ public abstract class KeyedItem extends TextItem {
      * Note that for a match, at least one positive and no negative is required.
      * Default is "keyvalue!" for {@link Key} and "none" for {@link Text}, {@link Combo}, {@link MultiSelect} and {@link Check}.
      */
-    public String match = getDefaultMatch().getValue(); // NOSONAR
+    protected MatchType match = getDefaultMatch(); // NOSONAR
+
+    /**
+     * List of regions the preset is applicable for.
+     */
+    private Collection<String> regions;
+    /**
+     * If true, invert the meaning of regions.
+     */
+    private boolean excludeRegions;
 
     /**
      * Enum denoting how a match (see {@link TaggingPresetItem#matches}) is performed.
@@ -95,21 +108,22 @@ public abstract class KeyedItem extends TextItem {
 
     /**
      * Usage information on a key
+     *
+     * TODO merge with {@link org.openstreetmap.josm.data.osm.TagCollection}
      */
-    protected static class Usage {
-        /**
-         * A set of values that were used for this key.
-         */
-        public final SortedSet<String> values = new TreeSet<>(); // NOSONAR
+    public static class Usage {
+        /** Usage count for all values used for this key */
+        public final SortedMap<String, Integer> map = new TreeMap<>();
         private boolean hadKeys;
         private boolean hadEmpty;
+        private int selectedCount;
 
         /**
          * Check if there is exactly one value for this key.
          * @return <code>true</code> if there was exactly one value.
          */
         public boolean hasUniqueValue() {
-            return values.size() == 1 && !hadEmpty;
+            return map.size() == 1 && !hadEmpty;
         }
 
         /**
@@ -117,7 +131,7 @@ public abstract class KeyedItem extends TextItem {
          * @return <code>true</code> if it was unused.
          */
         public boolean unused() {
-            return values.isEmpty();
+            return map.isEmpty();
         }
 
         /**
@@ -126,7 +140,7 @@ public abstract class KeyedItem extends TextItem {
          * @throws NoSuchElementException if there is no such value.
          */
         public String getFirst() {
-            return values.first();
+            return map.firstKey();
         }
 
         /**
@@ -136,14 +150,77 @@ public abstract class KeyedItem extends TextItem {
         public boolean hadKeys() {
             return hadKeys;
         }
+
+        /**
+         * Returns the number of primitives selected.
+         * @return the number of primitives selected.
+         */
+        public int getSelectedCount() {
+            return selectedCount;
+        }
+
+        /**
+         * Splits multiple values and adds their usage counts as single value.
+         * <p>
+         * A value of {@code regional;pizza} will increment the count of {@code regional} and of
+         * {@code pizza}.
+         * @param delimiter The delimiter used for splitting.
+         * @return A new usage object with the new counts.
+         */
+        public Usage splitValues(String delimiter) {
+            Usage usage = new Usage();
+            usage.hadEmpty = hadEmpty;
+            usage.hadKeys = hadKeys;
+            usage.selectedCount = selectedCount;
+            map.forEach((value, count) -> {
+                for (String v : value.split(String.valueOf(delimiter), -1)) {
+                    usage.map.merge(v, count, Integer::sum);
+                }
+            });
+            return usage;
+        }
     }
 
-    protected static Usage determineTextUsage(Collection<OsmPrimitive> sel, String key) {
+    /**
+     * Allows to change the matching process, i.e., determining whether the tags of an OSM object fit into this preset.
+     * If a preset fits then it is linked in the Tags/Membership dialog.<ul>
+     * <li>none: neutral, i.e., do not consider this item for matching</li>
+     * <li>key: positive if key matches, neutral otherwise</li>
+     * <li>key!: positive if key matches, negative otherwise</li>
+     * <li>keyvalue: positive if key and value matches, neutral otherwise</li>
+     * <li>keyvalue!: positive if key and value matches, negative otherwise</li></ul>
+     * Note that for a match, at least one positive and no negative is required.
+     * Default is "keyvalue!" for {@link Key} and "none" for {@link Text}, {@link Combo}, {@link MultiSelect} and {@link Check}.
+     * @param match The match type. One of <code>none</code>, <code>key</code>, <code>key!</code>, <code>keyvalue</code>,
+     *              or <code>keyvalue!</code>.
+     * @since 19285
+     */
+    public void setMatch(String match) {
+        this.match = MatchType.ofString(match);
+    }
+
+    /**
+     * Get the match type for this item
+     * @return The match type
+     * @since 19285
+     */
+    public String match() {
+        return this.match.getValue();
+    }
+
+    /**
+     * Computes the tag usage for the given key from the given primitives
+     * @param sel the primitives
+     * @param key the key
+     * @return the tag usage
+     */
+    public static Usage determineTextUsage(Collection<OsmPrimitive> sel, String key) {
         Usage returnValue = new Usage();
+        returnValue.selectedCount = sel.size();
         for (OsmPrimitive s : sel) {
             String v = s.get(key);
             if (v != null) {
-                returnValue.values.add(v);
+                returnValue.map.merge(v, 1, Integer::sum);
             } else {
                 returnValue.hadEmpty = true;
             }
@@ -156,10 +233,11 @@ public abstract class KeyedItem extends TextItem {
 
     protected static Usage determineBooleanUsage(Collection<OsmPrimitive> sel, String key) {
         Usage returnValue = new Usage();
+        returnValue.selectedCount = sel.size();
         for (OsmPrimitive s : sel) {
             String booleanValue = OsmUtils.getNamedOsmBoolean(s.get(key));
             if (booleanValue != null) {
-                returnValue.values.add(booleanValue);
+                returnValue.map.merge(booleanValue, 1, Integer::sum);
             }
         }
         return returnValue;
@@ -170,7 +248,7 @@ public abstract class KeyedItem extends TextItem {
      * @return whether key or key+value are required
      */
     public boolean isKeyRequired() {
-        final MatchType type = MatchType.ofString(match);
+        final MatchType type = this.match;
         return MatchType.KEY_REQUIRED == type || MatchType.KEY_VALUE_REQUIRED == type;
     }
 
@@ -192,20 +270,19 @@ public abstract class KeyedItem extends TextItem {
 
     @Override
     public Boolean matches(Map<String, String> tags) {
-        switch (MatchType.ofString(match)) {
+        switch (this.match) {
         case NONE:
-            return null;
+            return null; // NOSONAR
         case KEY:
             return tags.containsKey(key) ? Boolean.TRUE : null;
         case KEY_REQUIRED:
             return tags.containsKey(key);
         case KEY_VALUE:
-            return tags.containsKey(key) && getValues().contains(tags.get(key)) ? Boolean.TRUE : null;
+            return (tags.containsKey(key) && getValues().contains(tags.get(key))) ? Boolean.TRUE : null;
         case KEY_VALUE_REQUIRED:
             return tags.containsKey(key) && getValues().contains(tags.get(key));
-        default:
-            throw new IllegalStateException();
         }
+        throw new IllegalStateException();
     }
 
     protected JPopupMenu getPopupMenu() {
@@ -217,6 +294,26 @@ public abstract class KeyedItem extends TextItem {
         popupMenu.add(taginfoAction.toTagHistoryAction());
         popupMenu.add(taginfoAction);
         return popupMenu;
+    }
+
+    @Override
+    public final Collection<String> regions() {
+        return this.regions;
+    }
+
+    @Override
+    public final void realSetRegions(Collection<String> regions) {
+        this.regions = regions;
+    }
+
+    @Override
+    public final boolean exclude_regions() {
+        return this.excludeRegions;
+    }
+
+    @Override
+    public final void setExclude_regions(boolean excludeRegions) {
+        this.excludeRegions = excludeRegions;
     }
 
     @Override

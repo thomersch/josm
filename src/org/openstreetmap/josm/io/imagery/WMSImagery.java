@@ -11,6 +11,7 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.file.InvalidPathException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
@@ -35,6 +36,8 @@ import org.openstreetmap.josm.data.imagery.ImageryInfo;
 import org.openstreetmap.josm.data.imagery.LayerDetails;
 import org.openstreetmap.josm.data.projection.Projection;
 import org.openstreetmap.josm.data.projection.Projections;
+import org.openstreetmap.josm.gui.progress.NullProgressMonitor;
+import org.openstreetmap.josm.gui.progress.ProgressMonitor;
 import org.openstreetmap.josm.io.CachedFile;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.Utils;
@@ -150,20 +153,44 @@ public class WMSImagery {
      * @throws InvalidPathException if a Path object cannot be constructed for the capabilities cached file
      */
     public WMSImagery(String url, Map<String, String> headers) throws IOException, WMSGetCapabilitiesException {
+        this(url, headers, NullProgressMonitor.INSTANCE);
+    }
+
+    /**
+     * Make getCapabilities request towards given URL using headers
+     * @param url service url
+     * @param headers HTTP headers to be sent with request
+     * @param monitor Feedback for which URL we are currently trying, the integer is the <i>total number of urls</i> we are going to try
+     * @throws IOException when connection error when fetching get capabilities document
+     * @throws WMSGetCapabilitiesException when there are errors when parsing get capabilities document
+     * @throws InvalidPathException if a Path object cannot be constructed for the capabilities cached file
+     * @since 18780
+     */
+    public WMSImagery(String url, Map<String, String> headers, ProgressMonitor monitor)
+            throws IOException, WMSGetCapabilitiesException {
         if (headers != null) {
             this.headers.putAll(headers);
         }
 
         IOException savedExc = null;
         String workingAddress = null;
+        final String[] baseAdditions = {
+            normalizeUrl(url),
+            url,
+            url + CAPABILITIES_QUERY_STRING,
+        };
+        final String[] versionAdditions = {"", "&VERSION=1.3.0", "&VERSION=1.1.1"};
+        final int totalNumberOfUrlsToTry = baseAdditions.length * versionAdditions.length;
+        monitor.setTicksCount(totalNumberOfUrlsToTry);
         url_search:
-        for (String z: new String[]{
-                normalizeUrl(url),
-                url,
-                url + CAPABILITIES_QUERY_STRING,
-        }) {
-            for (String ver: new String[]{"", "&VERSION=1.3.0", "&VERSION=1.1.1"}) {
+        for (String z : baseAdditions) {
+            for (String ver : versionAdditions) {
+                if (monitor.isCanceled()) {
+                    break url_search;
+                }
                 try {
+                    monitor.setCustomText(z + ver);
+                    monitor.worked(1);
                     attemptGetCapabilities(z + ver);
                     workingAddress = z;
                     calculateChildren();
@@ -186,13 +213,12 @@ public class WMSImagery {
                 }
                 try {
                     capabilitiesUrl = new File(workingAddress).toURI().toURL();
-                } catch (MalformedURLException e1) { // NOPMD
+                } catch (MalformedURLException e1) {
                     // do nothing, raise original exception
                     Logging.trace(e1);
                 }
             }
         }
-
         if (savedExc != null) {
             throw savedExc;
         }
@@ -286,11 +312,12 @@ public class WMSImagery {
 
     /**
      * Returns URL for accessing GetMap service. String will contain following parameters:
-     * * {proj} - that needs to be replaced with projection (one of {@link #getServerProjections(List)})
-     * * {width} - that needs to be replaced with width of the tile
-     * * {height} - that needs to be replaces with height of the tile
-     * * {bbox} - that needs to be replaced with area that should be fetched (in {proj} coordinates)
-     *
+     * <ul>
+     *   <li>{proj} - that needs to be replaced with projection (one of {@link #getServerProjections(List)})</li>
+     *   <li>{width} - that needs to be replaced with width of the tile</li>
+     *   <li>{height} - that needs to be replaces with height of the tile</li>
+     *   <li>{bbox} - that needs to be replaced with area that should be fetched (in {proj} coordinates)</li>
+     * </ul>
      * Format of the response will be calculated using {@link #getPreferredFormat()}
      *
      * @param selectedLayers list of DefaultLayer selection of layers to be shown
@@ -306,11 +333,12 @@ public class WMSImagery {
 
     /**
      * Returns URL for accessing GetMap service. String will contain following parameters:
-     * * {proj} - that needs to be replaced with projection (one of {@link #getServerProjections(List)})
-     * * {width} - that needs to be replaced with width of the tile
-     * * {height} - that needs to be replaces with height of the tile
-     * * {bbox} - that needs to be replaced with area that should be fetched (in {proj} coordinates)
-     *
+     * <ul>
+     *   <li>{proj} - that needs to be replaced with projection (one of {@link #getServerProjections(List)})</li>
+     *   <li>{width} - that needs to be replaced with width of the tile</li>
+     *   <li>{height} - that needs to be replaces with height of the tile</li>
+     *   <li>{bbox} - that needs to be replaced with area that should be fetched (in {proj} coordinates)</li>
+     * </ul>
      * Format of the response will be calculated using {@link #getPreferredFormat()}
      *
      * @param selectedLayers selected layers as subset of the tree returned by {@link #getLayers()}
@@ -384,7 +412,7 @@ public class WMSImagery {
     private boolean tagEquals(QName a, QName b) {
         boolean ret = a.equals(b);
         if (ret) {
-            return ret;
+            return true;
         }
 
         if (belowWMS130()) {
@@ -461,8 +489,8 @@ public class WMSImagery {
     }
 
     private void parseRequest(XMLStreamReader reader) throws XMLStreamException {
-        String mode = "";
-        String getMapUrl = "";
+        String mode;
+        String newGetMapUrl = "";
         if (GetCapabilitiesParseHelper.moveReaderToTag(reader, this::tagEquals, QN_GETMAP)) {
             for (int event = reader.getEventType();
                     reader.hasNext() && !(event == XMLStreamReader.END_ELEMENT && tagEquals(QN_GETMAP, reader.getName()));
@@ -479,16 +507,16 @@ public class WMSImagery {
                             this::tagEquals, QN_HTTP, QN_GET)) {
                         mode = reader.getName().getLocalPart();
                         if (GetCapabilitiesParseHelper.moveReaderToTag(reader, this::tagEquals, QN_ONLINE_RESOURCE)) {
-                            getMapUrl = reader.getAttributeValue(GetCapabilitiesParseHelper.XLINK_NS_URL, "href");
+                            newGetMapUrl = reader.getAttributeValue(GetCapabilitiesParseHelper.XLINK_NS_URL, "href");
                         }
                         // TODO should we handle also POST?
-                        if ("GET".equalsIgnoreCase(mode) && getMapUrl != null && !"".equals(getMapUrl)) {
+                        if ("GET".equalsIgnoreCase(mode) && newGetMapUrl != null && !newGetMapUrl.isEmpty()) {
                             try {
-                                String query = new URL(getMapUrl).getQuery();
+                                String query = new URL(newGetMapUrl).getQuery();
                                 if (query == null) {
-                                    this.getMapUrl = getMapUrl + "?";
+                                    this.getMapUrl = newGetMapUrl + "?";
                                 } else {
-                                    this.getMapUrl = getMapUrl;
+                                    this.getMapUrl = newGetMapUrl;
                                 }
                             } catch (MalformedURLException e) {
                                 throw new XMLStreamException(e);
@@ -554,7 +582,7 @@ public class WMSImagery {
 
     private void parseAndAddStyle(XMLStreamReader reader, LayerDetails ld) throws XMLStreamException {
         String name = null;
-        String title = null;
+        String styleTitle = null;
         for (int event = reader.getEventType();
                 reader.hasNext() && !(event == XMLStreamReader.END_ELEMENT && tagEquals(QN_STYLE, reader.getName()));
                 event = reader.next()) {
@@ -563,14 +591,14 @@ public class WMSImagery {
                     name = reader.getElementText();
                 }
                 if (tagEquals(QN_TITLE, reader.getName())) {
-                    title = reader.getElementText();
+                    styleTitle = reader.getElementText();
                 }
             }
         }
         if (name == null) {
             name = "";
         }
-        ld.addStyle(name, title);
+        ld.addStyle(name, styleTitle);
     }
 
     private Bounds parseExGeographic(XMLStreamReader reader) throws XMLStreamException {
@@ -615,7 +643,7 @@ public class WMSImagery {
     }
 
     private static Bounds parseBBox(Projection conv, String miny, String minx, String maxy, String maxx) {
-        if (miny == null || minx == null || maxy == null || maxx == null) {
+        if (miny == null || minx == null || maxy == null || maxx == null || Arrays.asList(miny, minx, maxy, maxx).contains("nan")) {
             return null;
         }
         if (conv != null) {
@@ -638,8 +666,8 @@ public class WMSImagery {
     }
 
     private static String normalizeUrl(String serviceUrlStr) throws MalformedURLException {
-        URL getCapabilitiesUrl = null;
-        String ret = null;
+        URL getCapabilitiesUrl;
+        String ret;
 
         if (!Pattern.compile(".*GetCapabilities.*", Pattern.CASE_INSENSITIVE).matcher(serviceUrlStr).matches()) {
             // If the url doesn't already have GetCapabilities, add it in
@@ -704,7 +732,7 @@ public class WMSImagery {
     public ImageryInfo toImageryInfo(
             String name, List<LayerDetails> selectedLayers, List<String> selectedStyles, String format, boolean transparent) {
         ImageryInfo i = new ImageryInfo(name, buildGetMapUrl(selectedLayers, selectedStyles, format, transparent));
-        if (selectedLayers != null && !selectedLayers.isEmpty()) {
+        if (!selectedLayers.isEmpty()) {
             i.setServerProjections(getServerProjections(selectedLayers));
         }
         return i;

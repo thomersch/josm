@@ -1,14 +1,12 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.io;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 
-import org.junit.BeforeClass;
-import org.junit.Test;
-import org.openstreetmap.josm.JOSMFixture;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.osm.Changeset;
 import org.openstreetmap.josm.data.osm.User;
 import org.openstreetmap.josm.gui.progress.NullProgressMonitor;
@@ -16,22 +14,13 @@ import org.openstreetmap.josm.gui.progress.NullProgressMonitor;
 /**
  * Unit tests of {@link OsmApi} class.
  */
-public class OsmApiTest {
-
-    /**
-     * Setup test.
-     */
-    @BeforeClass
-    public static void setUp() {
-        JOSMFixture.createUnitTestFixture().init();
-    }
-
+class OsmApiTest {
     /**
      * Non-regression test for <a href="https://josm.openstreetmap.de/ticket/12675">Bug #12675</a>.
      * @throws IllegalDataException if an error occurs
      */
     @Test
-    public void testTicket12675() throws IllegalDataException {
+    void testTicket12675() throws IllegalDataException {
         OsmApi api = OsmApi.getOsmApi();
         Changeset cs = new Changeset();
         cs.setUser(User.getAnonymous());

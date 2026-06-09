@@ -1,60 +1,56 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.gpx;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Date;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.data.DataSource;
 import org.openstreetmap.josm.data.coor.EastNorth;
+import org.openstreetmap.josm.data.coor.ILatLon;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.gpx.GpxData.GpxDataChangeEvent;
 import org.openstreetmap.josm.data.gpx.GpxData.GpxDataChangeListener;
 import org.openstreetmap.josm.data.projection.ProjectionRegistry;
 import org.openstreetmap.josm.io.GpxReaderTest;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.Projection;
 import org.openstreetmap.josm.tools.ListenerList;
+import org.openstreetmap.josm.tools.date.Interval;
 import org.xml.sax.SAXException;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import nl.jqno.equalsverifier.EqualsVerifier;
 import nl.jqno.equalsverifier.Warning;
 
 /**
  * Unit tests for class {@link GpxData}.
  */
-public class GpxDataTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().projection();
-
+@Projection
+class GpxDataTest {
     private GpxData data;
 
     /**
      * Set up empty test data
      */
-    @Before
+    @BeforeEach
     public void setUp() {
         data = new GpxData();
     }
@@ -63,7 +59,7 @@ public class GpxDataTest {
      * Test method for {@link GpxData#mergeFrom(GpxData)}.
      */
     @Test
-    public void testMergeFrom() {
+    void testMergeFrom() {
         GpxTrack track = singleWaypointGpxTrack();
         GpxRoute route = singleWaypointRoute();
         WayPoint newWP = new WayPoint(LatLon.NORTH_POLE);
@@ -92,7 +88,7 @@ public class GpxDataTest {
      * @throws Exception if the track cannot be parsed
      */
     @Test
-    public void testMergeFromFiles() throws Exception {
+    void testMergeFromFiles() throws Exception {
         testMerge(false, false, "Merged-all"); // regular merging
         testMerge(true, false, "Merged-cut"); // cut overlapping tracks, but do not connect them
         testMerge(true, true, "Merged-cut-connect"); // cut overlapping tracks and connect them
@@ -105,7 +101,7 @@ public class GpxDataTest {
         own.mergeFrom(other, cut, connect);
         own.put(GpxConstants.META_BOUNDS, null);
         expected.put(GpxConstants.META_BOUNDS, null); //they are only updated by GpxWriter
-        assertEquals(exp + " didn't match!", expected, own);
+        assertEquals(expected, own, exp + " didn't match!");
     }
 
     private static GpxData getGpx(String file) throws IOException, SAXException {
@@ -116,7 +112,7 @@ public class GpxDataTest {
      * Test method for {@link GpxData#getTracks()},  {@link GpxData#addTrack(IGpxTrack)},  {@link GpxData#removeTrack(IGpxTrack)}.
      */
     @Test
-    public void testTracks() {
+    void testTracks() {
         assertEquals(0, data.getTracks().size());
 
         GpxTrack track1 = emptyGpxTrack();
@@ -137,29 +133,29 @@ public class GpxDataTest {
     /**
      * Test method for {@link GpxData#addTrack(IGpxTrack)}.
      */
-    @Test(expected = IllegalArgumentException.class)
-    public void testAddTrackFails() {
+    @Test
+    void testAddTrackFails() {
         GpxTrack track1 = emptyGpxTrack();
         data.addTrack(track1);
-        data.addTrack(track1);
+        assertThrows(IllegalArgumentException.class, () -> data.addTrack(track1));
     }
 
     /**
      * Test method for {@link GpxData#removeTrack(IGpxTrack)}.
      */
-    @Test(expected = IllegalArgumentException.class)
-    public void testRemoveTrackFails() {
+    @Test
+    void testRemoveTrackFails() {
         GpxTrack track1 = emptyGpxTrack();
         data.addTrack(track1);
         data.removeTrack(track1);
-        data.removeTrack(track1);
+        assertThrows(IllegalArgumentException.class, () -> data.removeTrack(track1));
     }
 
     /**
      * Test method for {@link GpxData#getRoutes()}, {@link GpxData#addRoute(GpxRoute)}, {@link GpxData#removeRoute(GpxRoute)}.
      */
     @Test
-    public void testRoutes() {
+    void testRoutes() {
         assertEquals(0, data.getTracks().size());
 
         GpxRoute route1 = new GpxRoute();
@@ -181,29 +177,29 @@ public class GpxDataTest {
     /**
      * Test method for {@link GpxData#addRoute(GpxRoute)}.
      */
-    @Test(expected = IllegalArgumentException.class)
-    public void testAddRouteFails() {
+    @Test
+    void testAddRouteFails() {
         GpxRoute route1 = new GpxRoute();
         data.addRoute(route1);
-        data.addRoute(route1);
+        assertThrows(IllegalArgumentException.class, () -> data.addRoute(route1));
     }
 
     /**
      * Test method for {@link GpxData#removeRoute(GpxRoute)}.
      */
-    @Test(expected = IllegalArgumentException.class)
-    public void testRemoveRouteFails() {
+    @Test
+    void testRemoveRouteFails() {
         GpxRoute route1 = new GpxRoute();
         data.addRoute(route1);
         data.removeRoute(route1);
-        data.removeRoute(route1);
+        assertThrows(IllegalArgumentException.class, () -> data.removeRoute(route1));
     }
 
     /**
      * Test method for {@link GpxData#getWaypoints()}, {@link GpxData#addWaypoint(WayPoint)}, {@link GpxData#removeWaypoint(WayPoint)}.
      */
     @Test
-    public void testWaypoints() {
+    void testWaypoints() {
         assertEquals(0, data.getTracks().size());
 
         WayPoint waypoint1 = new WayPoint(LatLon.ZERO);
@@ -224,29 +220,29 @@ public class GpxDataTest {
     /**
      * Test method for {@link GpxData#addWaypoint(WayPoint)}.
      */
-    @Test(expected = IllegalArgumentException.class)
-    public void testAddWaypointFails() {
+    @Test
+    void testAddWaypointFails() {
         WayPoint waypoint1 = new WayPoint(LatLon.ZERO);
         data.addWaypoint(waypoint1);
-        data.addWaypoint(waypoint1);
+        assertThrows(IllegalArgumentException.class, () -> data.addWaypoint(waypoint1));
     }
 
     /**
      * Test method for {@link GpxData#removeWaypoint(WayPoint)}.
      */
-    @Test(expected = IllegalArgumentException.class)
-    public void testRemoveWaypointFails() {
+    @Test
+    void testRemoveWaypointFails() {
         WayPoint waypoint1 = new WayPoint(LatLon.ZERO);
         data.addWaypoint(waypoint1);
         data.removeWaypoint(waypoint1);
-        data.removeWaypoint(waypoint1);
+        assertThrows(IllegalArgumentException.class, () -> data.removeWaypoint(waypoint1));
     }
 
     /**
      * Test method for {@link GpxData#hasTrackPoints()}.
      */
     @Test
-    public void testHasTrackPoints() {
+    void testHasTrackPoints() {
         assertFalse(data.hasTrackPoints());
         GpxTrack track1 = emptyGpxTrack();
         data.addTrack(track1);
@@ -260,7 +256,7 @@ public class GpxDataTest {
      * Test method for {@link GpxData#getTrackPoints()}.
      */
     @Test
-    public void testGetTrackPoints() {
+    void testGetTrackPoints() {
         assertEquals(0, data.getTrackPoints().count());
         GpxTrack track1 = singleWaypointGpxTrack();
         data.addTrack(track1);
@@ -274,7 +270,7 @@ public class GpxDataTest {
      * Test method for {@link GpxData#hasRoutePoints()}.
      */
     @Test
-    public void testHasRoutePoints() {
+    void testHasRoutePoints() {
 
     }
 
@@ -282,7 +278,7 @@ public class GpxDataTest {
      * Test method for {@link GpxData#isEmpty()}.
      */
     @Test
-    public void testIsEmpty() {
+    void testIsEmpty() {
         GpxTrack track1 = singleWaypointGpxTrack();
         WayPoint waypoint = new WayPoint(LatLon.ZERO);
         GpxRoute route = singleWaypointRoute();
@@ -309,7 +305,7 @@ public class GpxDataTest {
      * Test method for {@link GpxData#length()}.
      */
     @Test
-    public void testLength() {
+    void testLength() {
         GpxTrack track1 = waypointGpxTrack(
                 new WayPoint(new LatLon(0, 0)),
                 new WayPoint(new LatLon(1, 1)),
@@ -319,45 +315,67 @@ public class GpxDataTest {
                 new WayPoint(new LatLon(-1, 1)));
         data.addTrack(track1);
         data.addTrack(track2);
-        assertEquals(3 * new LatLon(0, 0).greatCircleDistance(new LatLon(1, 1)), data.length(), 1);
+        assertEquals(3 * new LatLon(0, 0).greatCircleDistance((ILatLon) new LatLon(1, 1)), data.length(), 1);
+    }
 
+    /**
+     * Test method for {@link GpxData#getOrderedTracks()}.
+     */
+    @Test
+    void testGetOrderedTracks() {
+        assertTrue(data.getOrderedTracks().isEmpty());
+
+        WayPoint p1 = new WayPoint(LatLon.NORTH_POLE);
+        WayPoint p2 = new WayPoint(LatLon.NORTH_POLE);
+
+        p1.setInstant(Instant.ofEpochMilli(100020));
+        p2.setInstant(Instant.ofEpochMilli(200020));
+
+        data.addTrack(new GpxTrack(Collections.singletonList(Collections.singletonList(p2)), Collections.emptyMap()));
+        data.addTrack(new GpxTrack(Collections.singletonList(Collections.singletonList(p1)), Collections.emptyMap()));
+
+        List<IGpxTrack> tracks = data.getOrderedTracks();
+        assertEquals(2, tracks.size());
+
+        assertEquals(p1, tracks.get(0).getSegments().iterator().next().getWayPoints().iterator().next());
+        assertEquals(p2, tracks.get(1).getSegments().iterator().next().getWayPoints().iterator().next());
     }
 
     /**
      * Test method for {@link GpxData#getMinMaxTimeForAllTracks()}.
      */
     @Test
-    public void testGetMinMaxTimeForAllTracks() {
-        assertEquals(0, data.getMinMaxTimeForAllTracks().length);
+    void testGetMinMaxTimeForAllTracks() {
+        assertFalse(data.getMinMaxTimeForAllTracks().isPresent());
 
         WayPoint p1 = new WayPoint(LatLon.NORTH_POLE);
         WayPoint p2 = new WayPoint(LatLon.NORTH_POLE);
         WayPoint p3 = new WayPoint(LatLon.NORTH_POLE);
         WayPoint p4 = new WayPoint(LatLon.NORTH_POLE);
         WayPoint p5 = new WayPoint(LatLon.NORTH_POLE);
-        p1.setTime(new Date(200020));
-        p2.setTime(new Date(100020));
-        p4.setTime(new Date(500020));
-        data.addTrack(new GpxTrack(Arrays.asList(Arrays.asList(p1, p2)), Collections.emptyMap()));
-        data.addTrack(new GpxTrack(Arrays.asList(Arrays.asList(p3, p4, p5)), Collections.emptyMap()));
+        p1.setInstant(Instant.ofEpochMilli(200020));
+        p2.setInstant(Instant.ofEpochMilli(100020));
+        p4.setInstant(Instant.ofEpochMilli(500020));
+        data.addTrack(new GpxTrack(Collections.singletonList(Arrays.asList(p1, p2)), Collections.emptyMap()));
+        data.addTrack(new GpxTrack(Collections.singletonList(Arrays.asList(p3, p4, p5)), Collections.emptyMap()));
 
-        Date[] times = data.getMinMaxTimeForAllTracks();
-        assertEquals(times.length, 2);
-        assertEquals(new Date(100020), times[0]);
-        assertEquals(new Date(500020), times[1]);
+        Interval times = data.getMinMaxTimeForAllTracks().orElse(null);
+        assertEquals("1970-01-01T00:01:40.020Z/1970-01-01T00:08:20.020Z", times.toString());
+        assertEquals(Instant.ofEpochMilli(100020), times.getStart());
+        assertEquals(Instant.ofEpochMilli(500020), times.getEnd());
     }
 
     /**
      * Test method for {@link GpxData#nearestPointOnTrack(org.openstreetmap.josm.data.coor.EastNorth, double)}.
      */
     @Test
-    public void testNearestPointOnTrack() {
+    void testNearestPointOnTrack() {
         List<WayPoint> points = Stream
                 .of(new EastNorth(10, 10), new EastNorth(10, 0), new EastNorth(-1, 0))
                 .map(ProjectionRegistry.getProjection()::eastNorth2latlon)
                 .map(WayPoint::new)
                 .collect(Collectors.toList());
-        data.addTrack(new GpxTrack(Arrays.asList(points), Collections.emptyMap()));
+        data.addTrack(new GpxTrack(Collections.singletonList(points), Collections.emptyMap()));
 
         WayPoint closeToMiddle = data.nearestPointOnTrack(new EastNorth(10, 0), 10);
         assertEquals(points.get(1), closeToMiddle);
@@ -377,17 +395,17 @@ public class GpxDataTest {
      * Test method for {@link GpxData#getDataSources()}.
      */
     @Test
-    public void testGetDataSources() {
+    void testGetDataSources() {
         DataSource ds = new DataSource(new Bounds(0, 0, 1, 1), "test");
         data.dataSources.add(ds);
-        assertEquals(new ArrayList<>(Arrays.asList(ds)), new ArrayList<>(data.getDataSources()));
+        assertEquals(new ArrayList<>(Collections.singletonList(ds)), new ArrayList<>(data.getDataSources()));
     }
 
     /**
      * Test method for {@link GpxData#getDataSourceArea()}.
      */
     @Test
-    public void testGetDataSourceArea() {
+    void testGetDataSourceArea() {
         DataSource ds = new DataSource(new Bounds(0, 0, 1, 1), "test");
         data.dataSources.add(ds);
         assertNotNull(data.getDataSourceArea());
@@ -399,11 +417,11 @@ public class GpxDataTest {
      * Test method for {@link GpxData#getDataSourceBounds()}.
      */
     @Test
-    public void testGetDataSourceBounds() {
+    void testGetDataSourceBounds() {
         Bounds bounds = new Bounds(0, 0, 1, 1);
         DataSource ds = new DataSource(bounds, "test");
         data.dataSources.add(ds);
-        assertEquals(Arrays.asList(bounds), data.getDataSourceBounds());
+        assertEquals(Collections.singletonList(bounds), data.getDataSourceBounds());
     }
 
     /**
@@ -412,7 +430,7 @@ public class GpxDataTest {
      * {@link GpxData#removeChangeListener(GpxData.GpxDataChangeListener)}.
      */
     @Test
-    public void testChangeListener() {
+    void testChangeListener() {
         TestChangeListener cl1 = new TestChangeListener();
         TestChangeListener cl2 = new TestChangeListener();
 
@@ -440,7 +458,7 @@ public class GpxDataTest {
         assertNull(cl2.lastEvent);
     }
 
-    private static class TestChangeListener implements GpxDataChangeListener {
+    private static final class TestChangeListener implements GpxDataChangeListener {
 
         private GpxDataChangeEvent lastEvent;
 
@@ -473,17 +491,26 @@ public class GpxDataTest {
      * Unit test of methods {@link GpxData#equals} and {@link GpxData#hashCode}.
      */
     @Test
-    public void testEqualsContract() {
+    void testEqualsContract() {
         TestUtils.assumeWorkingEqualsVerifier();
         GpxExtensionCollection col = new GpxExtensionCollection();
         col.add("josm", "from-server", "true");
+        Collection<Collection<WayPoint>> trackSegs1 = new ArrayList<Collection<WayPoint>>();
+        Collection<Collection<WayPoint>> trackSegs2 = new ArrayList<Collection<WayPoint>>();
+        Collection<WayPoint> wps = new ArrayList<WayPoint>();
+        wps.add(new WayPoint(LatLon.SOUTH_POLE));
+        trackSegs2.add(wps);
+        Map<String, Object> attributes1 = new HashMap<String, Object>();
+        Map<String, Object> attributes2 = new HashMap<String, Object>();
+        attributes2.put("test", "test");
         EqualsVerifier.forClass(GpxData.class).usingGetClass()
             .suppress(Warning.NONFINAL_FIELDS)
-            .withIgnoredFields("creator", "fromServer", "storageFile", "initializing", "updating",
+            .withIgnoredFields("creator", "fromServer", "fromSession", "storageFile", "initializing", "updating",
                     "suppressedInvalidate", "listeners", "tracks", "routes", "waypoints", "proxy", "segSpans", "modified")
             .withPrefabValues(WayPoint.class, new WayPoint(LatLon.NORTH_POLE), new WayPoint(LatLon.SOUTH_POLE))
             .withPrefabValues(ListenerList.class, ListenerList.create(), ListenerList.create())
             .withPrefabValues(GpxExtensionCollection.class, new GpxExtensionCollection(), col)
+            .withPrefabValues(IGpxTrack.class, new GpxTrack(trackSegs1, attributes1), new GpxTrack(trackSegs2, attributes2))
             .verify();
     }
 }

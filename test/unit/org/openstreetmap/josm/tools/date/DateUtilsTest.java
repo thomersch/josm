@@ -1,47 +1,46 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.tools.date;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNotSame;
-import static org.junit.Assert.assertNull;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.text.DateFormat;
+import java.time.Instant;
+import java.time.format.FormatStyle;
 import java.util.Date;
 import java.util.Random;
 import java.util.TimeZone;
 import java.util.concurrent.ForkJoinPool;
 
-import org.junit.Ignore;
-import org.junit.Rule;
-import org.junit.Test;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.hamcrest.CoreMatchers;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
+import org.openstreetmap.josm.testutils.annotations.I18n;
 import org.openstreetmap.josm.tools.UncheckedParseException;
+import org.openstreetmap.josm.tools.Utils;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import net.trajano.commons.testing.UtilityClassTestUtil;
 
 /**
  * Unit tests of {@link DateUtils} class.
  */
+@BasicPreferences
+@I18n
 public class DateUtilsTest {
-
-    /**
-     * Set the timezone and timeout.
-     * <p>
-     * Timeouts need to be disabled because we change the time zone.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().i18n().preferences();
-
     /**
      * Tests that {@code DateUtils} satisfies utility class criteria.
      * @throws ReflectiveOperationException if an error occurs
      */
     @Test
-    public void testUtilityClass() throws ReflectiveOperationException {
+    void testUtilityClass() throws ReflectiveOperationException {
         UtilityClassTestUtil.assertUtilityClassWellDefined(DateUtils.class);
     }
 
@@ -57,7 +56,7 @@ public class DateUtilsTest {
      * Test to parse date as returned for map data.
      */
     @Test
-    public void testMapDate() {
+    void testMapDate() {
         assertEquals(1344870637000L, DateUtils.fromString("2012-08-13T15:10:37Z").getTime());
     }
 
@@ -65,7 +64,7 @@ public class DateUtilsTest {
      * Test to parse date as returned for note data.
      */
     @Test
-    public void testNoteDate() {
+    void testNoteDate() {
         assertEquals(1417298930000L, DateUtils.fromString("2014-11-29 22:08:50 UTC").getTime());
     }
 
@@ -73,7 +72,7 @@ public class DateUtilsTest {
      * Test to parse date as used in EXIF structures.
      */
     @Test
-    public void testExifDate() {
+    void testExifDate() {
         assertEquals(1443038712000L, DateUtils.fromString("2015:09:23 20:05:12").getTime());
         assertEquals(1443038712888L, DateUtils.fromString("2015:09:23 20:05:12.888").getTime());
     }
@@ -82,7 +81,7 @@ public class DateUtilsTest {
      * Test to parse date as used in GPX files
      */
     @Test
-    public void testGPXDate() {
+    void testGPXDate() {
         assertEquals(1277465405000L, DateUtils.fromString("2010-06-25T11:30:05.000Z").getTime());
     }
 
@@ -90,7 +89,7 @@ public class DateUtilsTest {
      * Test to parse date as defined in <a href="https://tools.ietf.org/html/rfc3339">RFC 3339</a>
      */
     @Test
-    public void testRfc3339() {
+    void testRfc3339() {
         // examples taken from RFC
         assertEquals(482196050520L, DateUtils.fromString("1985-04-12T23:20:50.52Z").getTime());
         assertEquals(851042397000L, DateUtils.fromString("1996-12-19T16:39:57-08:00").getTime());
@@ -101,19 +100,28 @@ public class DateUtilsTest {
         assertEquals(473385600000L, DateUtils.fromString("1985").getTime());
     }
 
+    @Test
+    void testRtklib() {
+        // examples taken from rtklib .pos files
+        assertEquals("2019-04-21T08:20:32Z", DateUtils.parseInstant("2019/04/21 08:20:32").toString());
+        assertEquals("2019-06-08T08:23:12.123Z", DateUtils.parseInstant("2019/06/08 08:23:12.123").toString());
+        assertEquals("2021-03-30T15:04:01.123456Z", DateUtils.parseInstant("2021/03/30 15:04:01.123456").toString());
+    }
+
     /**
      * Verifies that parsing an illegal date throws a {@link UncheckedParseException}
      */
-    @Test(expected = UncheckedParseException.class)
-    public void testIllegalDate() {
-        DateUtils.fromString("2014-");
+    @ParameterizedTest
+    @ValueSource(strings = {"2014-", "2014-01-", "2014-01-01T", "2014-00-01", "2014-01-00"})
+    void testIllegalDate(String date) {
+        assertThrows(UncheckedParseException.class, () -> DateUtils.fromString(date));
     }
 
     /**
      * Tests that formatting a date w/ milliseconds does not cause incorrect parsing afterwards
      */
     @Test
-    public void testFormattingMillisecondsDoesNotCauseIncorrectParsing() {
+    void testFormattingMillisecondsDoesNotCauseIncorrectParsing() {
         DateUtils.fromDate(new Date(123));
         assertEquals(1453694709000L, DateUtils.fromString("2016-01-25T04:05:09.000Z").getTime());
         assertEquals(1453694709200L, DateUtils.fromString("2016-01-25T04:05:09.200Z").getTime());
@@ -124,7 +132,7 @@ public class DateUtilsTest {
      * Unit test of {@link DateUtils#fromTimestamp} method.
      */
     @Test
-    public void testFromTimestamp() {
+    void testFromTimestamp() {
         assertEquals("1970-01-01T00:00:00Z", DateUtils.fromTimestamp(0));
         assertEquals("2001-09-09T01:46:40Z", DateUtils.fromTimestamp(1000000000));
         assertEquals("2038-01-19T03:14:07Z", DateUtils.fromTimestamp(Integer.MAX_VALUE));
@@ -134,7 +142,7 @@ public class DateUtilsTest {
      * Unit test of {@link DateUtils#fromDate} method.
      */
     @Test
-    public void testFromDate() {
+    void testFromDate() {
         assertEquals("1970-01-01T00:00:00Z", DateUtils.fromDate(new Date(0)));
         assertEquals("1970-01-01T00:00:00.1Z", DateUtils.fromDate(new Date(100)));
         assertEquals("1970-01-01T00:00:00.12Z", DateUtils.fromDate(new Date(120)));
@@ -146,22 +154,28 @@ public class DateUtilsTest {
      * Unit test of {@link DateUtils#formatTime} method.
      */
     @Test
-    public void testFormatTime() {
-        assertEquals("12:00 AM", DateUtils.formatTime(new Date(0), DateFormat.SHORT));
-        assertEquals("1:00 AM", DateUtils.formatTime(new Date(60 * 60 * 1000), DateFormat.SHORT));
-        assertEquals("12:00 AM", DateUtils.formatTime(new Date(999), DateFormat.SHORT));
+    void testFormatTime() {
+        // Somewhere between Java 17 and Java 21, a non-breaking space replaced the original space between the time and AM/PM.
+        final var separator = Utils.getJavaVersion() >= 21 ? '\u202f' : ' ';
+        final var twelveAM = "12:00" + separator + "AM";
+        assertEquals(twelveAM, DateUtils.formatTime(new Date(0), DateFormat.SHORT));
+        assertEquals("1:00" + separator + "AM", DateUtils.formatTime(new Date(60 * 60 * 1000), DateFormat.SHORT));
+        assertEquals(twelveAM, DateUtils.formatTime(new Date(999), DateFormat.SHORT));
         // ignore seconds
-        assertEquals("12:00 AM", DateUtils.formatTime(new Date(5999), DateFormat.SHORT));
+        assertEquals(twelveAM, DateUtils.formatTime(new Date(5999), DateFormat.SHORT));
 
         setTimeZone(TimeZone.getTimeZone("Europe/Berlin"));
-        assertEquals("1:00:00 AM CET", DateUtils.formatTime(new Date(0), DateFormat.LONG));
+        String p1 = "1:00:00" + separator + "AM GMT+01:00";
+        String p2 = "1:00:00" + separator + "AM CET";
+        assertThat("This is mostly dependent upon java.locale.providers.", DateUtils.formatTime(new Date(0), DateFormat.LONG),
+            CoreMatchers.anyOf(CoreMatchers.is(p1), CoreMatchers.is(p2)));
     }
 
     /**
      * Unit test of {@link DateUtils#formatDate} method.
      */
     @Test
-    public void testFormatDate() {
+    void testFormatDate() {
         assertEquals("1/1/70", DateUtils.formatDate(new Date(123), DateFormat.SHORT));
         assertEquals("January 1, 1970", DateUtils.formatDate(new Date(123), DateFormat.LONG));
     }
@@ -170,7 +184,7 @@ public class DateUtilsTest {
      * Unit test of {@link DateUtils#tsFromString} method.
      */
     @Test
-    public void testTsFromString() {
+    void testTsFromString() {
         // UTC times
         assertEquals(1459641600000L, DateUtils.tsFromString("2016-04-03"));
         assertEquals(1459695600000L, DateUtils.tsFromString("2016-04-03T15:00:00Z"));
@@ -203,8 +217,8 @@ public class DateUtilsTest {
     }
 
     @Test
-    @Ignore("slow; use for thread safety testing")
-    public void testTsFromString800k() throws Exception {
+    @Disabled("slow; use for thread safety testing")
+    void testTsFromString800k() throws Exception {
         new ForkJoinPool(64).submit(() -> new Random()
                 .longs(800_000)
                 .parallel()
@@ -214,24 +228,24 @@ public class DateUtilsTest {
     /**
      * Unit test of {@link DateUtils#tsFromString} method.
      */
-    @Test(expected = UncheckedParseException.class)
-    public void testTsFromStringInvalid1() {
-        DateUtils.tsFromString("foobar");
+    @Test
+    void testTsFromStringInvalid1() {
+        assertThrows(UncheckedParseException.class, () -> DateUtils.tsFromString("foobar"));
     }
 
     /**
      * Unit test of {@link DateUtils#tsFromString} method.
      */
-    @Test(expected = UncheckedParseException.class)
-    public void testTsFromStringInvalid2() {
-        DateUtils.tsFromString("2016/04/03");
+    @Test
+    void testTsFromStringInvalid2() {
+        assertThrows(UncheckedParseException.class, () -> DateUtils.tsFromString("2016/04/03"));
     }
 
     /**
      * Unit test of {@link DateUtils#getDateFormat} method.
      */
     @Test
-    public void testGetDateFormat() {
+    void testGetDateFormat() {
         Boolean iso = DateUtils.PROP_ISO_DATES.get();
         try {
             DateFormat f1 = DateUtils.getDateFormat(DateFormat.SHORT);
@@ -240,6 +254,8 @@ public class DateUtilsTest {
             DateFormat f2 = DateUtils.getDateFormat(DateFormat.SHORT);
             assertNotNull(f1);
             assertNotEquals(f1, f2);
+            DateUtils.PROP_ISO_DATES.put(true);
+            assertEquals("2006-01-02", DateUtils.getDateFormatter(null).format(Instant.parse("2006-01-02T15:04:05.777Z")));
         } finally {
             DateUtils.PROP_ISO_DATES.put(iso);
         }
@@ -249,7 +265,7 @@ public class DateUtilsTest {
      * Unit test of {@link DateUtils#getTimeFormat} method.
      */
     @Test
-    public void testTimeFormat() {
+    void testTimeFormat() {
         Boolean iso = DateUtils.PROP_ISO_DATES.get();
         try {
             DateFormat f1 = DateUtils.getTimeFormat(DateFormat.SHORT);
@@ -258,16 +274,55 @@ public class DateUtilsTest {
             DateFormat f2 = DateUtils.getTimeFormat(DateFormat.SHORT);
             assertNotNull(f1);
             assertNotEquals(f1, f2);
+            DateUtils.PROP_ISO_DATES.put(true);
+            assertEquals("15:04:05.777", DateUtils.getTimeFormatter(null).format(Instant.parse("2006-01-02T15:04:05.777Z")));
+            assertEquals("15:04:05", DateUtils.getTimeFormatter(null).format(Instant.parse("2006-01-02T15:04:05Z")));
+            assertEquals("15:04:00", DateUtils.getTimeFormatter(null).format(Instant.parse("2006-01-02T15:04:00Z")));
         } finally {
             DateUtils.PROP_ISO_DATES.put(iso);
         }
     }
 
     @Test
-    public void testCloneDate() {
+    void testCloneDate() {
         assertNull(DateUtils.cloneDate(null));
         final Date date = new Date(1453694709000L);
         assertEquals(date, DateUtils.cloneDate(date));
         assertNotSame(date, DateUtils.cloneDate(date));
+    }
+
+    /**
+     * Unit test of {@link DateUtils#getDateTimeFormatter} method.
+     */
+    @Test
+    void testDateTimeFormatter() {
+        Instant instant = Instant.parse("2006-01-02T15:04:05.777Z");
+        Boolean iso = DateUtils.PROP_ISO_DATES.get();
+        try {
+            assertNotNull(DateUtils.getDateFormatter(FormatStyle.SHORT).format(instant));
+            assertNotNull(DateUtils.getTimeFormatter(FormatStyle.SHORT).format(instant));
+            assertNotNull(DateUtils.getDateTimeFormatter(FormatStyle.SHORT, FormatStyle.SHORT).format(instant));
+            DateUtils.PROP_ISO_DATES.put(!iso);
+            assertNotNull(DateUtils.getDateFormatter(FormatStyle.SHORT).format(instant));
+            assertNotNull(DateUtils.getTimeFormatter(FormatStyle.SHORT).format(instant));
+            assertNotNull(DateUtils.getDateTimeFormatter(FormatStyle.SHORT, FormatStyle.SHORT).format(instant));
+            DateUtils.PROP_ISO_DATES.put(true);
+            assertEquals("2006-01-02 15:04:05.777", DateUtils.getDateTimeFormatter(null, null).format(instant));
+            assertEquals(Instant.parse("2006-01-02T15:04:05.000Z"),
+                    DateUtils.getDateTimeFormatter(null, null).parse("2006-01-02 15:04:05", Instant::from));
+            assertEquals(Instant.parse("2006-01-02T15:04:00.000Z"),
+                    DateUtils.getDateTimeFormatter(null, null).parse("2006-01-02 15:04", Instant::from));
+        } finally {
+            DateUtils.PROP_ISO_DATES.put(iso);
+        }
+    }
+
+    /**
+     * Some Java version use narrow no-break space ("NNBSP") instead of a space.
+     * @param time The time string with NNBSP instead of a space
+     * @return The time with spaces instead of NNBSP
+     */
+    private static String replaceWhitespace(String time) {
+        return time.replace((char) 8239 /* "NNBSP" */, ' ');
     }
 }

@@ -8,6 +8,7 @@ import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
@@ -87,7 +88,7 @@ public class OSMDownloadSource implements DownloadSource<List<IDownloadSourceTyp
                 Future<?> future = task.download(new DownloadParams().withNewLayer(newLayer), bbox, null);
                 MainApplication.worker.submit(new PostDownloadHandler(task, future));
                 if (zoom) {
-                    tasks.add(new Pair<AbstractDownloadTask<?>, Future<?>>(task, future));
+                    tasks.add(new Pair<>(task, future));
                 }
             } catch (InstantiationException | IllegalAccessException | IllegalArgumentException
                     | InvocationTargetException | NoSuchMethodException | SecurityException e) {
@@ -108,7 +109,10 @@ public class OSMDownloadSource implements DownloadSource<List<IDownloadSourceTyp
                         } else if (b != null) {
                             bounds.extend(b);
                         }
-                    } catch (InterruptedException | ExecutionException ex) {
+                    } catch (InterruptedException ex) {
+                        Thread.currentThread().interrupt();
+                        Logging.warn(ex);
+                    } catch (ExecutionException ex) {
                         Logging.warn(ex);
                     }
                 }
@@ -192,6 +196,8 @@ public class OSMDownloadSource implements DownloadSource<List<IDownloadSourceTyp
         /** This is used to keep track of the components for download sources, and to dynamically update/remove them */
         private final JPanel downloadSourcesPanel;
 
+        private boolean inRestore /* = false */;
+
         private final ChangeListener checkboxChangeListener;
 
         /**
@@ -211,17 +217,19 @@ public class OSMDownloadSource implements DownloadSource<List<IDownloadSourceTyp
             setLayout(new GridBagLayout());
 
             // size check depends on selected data source
-            checkboxChangeListener = e ->
-                    dialog.getSelectedDownloadArea().ifPresent(this::updateSizeCheck);
+            checkboxChangeListener = e -> {
+                rememberSettings();
+                dialog.getSelectedDownloadArea().ifPresent(this::boundingBoxChanged);
+            };
 
             downloadSourcesPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-            add(downloadSourcesPanel, GBC.eol().fill(GBC.HORIZONTAL));
+            add(downloadSourcesPanel, GBC.eol().fill(GridBagConstraints.HORIZONTAL));
             updateSources();
 
             sizeCheck.setFont(sizeCheck.getFont().deriveFont(Font.PLAIN));
             JPanel sizeCheckPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
             sizeCheckPanel.add(sizeCheck);
-            add(sizeCheckPanel, GBC.eol().fill(GBC.HORIZONTAL));
+            add(sizeCheckPanel, GBC.eol().fill(GridBagConstraints.HORIZONTAL));
 
             setMinimumSize(new Dimension(450, 115));
         }
@@ -249,13 +257,16 @@ public class OSMDownloadSource implements DownloadSource<List<IDownloadSourceTyp
 
         @Override
         public void rememberSettings() {
-            DOWNLOAD_SOURCES.forEach(type -> type.getBooleanProperty().put(type.getCheckBox().isSelected()));
+            if (!inRestore)
+                DOWNLOAD_SOURCES.forEach(type -> type.getBooleanProperty().put(type.getCheckBox().isSelected()));
         }
 
         @Override
         public void restoreSettings() {
+            inRestore = true;
             updateSources();
             DOWNLOAD_SOURCES.forEach(type -> type.getCheckBox().setSelected(type.isEnabled()));
+            inRestore = false;
         }
 
         @Override
@@ -269,7 +280,7 @@ public class OSMDownloadSource implements DownloadSource<List<IDownloadSourceTyp
             /*
              * It is mandatory to specify the area to download from OSM.
              */
-            if (!settings.getDownloadBounds().isPresent()) {
+            if (settings.getDownloadBounds().isEmpty()) {
                 JOptionPane.showMessageDialog(
                         this.getParent(),
                         tr("Please select a download area first."),
@@ -280,7 +291,7 @@ public class OSMDownloadSource implements DownloadSource<List<IDownloadSourceTyp
                 return false;
             }
 
-            final Boolean slippyMapShowsDownloadBounds = settings.getSlippyMapBounds()
+            final boolean slippyMapShowsDownloadBounds = settings.getSlippyMapBounds()
                     .map(b -> b.intersects(settings.getDownloadBounds().get()))
                     .orElse(true);
             if (!slippyMapShowsDownloadBounds) {
@@ -317,39 +328,6 @@ public class OSMDownloadSource implements DownloadSource<List<IDownloadSourceTyp
             return true;
         }
 
-        /**
-         * Replies true if the user selected to download OSM data
-         *
-         * @return true if the user selected to download OSM data
-         * @deprecated since 16503 -- use {@code getDownloadType(OsmDataDownloadType.class).getCheckBox().isSelected()}
-         */
-        @Deprecated
-        public boolean isDownloadOsmData() {
-            return getDownloadType(OsmDataDownloadType.class).getCheckBox().isSelected();
-        }
-
-        /**
-         * Replies true if the user selected to download GPX data
-         *
-         * @return true if the user selected to download GPX data
-         * @deprecated since 16503 -- use {@code getDownloadType(GpsDataDownloadType.class).getCheckBox().isSelected()}
-         */
-        @Deprecated
-        public boolean isDownloadGpxData() {
-            return getDownloadType(GpsDataDownloadType.class).getCheckBox().isSelected();
-        }
-
-        /**
-         * Replies true if user selected to download notes
-         *
-         * @return true if user selected to download notes
-         * @deprecated since 16503 -- use {@code getDownloadType(NotesDataDownloadType.class).getCheckBox().isSelected()}
-         */
-        @Deprecated
-        public boolean isDownloadNotes() {
-            return getDownloadType(NotesDataDownloadType.class).getCheckBox().isSelected();
-        }
-
         @Override
         public Icon getIcon() {
             return ImageProvider.get("download");
@@ -357,15 +335,6 @@ public class OSMDownloadSource implements DownloadSource<List<IDownloadSourceTyp
 
         @Override
         public void boundingBoxChanged(Bounds bbox) {
-            updateSizeCheck(bbox);
-        }
-
-        @Override
-        public String getSimpleName() {
-            return SIMPLE_NAME;
-        }
-
-        private void updateSizeCheck(Bounds bbox) {
             if (bbox == null) {
                 sizeCheck.setText(tr("No area selected yet"));
                 sizeCheck.setForeground(Color.darkGray);
@@ -373,7 +342,13 @@ public class OSMDownloadSource implements DownloadSource<List<IDownloadSourceTyp
             }
 
             displaySizeCheckResult(DOWNLOAD_SOURCES.stream()
+                    .filter(IDownloadSourceType::isEnabled)
                     .anyMatch(type -> type.isDownloadAreaTooLarge(bbox)));
+        }
+
+        @Override
+        public String getSimpleName() {
+            return SIMPLE_NAME;
         }
 
         private void displaySizeCheckResult(boolean isAreaTooLarge) {
@@ -387,32 +362,7 @@ public class OSMDownloadSource implements DownloadSource<List<IDownloadSourceTyp
         }
     }
 
-    /**
-     * Encapsulates data that is required to download from the OSM server.
-     */
-    static class OSMDownloadData {
-
-        private final List<IDownloadSourceType> downloadPossibilities;
-
-        /**
-         * Constructs a new {@code OSMDownloadData}.
-         * @param downloadPossibilities A list of DataDownloadTypes (instantiated, with
-         *                              options set)
-         */
-        OSMDownloadData(List<IDownloadSourceType> downloadPossibilities) {
-            this.downloadPossibilities = downloadPossibilities;
-        }
-
-        /**
-         * Returns the download possibilities.
-         * @return A list of DataDownloadTypes (instantiated, with options set)
-         */
-        public List<IDownloadSourceType> getDownloadPossibilities() {
-            return downloadPossibilities;
-        }
-    }
-
-    private static class OsmDataDownloadType implements IDownloadSourceType {
+    private static final class OsmDataDownloadType implements IDownloadSourceType {
         static final BooleanProperty IS_ENABLED = new BooleanProperty("download.osm.data", true);
         JCheckBox cbDownloadOsmData;
 
@@ -447,12 +397,12 @@ public class OSMDownloadSource implements DownloadSource<List<IDownloadSourceTyp
         @Override
         public boolean isDownloadAreaTooLarge(Bounds bound) {
             // see max_request_area in
-            // https://github.com/openstreetmap/openstreetmap-website/blob/master/config/example.application.yml
+            // https://github.com/openstreetmap/openstreetmap-website/blob/master/config/settings.yml
             return bound.getArea() > Config.getPref().getDouble("osm-server.max-request-area", 0.25);
         }
     }
 
-    private static class GpsDataDownloadType implements IDownloadSourceType {
+    private static final class GpsDataDownloadType implements IDownloadSourceType {
         static final BooleanProperty IS_ENABLED = new BooleanProperty("download.osm.gps", false);
         private JCheckBox cbDownloadGpxData;
 
@@ -490,7 +440,7 @@ public class OSMDownloadSource implements DownloadSource<List<IDownloadSourceTyp
         }
     }
 
-    private static class NotesDataDownloadType implements IDownloadSourceType {
+    private static final class NotesDataDownloadType implements IDownloadSourceType {
         static final BooleanProperty IS_ENABLED = new BooleanProperty("download.osm.notes", false);
         private JCheckBox cbDownloadNotes;
 
@@ -525,7 +475,7 @@ public class OSMDownloadSource implements DownloadSource<List<IDownloadSourceTyp
         @Override
         public boolean isDownloadAreaTooLarge(Bounds bound) {
             // see max_note_request_area in
-            // https://github.com/openstreetmap/openstreetmap-website/blob/master/config/example.application.yml
+            // https://github.com/openstreetmap/openstreetmap-website/blob/master/config/settings.yml
             return bound.getArea() > Config.getPref().getDouble("osm-server.max-request-area-notes", 25);
         }
     }

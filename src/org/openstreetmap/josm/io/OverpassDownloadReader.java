@@ -11,13 +11,17 @@ import java.time.LocalDateTime;
 import java.time.Period;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.time.format.DateTimeParseException;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
@@ -44,6 +48,7 @@ import org.openstreetmap.josm.tools.HttpClient;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.UncheckedParseException;
 import org.openstreetmap.josm.tools.Utils;
+import org.openstreetmap.josm.tools.date.DateUtils;
 
 /**
  * Read content from an Overpass server.
@@ -93,7 +98,7 @@ public class OverpassDownloadReader extends BoundingBoxDownloader {
      * Possible Overpass API output format, with the {@code [out:<directive>]} statement.
      * @since 11916
      */
-    public enum OverpassOutpoutFormat {
+    public enum OverpassOutputFormat {
         /** Default output format: plain OSM XML */
         OSM_XML("xml"),
         /** OSM JSON format (not GeoJson) */
@@ -109,7 +114,7 @@ public class OverpassDownloadReader extends BoundingBoxDownloader {
 
         private final String directive;
 
-        OverpassOutpoutFormat(String directive) {
+        OverpassOutputFormat(String directive) {
             this.directive = directive;
         }
 
@@ -122,13 +127,13 @@ public class OverpassDownloadReader extends BoundingBoxDownloader {
         }
 
         /**
-         * Returns the {@code OverpassOutpoutFormat} matching the given directive.
+         * Returns the {@code OverpassOutputFormat} matching the given directive.
          * @param directive directive used in {@code [out:<directive>]} statement
-         * @return {@code OverpassOutpoutFormat} matching the given directive
+         * @return {@code OverpassOutputFormat} matching the given directive
          * @throws IllegalArgumentException in case of invalid directive
          */
-        static OverpassOutpoutFormat from(String directive) {
-            for (OverpassOutpoutFormat oof : values()) {
+        static OverpassOutputFormat from(String directive) {
+            for (OverpassOutputFormat oof : values()) {
                 if (oof.directive.equals(directive)) {
                     return oof;
                 }
@@ -139,7 +144,7 @@ public class OverpassDownloadReader extends BoundingBoxDownloader {
 
     static final Pattern OUTPUT_FORMAT_STATEMENT = Pattern.compile(".*\\[out:([a-z]{3,})\\].*", Pattern.DOTALL);
 
-    static final Map<OverpassOutpoutFormat, Class<? extends AbstractReader>> outputFormatReaders = new ConcurrentHashMap<>();
+    static final Map<OverpassOutputFormat, Class<? extends AbstractReader>> outputFormatReaders = new ConcurrentHashMap<>();
 
     final String overpassServer;
     final String overpassQuery;
@@ -164,14 +169,14 @@ public class OverpassDownloadReader extends BoundingBoxDownloader {
      * @param readerClass OSM reader class
      * @return the previous value associated with {@code format}, or {@code null} if there was no mapping
      */
-    public static final Class<? extends AbstractReader> registerOverpassOutpoutFormatReader(
-            OverpassOutpoutFormat format, Class<? extends AbstractReader> readerClass) {
+    public static final Class<? extends AbstractReader> registerOverpassOutputFormatReader(
+            OverpassOutputFormat format, Class<? extends AbstractReader> readerClass) {
         return outputFormatReaders.put(Objects.requireNonNull(format), Objects.requireNonNull(readerClass));
     }
 
     static {
-        registerOverpassOutpoutFormatReader(OverpassOutpoutFormat.OSM_XML, OverpassOsmReader.class);
-        registerOverpassOutpoutFormatReader(OverpassOutpoutFormat.OSM_JSON, OverpassOsmJsonReader.class);
+        registerOverpassOutputFormatReader(OverpassOutputFormat.OSM_XML, OverpassOsmReader.class);
+        registerOverpassOutputFormatReader(OverpassOutputFormat.OSM_JSON, OverpassOsmJsonReader.class);
     }
 
     @Override
@@ -222,7 +227,7 @@ public class OverpassDownloadReader extends BoundingBoxDownloader {
                     default:
                         Logging.warn("Unsupported syntax: " + matcher.group(1));
                 }
-            } catch (UncheckedParseException | IOException | NoSuchElementException | IndexOutOfBoundsException ex) {
+            } catch (UncheckedParseException | DateTimeParseException | IOException | NoSuchElementException | IndexOutOfBoundsException ex) {
                 final String msg = tr("Failed to evaluate {0}", matcher.group());
                 Logging.log(Logging.LEVEL_WARN, msg, ex);
                 matcher.appendReplacement(sb, "// " + msg + "\n");
@@ -241,7 +246,16 @@ public class OverpassDownloadReader extends BoundingBoxDownloader {
         return c.lat()+ "," + c.lon();
     }
 
-    static String date(String humanDuration, LocalDateTime from) {
+    static String date(String dateOrHumanDuration, LocalDateTime from) {
+        try {
+            return DateUtils.parseInstant(dateOrHumanDuration).toString();
+        } catch (UncheckedParseException e) {
+            Logging.trace(e);
+        }
+        return duration(dateOrHumanDuration, from);
+    }
+
+    static String duration(String humanDuration, LocalDateTime from) {
         // Convert to ISO 8601. Replace months by X temporarily to avoid conflict with minutes
         String duration = humanDuration.toLowerCase(Locale.ENGLISH).replace(" ", "")
                 .replaceAll("years?", "Y").replaceAll("months?", "X").replaceAll("weeks?", "W")
@@ -253,8 +267,8 @@ public class OverpassDownloadReader extends BoundingBoxDownloader {
         boolean javaPer = false;
         boolean javaDur = false;
         if (matcher.matches()) {
-            javaPer = matcher.group(1) != null && !matcher.group(1).isEmpty();
-            javaDur = matcher.group(3) != null && !matcher.group(3).isEmpty();
+            javaPer = !Utils.isEmpty(matcher.group(1));
+            javaDur = !Utils.isEmpty(matcher.group(3));
             duration = 'P' + matcher.group(1).replace('X', 'M') + matcher.group(2);
             if (javaDur) {
                 duration += 'T' + matcher.group(3);
@@ -270,7 +284,7 @@ public class OverpassDownloadReader extends BoundingBoxDownloader {
             p = Period.parse(javaDur ? duration.substring(0, idx) : duration);
         }
         if (javaDur) {
-            d = Duration.parse(javaPer ? 'P' + duration.substring(idx, duration.length()) : duration);
+            d = Duration.parse(javaPer ? 'P' + duration.substring(idx) : duration);
         } else if (!javaPer) {
             d = Duration.parse(duration);
         }
@@ -305,7 +319,7 @@ public class OverpassDownloadReader extends BoundingBoxDownloader {
         idOffset.put(OsmPrimitiveType.RELATION, 3_600_000_000L);
         final PrimitiveId osmId = searchName(area).getOsmId();
         Logging.debug("Area ''{0}'' resolved to {1}", area, osmId);
-        return String.format("area(%d)", osmId.getUniqueId() + idOffset.get(osmId.getType()));
+        return String.format(Locale.ENGLISH, "area(%d)", osmId.getUniqueId() + idOffset.get(osmId.getType()));
     }
 
     static String geocodeBbox(String area) throws IOException {
@@ -320,7 +334,7 @@ public class OverpassDownloadReader extends BoundingBoxDownloader {
 
     static String geocodeId(String area) throws IOException {
         PrimitiveId osmId = searchName(area).getOsmId();
-        return String.format("%s(%d)", osmId.getType().getAPIName(), osmId.getUniqueId());
+        return String.format(Locale.ENGLISH, "%s(%d)", osmId.getType().getAPIName(), osmId.getUniqueId());
     }
 
     @Override
@@ -368,7 +382,7 @@ public class OverpassDownloadReader extends BoundingBoxDownloader {
         AbstractReader reader = null;
         Matcher m = OUTPUT_FORMAT_STATEMENT.matcher(overpassQuery);
         if (m.matches()) {
-            Class<? extends AbstractReader> readerClass = outputFormatReaders.get(OverpassOutpoutFormat.from(m.group(1)));
+            Class<? extends AbstractReader> readerClass = outputFormatReaders.get(OverpassOutputFormat.from(m.group(1)));
             if (readerClass != null) {
                 try {
                     reader = readerClass.getDeclaredConstructor().newInstance();
@@ -395,19 +409,7 @@ public class OverpassDownloadReader extends BoundingBoxDownloader {
         } else {
             // add bounds if necessary (note that Overpass API does not return bounds in the response XML)
             if (ds != null && ds.getDataSources().isEmpty() && overpassQuery.contains("{{bbox}}")) {
-                if (crosses180th) {
-                    Bounds bounds = new Bounds(lat1, lon1, lat2, 180.0);
-                    DataSource src = new DataSource(bounds, getBaseUrl());
-                    ds.addDataSource(src);
-
-                    bounds = new Bounds(lat1, -180.0, lat2, lon2);
-                    src = new DataSource(bounds, getBaseUrl());
-                    ds.addDataSource(src);
-                } else {
-                    Bounds bounds = new Bounds(lat1, lon1, lat2, lon2);
-                    DataSource src = new DataSource(bounds, getBaseUrl());
-                    ds.addDataSource(src);
-                }
+                getBounds().forEach(bounds -> ds.addDataSource(new DataSource(bounds, getBaseUrl())));
             }
             return ds;
         }
@@ -428,5 +430,18 @@ public class OverpassDownloadReader extends BoundingBoxDownloader {
     @Override
     public boolean considerAsFullDownload() {
         return overpassQuery.equals(OverpassDownloadSource.FULL_DOWNLOAD_QUERY);
+    }
+
+    @Override
+    protected Collection<Bounds> getBounds() {
+        if (this.overpassQuery.contains("{{bbox}}")) {
+            if (crosses180th) {
+                return Set.of(new Bounds(lat1, lon1, lat2, 180.0),
+                        new Bounds(lat1, -180.0, lat2, lon2));
+            } else {
+                return Collections.singleton(new Bounds(lat1, lon1, lat2, lon2));
+            }
+        }
+        return Collections.emptySet();
     }
 }

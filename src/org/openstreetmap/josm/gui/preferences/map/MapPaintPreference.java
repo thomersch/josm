@@ -19,6 +19,7 @@ import org.openstreetmap.josm.data.preferences.sources.SourceEntry;
 import org.openstreetmap.josm.data.preferences.sources.SourceProvider;
 import org.openstreetmap.josm.data.preferences.sources.SourceType;
 import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.help.HelpUtil;
 import org.openstreetmap.josm.gui.mappaint.MapPaintStyles;
 import org.openstreetmap.josm.gui.mappaint.mapcss.MapCSSStyleSource;
 import org.openstreetmap.josm.gui.preferences.DefaultTabPreferenceSetting;
@@ -30,6 +31,7 @@ import org.openstreetmap.josm.gui.preferences.SourceEditor;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.Logging;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * Preference settings for map paint styles.
@@ -39,7 +41,7 @@ public class MapPaintPreference extends DefaultTabPreferenceSetting {
     private JCheckBox enableIconDefault;
 
     MapPaintPreference() {
-        super("dialogs/mapstyle", tr("Map Paint Styles"), tr("Map Paint Styles"));
+        super("dialogs/mapstyle", tr("Map Paint Styles"), tr("Adapt the rendering of OSM objects"));
     }
 
     private static final List<SourceProvider> styleSourceProviders = new ArrayList<>();
@@ -81,6 +83,11 @@ public class MapPaintPreference extends DefaultTabPreferenceSetting {
         PreferencePanel preferencePanel = gui.createPreferenceTab(this);
         preferencePanel.add(panel, GBC.std().fill());
         sources.deferLoading(gui, preferencePanel);
+    }
+
+    @Override
+    public String getHelpContext() {
+        return HelpUtil.ht("/Preferences/MapPaintPreference");
     }
 
     static class MapPaintSourceEditor extends SourceEditor {
@@ -162,10 +169,10 @@ public class MapPaintPreference extends DefaultTabPreferenceSetting {
         try {
             final MapCSSStyleSource css = new MapCSSStyleSource(entry);
             css.loadStyleSource();
-            if (css.title != null && !css.title.isEmpty()) {
+            if (!Utils.isEmpty(css.title)) {
                 return css.title;
             }
-        } catch (RuntimeException ignore) { // NOPMD
+        } catch (RuntimeException ignore) {
             Logging.debug(ignore);
         }
         return null;

@@ -87,6 +87,11 @@ public abstract class AbstractReader {
     }
 
     /**
+     * A lookup table to avoid calling {@link String#intern()} unnecessarily.
+     */
+    private final Map<String, String> tagMap = new HashMap<>();
+
+    /**
      * The dataset to add parsed objects to.
      */
     protected DataSet ds = new DataSet();
@@ -273,6 +278,21 @@ public abstract class AbstractReader {
 
     protected abstract DataSet doParseDataSet(InputStream source, ProgressMonitor progressMonitor) throws IllegalDataException;
 
+    /**
+     * An interface for reading binary data
+     * @since 18695
+     */
+    @FunctionalInterface
+    protected interface BinaryParserWorker {
+        /**
+         * Effectively parses the file, depending on the binary format (PBF, etc.)
+         * @param ir input stream reader
+         * @throws IllegalDataException in case of invalid data
+         * @throws IOException in case of I/O error
+         */
+        void accept(InputStream ir) throws IllegalDataException, IOException;
+    }
+
     @FunctionalInterface
     protected interface ParserWorker {
         /**
@@ -284,7 +304,17 @@ public abstract class AbstractReader {
         void accept(InputStreamReader ir) throws IllegalDataException, IOException;
     }
 
+    protected final DataSet doParseDataSet(InputStream source, ProgressMonitor progressMonitor, BinaryParserWorker parserWorker)
+            throws IllegalDataException {
+        return this.doParseDataSet(source, progressMonitor, (Object) parserWorker);
+    }
+
     protected final DataSet doParseDataSet(InputStream source, ProgressMonitor progressMonitor, ParserWorker parserWorker)
+            throws IllegalDataException {
+        return this.doParseDataSet(source, progressMonitor, (Object) parserWorker);
+    }
+
+    private DataSet doParseDataSet(InputStream source, ProgressMonitor progressMonitor, Object parserWorker)
             throws IllegalDataException {
         if (progressMonitor == null) {
             progressMonitor = NullProgressMonitor.INSTANCE;
@@ -296,8 +326,14 @@ public abstract class AbstractReader {
             progressMonitor.beginTask(tr("Prepare OSM data..."), 4); // read, prepare, post-process, render
             progressMonitor.indeterminateSubTask(tr("Parsing OSM data..."));
 
-            try (InputStreamReader ir = UTFInputStreamReader.create(source)) {
-                parserWorker.accept(ir);
+            if (parserWorker instanceof ParserWorker) {
+                try (InputStreamReader ir = UTFInputStreamReader.create(source)) {
+                    ((ParserWorker) parserWorker).accept(ir);
+                }
+            } else if (parserWorker instanceof BinaryParserWorker) {
+                ((BinaryParserWorker) parserWorker).accept(source);
+            } else {
+                throw new IllegalArgumentException("Unknown parser worker type: " + parserWorker.getClass());
             }
             progressMonitor.worked(1);
 
@@ -338,6 +374,7 @@ public abstract class AbstractReader {
                     }
                 }
             }
+            this.tagMap.clear();
             progressMonitor.finishTask();
             progressMonitor.removeCancelListener(cancelListener);
         }
@@ -426,11 +463,11 @@ public abstract class AbstractReader {
     private final Map<String, Integer> timestampCache = new LruCache<>(30);
 
     protected final void parseTimestamp(PrimitiveData current, String time) {
-        if (time == null || time.isEmpty()) {
+        if (Utils.isEmpty(time)) {
             return;
         }
         try {
-            int timestamp = timestampCache.computeIfAbsent(time, t -> (int) (DateUtils.tsFromString(t) / 1000));
+            int timestamp = timestampCache.computeIfAbsent(time, t -> (int) DateUtils.parseInstant(t).getEpochSecond());
             current.setRawTimestamp(timestamp);
         } catch (UncheckedParseException | DateTimeException e) {
             Logging.error(e);
@@ -485,20 +522,17 @@ public abstract class AbstractReader {
     }
 
     protected final void parseVersion(PrimitiveData current, int version) throws IllegalDataException {
-        switch (ds.getVersion()) {
-        case "0.6":
+        if (ds.getVersion().equals("0.6")) {
             if (version <= 0 && !current.isNew()) {
                 throw new IllegalDataException(
                         tr("Illegal value for attribute ''version'' on OSM primitive with ID {0}. Got {1}.",
-                        Long.toString(current.getUniqueId()), version));
+                                Long.toString(current.getUniqueId()), version));
             } else if (version < 0 && current.isNew()) {
                 Logging.warn(tr("Normalizing value of attribute ''version'' of element {0} to {2}, API version is ''{3}''. Got {1}.",
                         current.getUniqueId(), version, 0, "0.6"));
                 version = 0;
             }
-            break;
-        default:
-            // should not happen. API version has been checked before
+        } else { // should not happen. API version has been checked before
             throw new IllegalDataException(tr("Unknown or unsupported API version. Got {0}.", ds.getVersion()));
         }
         current.setVersion(version);
@@ -573,7 +607,7 @@ public abstract class AbstractReader {
             // Drop the tag on import, but flag the primitive as modified
             ((AbstractPrimitive) t).setModified(true);
         } else {
-            t.put(key.intern(), value.intern());
+            t.put(this.tagMap.computeIfAbsent(key, Utils::intern), this.tagMap.computeIfAbsent(value, Utils::intern));
         }
     }
 
@@ -594,7 +628,7 @@ public abstract class AbstractReader {
          * @param n node
          * @throws IllegalDataException in case of invalid data
          */
-        void accept(Node n) throws IllegalDataException;
+        void accept(NodeData n) throws IllegalDataException;
     }
 
     @FunctionalInterface
@@ -605,7 +639,7 @@ public abstract class AbstractReader {
          * @param nodeIds collection of resulting node ids
          * @throws IllegalDataException in case of invalid data
          */
-        void accept(Way w, Collection<Long> nodeIds) throws IllegalDataException;
+        void accept(WayData w, Collection<Long> nodeIds) throws IllegalDataException;
     }
 
     @FunctionalInterface
@@ -616,7 +650,7 @@ public abstract class AbstractReader {
          * @param members collection of resulting members
          * @throws IllegalDataException in case of invalid data
          */
-        void accept(Relation r, Collection<RelationMemberData> members) throws IllegalDataException;
+        void accept(RelationData r, Collection<RelationMemberData> members) throws IllegalDataException;
     }
 
     private static boolean areLatLonDefined(String lat, String lon) {
@@ -642,9 +676,8 @@ public abstract class AbstractReader {
     }
 
     private Node addNode(NodeData nd, NodeReader nodeReader) throws IllegalDataException {
-        Node n = (Node) buildPrimitive(nd);
-        nodeReader.accept(n);
-        return n;
+        nodeReader.accept(nd);
+        return (Node) buildPrimitive(nd);
     }
 
     protected final Node parseNode(double lat, double lon, CommonReader commonReader, NodeReader nodeReader)
@@ -690,34 +723,32 @@ public abstract class AbstractReader {
     protected final Way parseWay(CommonReader commonReader, WayReader wayReader) throws IllegalDataException {
         WayData wd = new WayData(0);
         commonReader.accept(wd);
-        Way w = (Way) buildPrimitive(wd);
 
         Collection<Long> nodeIds = new ArrayList<>();
-        wayReader.accept(w, nodeIds);
-        if (w.isDeleted() && !nodeIds.isEmpty()) {
-            Logging.info(tr("Deleted way {0} contains nodes", Long.toString(w.getUniqueId())));
+        wayReader.accept(wd, nodeIds);
+        if (wd.isDeleted() && !nodeIds.isEmpty()) {
+            Logging.info(tr("Deleted way {0} contains nodes", Long.toString(wd.getUniqueId())));
             nodeIds = new ArrayList<>();
         }
         ways.put(wd.getUniqueId(), nodeIds);
-        return w;
+        return (Way) buildPrimitive(wd);
     }
 
     protected final Relation parseRelation(CommonReader commonReader, RelationReader relationReader) throws IllegalDataException {
         RelationData rd = new RelationData(0);
         commonReader.accept(rd);
-        Relation r = (Relation) buildPrimitive(rd);
 
         Collection<RelationMemberData> members = new ArrayList<>();
-        relationReader.accept(r, members);
-        if (r.isDeleted() && !members.isEmpty()) {
-            Logging.info(tr("Deleted relation {0} contains members", Long.toString(r.getUniqueId())));
+        relationReader.accept(rd, members);
+        if (rd.isDeleted() && !members.isEmpty()) {
+            Logging.info(tr("Deleted relation {0} contains members", Long.toString(rd.getUniqueId())));
             members = new ArrayList<>();
         }
         relations.put(rd.getUniqueId(), members);
-        return r;
+        return (Relation) buildPrimitive(rd);
     }
 
-    protected final RelationMemberData parseRelationMember(Relation r, String ref, String type, String role) throws IllegalDataException {
+    protected final RelationMemberData parseRelationMember(RelationData r, String ref, String type, String role) throws IllegalDataException {
         if (ref == null) {
             throw new IllegalDataException(tr("Missing attribute ''ref'' on member in relation {0}.",
                     Long.toString(r.getUniqueId())));
@@ -730,7 +761,7 @@ public abstract class AbstractReader {
         }
     }
 
-    protected final RelationMemberData parseRelationMember(Relation r, long id, String type, String role) throws IllegalDataException {
+    protected final RelationMemberData parseRelationMember(RelationData r, long id, String type, String role) throws IllegalDataException {
         if (id == 0) {
             throw new IllegalDataException(tr("Incomplete <member> specification with ref=0"));
         }

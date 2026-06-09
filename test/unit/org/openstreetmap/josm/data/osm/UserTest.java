@@ -1,33 +1,21 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.osm;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests of {@link User}.
  */
-public class UserTest {
-
-    /**
-     * Setup test
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+class UserTest {
     /**
      * Test method for {@link User#createOsmUser}.
      */
     @Test
-    public void testCreateOsmUser() {
+    void testCreateOsmUser() {
         User user1 = User.createOsmUser(1, "name1");
         assertEquals(1, user1.getId());
         assertEquals("name1", user1.getName());

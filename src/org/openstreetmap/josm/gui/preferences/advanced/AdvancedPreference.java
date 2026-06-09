@@ -26,14 +26,11 @@ import java.util.regex.Pattern;
 import javax.swing.AbstractAction;
 import javax.swing.JButton;
 import javax.swing.JFileChooser;
-import javax.swing.JLabel;
 import javax.swing.JMenu;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
-import javax.swing.event.DocumentEvent;
-import javax.swing.event.DocumentListener;
 import javax.swing.event.MenuEvent;
 import javax.swing.event.MenuListener;
 import javax.swing.filechooser.FileFilter;
@@ -52,8 +49,10 @@ import org.openstreetmap.josm.gui.preferences.DefaultTabPreferenceSetting;
 import org.openstreetmap.josm.gui.preferences.PreferenceSetting;
 import org.openstreetmap.josm.gui.preferences.PreferenceSettingFactory;
 import org.openstreetmap.josm.gui.preferences.PreferenceTabbedPane;
+import org.openstreetmap.josm.gui.util.DocumentAdapter;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.widgets.AbstractFileChooser;
+import org.openstreetmap.josm.gui.widgets.FilterField;
 import org.openstreetmap.josm.gui.widgets.JosmTextField;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.spi.preferences.Setting;
@@ -168,31 +167,9 @@ public final class AdvancedPreference extends DefaultTabPreferenceSetting {
 
         final JPanel txtFilterPanel = new JPanel(new GridBagLayout());
         p.add(txtFilterPanel, GBC.eol().fill(GBC.HORIZONTAL));
-        txtFilter = new JosmTextField();
-        JLabel lbFilter = new JLabel(tr("Search:"));
-        lbFilter.setLabelFor(txtFilter);
-        txtFilterPanel.add(lbFilter, GBC.std().insets(0, 0, 5, 0));
-        txtFilterPanel.add(txtFilter, GBC.eol().fill(GBC.HORIZONTAL));
-        txtFilter.getDocument().addDocumentListener(new DocumentListener() {
-            @Override
-            public void changedUpdate(DocumentEvent e) {
-                action();
-            }
-
-            @Override
-            public void insertUpdate(DocumentEvent e) {
-                action();
-            }
-
-            @Override
-            public void removeUpdate(DocumentEvent e) {
-                action();
-            }
-
-            private void action() {
-                applyFilter();
-            }
-        });
+        txtFilter = new FilterField();
+        txtFilterPanel.add(txtFilter, GBC.eol().insets(0, 0, 0, 5).fill(GBC.HORIZONTAL));
+        txtFilter.getDocument().addDocumentListener(DocumentAdapter.create(ignore -> applyFilter()));
         readPreferences(Preferences.main());
 
         applyFilter();
@@ -258,8 +235,8 @@ public final class AdvancedPreference extends DefaultTabPreferenceSetting {
         Map<String, Setting<?>> loaded;
         Map<String, Setting<?>> orig = Preferences.main().getAllSettings();
         Map<String, Setting<?>> defaults = tmpPrefs.getAllDefaults();
-        orig.remove("osm-server.password");
-        defaults.remove("osm-server.password");
+        Preferences.main().getSensitive().forEach(orig::remove);
+        tmpPrefs.getSensitive().forEach(defaults::remove);
         if (tmpPrefs != Preferences.main()) {
             loaded = tmpPrefs.getAllSettings();
             // plugins preference keys may be changed directly later, after plugins are downloaded
@@ -491,7 +468,8 @@ public final class AdvancedPreference extends DefaultTabPreferenceSetting {
             // Make 'wmsplugin cache' search for e.g. 'cache.wmsplugin'
             final String prefKeyLower = prefKey.toLowerCase(Locale.ENGLISH);
             final String prefValueLower = prefValue.toLowerCase(Locale.ENGLISH);
-            final boolean canHas = Pattern.compile("\\s+").splitAsStream(txtFilter.getText())
+            String filter = txtFilter.getText(); // see #19825
+            final boolean canHas = filter.isEmpty() || Pattern.compile("\\s+").splitAsStream(filter)
                     .map(bit -> bit.toLowerCase(Locale.ENGLISH))
                     .anyMatch(bit -> {
                         switch (bit) {

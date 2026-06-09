@@ -1,9 +1,10 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.command;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -11,10 +12,15 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.command.SplitWayCommand.Strategy;
 import org.openstreetmap.josm.data.UndoRedoHandler;
@@ -26,29 +32,26 @@ import org.openstreetmap.josm.data.osm.OsmPrimitiveType;
 import org.openstreetmap.josm.data.osm.Relation;
 import org.openstreetmap.josm.data.osm.RelationMember;
 import org.openstreetmap.josm.data.osm.Way;
+import org.openstreetmap.josm.gui.dialogs.relation.sort.WayConnectionType;
+import org.openstreetmap.josm.gui.dialogs.relation.sort.WayConnectionTypeCalculator;
 import org.openstreetmap.josm.io.IllegalDataException;
 import org.openstreetmap.josm.io.OsmReader;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
+import org.openstreetmap.josm.testutils.annotations.Main;
+import org.openstreetmap.josm.testutils.annotations.Projection;
 
 /**
  * Unit tests for class {@link SplitWayCommand}.
  */
-public final class SplitWayCommandTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().main().projection().preferences();
-
+@BasicPreferences
+@Main
+@Projection
+final class SplitWayCommandTest {
     /**
      * Unit test of {@link SplitWayCommand#findVias}.
      */
     @Test
-    public void testFindVias() {
+    void testFindVias() {
         // empty relation
         assertTrue(SplitWayCommand.findVias(new Relation(), null).isEmpty());
         // restriction relation without via member
@@ -76,22 +79,21 @@ public final class SplitWayCommandTest {
         assertEquals(Collections.singletonList(via), SplitWayCommand.findVias(r, "destination_sign"));
     }
 
+    static Stream<Arguments> testRouteRelation() {
+        Stream.Builder<Arguments> builder = Stream.builder();
+        for (int i = 0; i < 4; i++) {
+            builder.add(Arguments.of(false, i));
+            builder.add(Arguments.of(true, i));
+        }
+        return builder.build();
+    }
+
     /**
      * Unit tests of route relations.
      */
-    @Test
-    public void testRouteRelation() {
-        doTestRouteRelation(false, 0);
-        doTestRouteRelation(false, 1);
-        doTestRouteRelation(false, 2);
-        doTestRouteRelation(false, 3);
-        doTestRouteRelation(true, 0);
-        doTestRouteRelation(true, 1);
-        doTestRouteRelation(true, 2);
-        doTestRouteRelation(true, 3);
-    }
-
-    void doTestRouteRelation(final boolean wayIsReversed, final int indexOfWayToKeep) {
+    @ParameterizedTest
+    @MethodSource
+    void testRouteRelation(final boolean wayIsReversed, final int indexOfWayToKeep) {
         final DataSet dataSet = new DataSet();
         final Node n1 = new Node(new LatLon(1, 0));
         final Node n2 = new Node(new LatLon(2, 0));
@@ -148,7 +150,7 @@ public final class SplitWayCommandTest {
     }
 
     @Test
-    public void testOneMemberOrderedRelationShowsWarningTest() {
+    void testOneMemberOrderedRelationShowsWarningTest() {
         final DataSet dataSet = new DataSet();
 
         // Positive IDs to mark that these ways are incomplete (i.e., no nodes loaded).
@@ -186,18 +188,21 @@ public final class SplitWayCommandTest {
         assertFalse(result.isPresent());
     }
 
-    @Test
-    public void testDoIncompleteMembersOrderedRelationCorrectOrderTest() {
+    static Stream<Arguments> testIncompleteMembersOrderedRelationCorrectOrderTest() {
+        Stream.Builder<Arguments> builder = Stream.builder();
         for (int i = 0; i < 2; i++) {
             // All these permutations should result in a split that keeps the new parts in order.
-            doIncompleteMembersOrderedRelationCorrectOrderTest(false, false, i);
-            doIncompleteMembersOrderedRelationCorrectOrderTest(true, false, i);
-            doIncompleteMembersOrderedRelationCorrectOrderTest(true, true, i);
-            doIncompleteMembersOrderedRelationCorrectOrderTest(false, true, i);
+            builder.add(Arguments.of(false, false, i));
+            builder.add(Arguments.of(true, false, i));
+            builder.add(Arguments.of(true, true, i));
+            builder.add(Arguments.of(false, true, i));
         }
+        return builder.build();
     }
 
-    private void doIncompleteMembersOrderedRelationCorrectOrderTest(final boolean reverseWayOne,
+    @ParameterizedTest
+    @MethodSource
+    void testIncompleteMembersOrderedRelationCorrectOrderTest(final boolean reverseWayOne,
                                                                     final boolean reverseWayTwo,
                                                                     final int indexOfWayToKeep) {
         final DataSet dataSet = new DataSet();
@@ -243,7 +248,8 @@ public final class SplitWayCommandTest {
     }
 
     static void assertFirstLastNodeIs(Way way, Node node) {
-        assertTrue("First/last node of " + way + " should be " + node, node.equals(way.firstNode()) || node.equals(way.lastNode()));
+        assertTrue(node.equals(way.firstNode()) || node.equals(way.lastNode()),
+                "First/last node of " + way + " should be " + node);
     }
 
     static void assertConnectedAtEnds(Way one, Way two) {
@@ -252,8 +258,8 @@ public final class SplitWayCommandTest {
         Node first2 = two.firstNode();
         Node last2 = two.lastNode();
 
-        assertTrue("Ways expected to be connected at their ends.",
-                first1 == first2 || first1 == last2 || last1 == first2 || last1 == last2);
+        assertTrue(first1 == first2 || first1 == last2 || last1 == first2 || last1 == last2,
+                "Ways expected to be connected at their ends.");
     }
 
     /**
@@ -262,7 +268,7 @@ public final class SplitWayCommandTest {
      * @throws IllegalDataException if OSM parsing fails
      */
     @Test
-    public void testTicket18596() throws IOException, IllegalDataException {
+    void testTicket18596() throws IOException, IllegalDataException {
         try (InputStream is = TestUtils.getRegressionDataStream(18596, "data.osm")) {
             DataSet ds = OsmReader.parseDataSet(is, null);
 
@@ -279,7 +285,7 @@ public final class SplitWayCommandTest {
 
             Relation relation = (Relation) ds.getPrimitiveById(8888, OsmPrimitiveType.RELATION);
 
-            assertEquals(relation.getMembersCount(), 8);
+            assertEquals(8, relation.getMembersCount());
 
             // Before the patch introduced in #18596, these asserts would fail. The two parts of
             // way '5' would be in the wrong order, breaking the boundary relation in this test.
@@ -290,7 +296,7 @@ public final class SplitWayCommandTest {
 
     /**
      * Non-regression test for issue #17400 (Warn when splitting way in not fully downloaded region)
-     *
+     * <p>
      * Bus route 190 gets broken when the split occurs, because the two new way parts are inserted in the relation in
      * the wrong order.
      *
@@ -298,7 +304,7 @@ public final class SplitWayCommandTest {
      * @throws IllegalDataException if OSM parsing fails
      */
     @Test
-    public void testTicket17400() throws IOException, IllegalDataException {
+    void testTicket17400() throws IOException, IllegalDataException {
         try (InputStream is = TestUtils.getRegressionDataStream(17400, "data.osm")) {
             DataSet ds = OsmReader.parseDataSet(is, null);
 
@@ -322,7 +328,7 @@ public final class SplitWayCommandTest {
             Relation relation = (Relation) ds.getPrimitiveById(2873422, OsmPrimitiveType.RELATION);
 
             // One more than the original 161.
-            assertEquals(relation.getMembersCount(), 162);
+            assertEquals(162, relation.getMembersCount());
 
             // Before the patch introduced in #18596, these asserts would fail. The new parts of
             // the Hauptstraße would be in the wrong order, breaking the bus route relation.
@@ -335,18 +341,18 @@ public final class SplitWayCommandTest {
 
     /**
      * Non-regression test for issue #18863 (Asking for download of missing members when not needed)
-     *
+     * <p>
      * A split on node 4518025255 caused the 'download missing members?' dialog to pop up for relation 68745 (CB 2),
      * even though the way members next to the split way were already downloaded. This happened because this relation
      * does not have its members connected at all.
-     *
+     * <p>
      * This split should not trigger any download action at all.
      *
      * @throws IOException if any I/O error occurs
      * @throws IllegalDataException if OSM parsing fails
      */
     @Test
-    public void testTicket18863() throws IOException, IllegalDataException {
+    void testTicket18863() throws IOException, IllegalDataException {
         try (InputStream is = TestUtils.getRegressionDataStream(18863, "data.osm.bz2")) {
             DataSet ds = OsmReader.parseDataSet(is, null);
 
@@ -374,7 +380,7 @@ public final class SplitWayCommandTest {
      * @throws IllegalDataException if OSM parsing fails
      */
     @Test
-    public void testTicket19432() throws IOException, IllegalDataException {
+    void testTicket19432() throws IOException, IllegalDataException {
         try (InputStream is = TestUtils.getRegressionDataStream(19432, "josm_split_way_exception_example.osm.bz2")) {
             DataSet ds = OsmReader.parseDataSet(is, null);
 
@@ -393,5 +399,180 @@ public final class SplitWayCommandTest {
             // Should not result in aborting the split.
             assertTrue(result.isPresent());
         }
+    }
+
+    /**
+     * Non-regression test for issue #20163 (Split way corrupts relation when splitting via way)
+     *
+     * @throws IOException if any I/O error occurs
+     * @throws IllegalDataException if OSM parsing fails
+     */
+    @Test
+    void testTicket20163() throws IOException, IllegalDataException {
+        try (InputStream is = TestUtils.getRegressionDataStream(20163, "data-20163.osm")) {
+            DataSet ds = OsmReader.parseDataSet(is, null);
+
+            Way splitWay = (Way) ds.getPrimitiveById(757606841L, OsmPrimitiveType.WAY);
+            Node splitNode = splitWay.getNode(1);
+            Relation r = (Relation) ds.getPrimitiveById(10452821L, OsmPrimitiveType.RELATION);
+            assertEquals(3, r.getMembersCount());
+            assertFalse(r.getMembersFor(Collections.singleton(splitWay)).isEmpty());
+            assertEquals(1, r.getMembers().stream().filter(rm -> "via".equals(rm.getRole())).count());
+            assertEquals("via", r.getMembersFor(Collections.singleton(splitWay)).iterator().next().getRole());
+            final Optional<SplitWayCommand> result = SplitWayCommand.splitWay(
+                    splitWay,
+                    SplitWayCommand.buildSplitChunks(splitWay, Collections.singletonList(splitNode)),
+                    new ArrayList<>(),
+                    Strategy.keepLongestChunk(),
+                    // This split requires additional downloads but problem occured before the download
+                    SplitWayCommand.WhenRelationOrderUncertain.SPLIT_ANYWAY
+            );
+
+            // Should not result in aborting the split.
+            assertTrue(result.isPresent());
+            result.get().executeCommand();
+
+            assertTrue(r.isModified());
+            assertEquals(4, r.getMembersCount());
+            assertEquals(2, r.getMembers().stream().filter(rm -> "via".equals(rm.getRole())).count());
+        }
+    }
+
+    /**
+     * Test case: smart ordering in routes
+     * See #21856
+     */
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void testTicket21856(boolean reverse) {
+        Way way1 = TestUtils.newWay("highway=residential", TestUtils.newNode(""), TestUtils.newNode(""));
+        way1.setOsmId(23_968_090, 1);
+        way1.lastNode().setOsmId(6_823_898_683L, 1);
+        Way way2 = TestUtils.newWay("highway=residential", way1.lastNode(), TestUtils.newNode(""));
+        way2.setOsmId(728_199_307, 1);
+        way2.lastNode().setOsmId(6_823_898_684L, 1);
+        Node splitNode = TestUtils.newNode("");
+        splitNode.setOsmId(6_823_906_290L, 1);
+        Way splitWay = TestUtils.newWay("highway=service", way2.firstNode(), splitNode, TestUtils.newNode(""), way2.lastNode());
+        // The behavior should be the same regardless of the direction of the way
+        if (reverse) {
+            List<Node> nodes = new ArrayList<>(splitWay.getNodes());
+            Collections.reverse(nodes);
+            splitWay.setNodes(nodes);
+        }
+        splitWay.setOsmId(728_199_306, 1);
+        Relation route = TestUtils.newRelation("type=route route=bus", new RelationMember("", way1), new RelationMember("", splitWay),
+                new RelationMember("", way2), new RelationMember("", way1));
+        DataSet dataSet = new DataSet();
+        dataSet.addPrimitiveRecursive(route);
+        dataSet.setSelected(splitNode);
+        // Sanity check (preconditions -- the route should be well-formed already)
+        assertWellFormedRoute(route);
+        final Optional<SplitWayCommand> result = SplitWayCommand.splitWay(
+                splitWay,
+                SplitWayCommand.buildSplitChunks(splitWay, Collections.singletonList(splitNode)),
+                new ArrayList<>(),
+                Strategy.keepLongestChunk(),
+                // This split requires additional downloads but problem occurred before the download
+                SplitWayCommand.WhenRelationOrderUncertain.SPLIT_ANYWAY
+        );
+        assertTrue(result.isPresent());
+        result.get().executeCommand();
+        // Actual check
+        assertWellFormedRoute(route);
+    }
+
+    @Test
+    void testTicket21856DoublePoints() {
+        final Way incomplete = new Way(1082474948, 10);
+        final Way way1 = TestUtils.newWay("highway=residential", new Node(new LatLon(47.9971473, 8.1274441)),
+                new Node(new LatLon(48.0011535, 8.1363531)));
+        final Way way2 = TestUtils.newWay("highway=residential", new Node(new LatLon(48.0012294, 8.136414)),
+                new Node(new LatLon(48.0042513, 8.1378392)));
+        final Way splitWay = TestUtils.newWay("highway=residential", new Node(new LatLon(48.0011817, 8.1363763)),
+                new Node(new LatLon(48.0012086, 8.1363974)));
+        final Relation ptRelation = TestUtils.newRelation("type=route route=bus public_transport:version=2",
+                new RelationMember("", incomplete), new RelationMember("", way1),
+                new RelationMember("", splitWay), new RelationMember("", splitWay),
+                new RelationMember("", way1), new RelationMember("", incomplete));
+        final List<Node> splitLocations = splitWay.getNodes();
+        final DataSet ds = new DataSet();
+        way1.setOsmId(289122842, 10);
+        way2.setOsmId(30239125, 18);
+        splitWay.setOsmId(1082474946, 1);
+        ds.addPrimitiveRecursive(way1);
+        ds.addPrimitiveRecursive(way2);
+        ds.addPrimitiveRecursive(splitWay);
+        ds.addPrimitiveRecursive(incomplete);
+        ds.addPrimitive(ptRelation);
+        splitWay.addNode(0, way1.lastNode());
+        splitWay.addNode(way2.firstNode());
+
+        ds.setSelected(splitLocations);
+        assertWellFormedRoute(ptRelation);
+        final Optional<SplitWayCommand> result = SplitWayCommand.splitWay(
+                splitWay,
+                SplitWayCommand.buildSplitChunks(splitWay, splitLocations),
+                new ArrayList<>(),
+                Strategy.keepLongestChunk(),
+                SplitWayCommand.WhenRelationOrderUncertain.SPLIT_ANYWAY
+        );
+        assertTrue(result.isPresent());
+        result.get().executeCommand();
+        // Actual check
+        assertWellFormedRoute(ptRelation);
+    }
+
+    @Test
+    void testTicket21856DoublePointsRouteMiddle() {
+        final Way incomplete = new Way(1082474948, 10);
+        final Way way1 = TestUtils.newWay("highway=residential", new Node(new LatLon(47.9971473, 8.1274441)),
+                new Node(new LatLon(48.0011535, 8.1363531)));
+        final Way way2 = TestUtils.newWay("highway=residential", new Node(new LatLon(48.0012294, 8.136414)),
+                new Node(new LatLon(48.0042513, 8.1378392)));
+        final Way splitWay = TestUtils.newWay("highway=residential", new Node(new LatLon(48.0011817, 8.1363763)),
+                new Node(new LatLon(48.0012086, 8.1363974)));
+        final Relation ptRelation = TestUtils.newRelation("type=route route=bus public_transport:version=2",
+                new RelationMember("", incomplete), new RelationMember("", way1),
+                new RelationMember("", splitWay), new RelationMember("", way2),
+                new RelationMember("", way2), new RelationMember("", splitWay),
+                new RelationMember("", way1), new RelationMember("", incomplete));
+        final List<Node> splitLocations = splitWay.getNodes();
+        final DataSet ds = new DataSet();
+        way1.setOsmId(289122842, 10);
+        way2.setOsmId(30239125, 18);
+        splitWay.setOsmId(1082474946, 1);
+        ds.addPrimitiveRecursive(way1);
+        ds.addPrimitiveRecursive(way2);
+        ds.addPrimitiveRecursive(splitWay);
+        ds.addPrimitiveRecursive(incomplete);
+        ds.addPrimitive(ptRelation);
+        splitWay.addNode(0, way1.lastNode());
+        splitWay.addNode(way2.firstNode());
+
+        ds.setSelected(splitLocations);
+        assertWellFormedRoute(ptRelation);
+        final Optional<SplitWayCommand> result = SplitWayCommand.splitWay(
+                splitWay,
+                SplitWayCommand.buildSplitChunks(splitWay, splitLocations),
+                new ArrayList<>(),
+                Strategy.keepLongestChunk(),
+                SplitWayCommand.WhenRelationOrderUncertain.SPLIT_ANYWAY
+        );
+        assertTrue(result.isPresent());
+        result.get().executeCommand();
+        // Actual check
+        assertWellFormedRoute(ptRelation);
+    }
+
+    private static void assertWellFormedRoute(Relation route) {
+        WayConnectionTypeCalculator connectionTypeCalculator = new WayConnectionTypeCalculator();
+        List<WayConnectionType> links = connectionTypeCalculator.updateLinks(route, route.getMembers());
+        // NONE is the default, and is most often found on incomplete ways
+        links.removeIf(link -> link.direction == WayConnectionType.Direction.NONE);
+        assertAll("All links should be connected (forward)",
+                links.subList(0, links.size() - 2).stream().map(link -> () -> assertTrue(link.linkNext)));
+        assertAll("All links should be connected (backward)",
+                links.subList(1, links.size() - 1).stream().map(link -> () -> assertTrue(link.linkPrev)));
     }
 }

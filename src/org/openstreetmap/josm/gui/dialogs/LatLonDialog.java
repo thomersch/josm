@@ -246,7 +246,7 @@ public class LatLonDialog extends ExtendedDialog {
                 latLon = null;
             }
             if (latLon == null) {
-                feedbackInvalid(tr("Please enter a GPS coordinates"));
+                feedbackInvalid(tr("Please enter GPS coordinates"));
                 latLonCoordinates = null;
                 setOkEnabled(false);
             } else {
@@ -294,7 +294,7 @@ public class LatLonDialog extends ExtendedDialog {
     }
 
     private void setOkEnabled(boolean b) {
-        if (buttons != null && !buttons.isEmpty()) {
+        if (!Utils.isEmpty(buttons)) {
             buttons.get(0).setEnabled(b);
         }
     }

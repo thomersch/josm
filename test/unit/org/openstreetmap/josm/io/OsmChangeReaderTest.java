@@ -1,7 +1,7 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.io;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -9,30 +9,21 @@ import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.Iterator;
 
-import org.junit.Rule;
-import org.junit.Test;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.notes.Note;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.NoteData;
 import org.openstreetmap.josm.gui.progress.NullProgressMonitor;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 import org.openstreetmap.josm.tools.Pair;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests of {@link OsmChangeReader}.
  */
-public class OsmChangeReaderTest {
-
-    /**
-     * Setup rule
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+@BasicPreferences
+class OsmChangeReaderTest {
     /**
      * Parse osmChange.
      * @param osm OSM data in osmChange format, without header/footer
@@ -53,7 +44,7 @@ public class OsmChangeReaderTest {
      * @throws Exception never
      */
     @Test
-    public void testNotes() throws Exception {
+    void testNotes() throws Exception {
         NoteData nd = parse(
                 "<create>\r\n" +
                 "    <note lat=\"50.23887555404037\" lon=\"13.358299552342795\" id=\"-2\">\r\n" +

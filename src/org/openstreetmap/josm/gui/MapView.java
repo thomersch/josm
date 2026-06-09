@@ -1,14 +1,21 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui;
 
+import static java.util.function.Predicate.not;
+
 import java.awt.AlphaComposite;
+import java.awt.BasicStroke;
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.GraphicsEnvironment;
 import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.Shape;
+import java.awt.Stroke;
+import java.awt.Transparency;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import java.awt.event.KeyEvent;
@@ -75,6 +82,7 @@ import org.openstreetmap.josm.spi.preferences.PreferenceChangedListener;
 import org.openstreetmap.josm.tools.JosmRuntimeException;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.Shortcut;
+import org.openstreetmap.josm.tools.Utils;
 import org.openstreetmap.josm.tools.bugreport.BugReport;
 
 /**
@@ -101,7 +109,7 @@ LayerManager.LayerChangeListener, MainLayerManager.ActiveLayerChangeListener {
                     // Trigger a repaint of all data layers
                     MainApplication.getLayerManager().getLayers()
                         .stream()
-                        .filter(layer -> layer instanceof OsmDataLayer)
+                        .filter(OsmDataLayer.class::isInstance)
                         .forEach(Layer::invalidate)
                 );
             }
@@ -118,10 +126,10 @@ LayerManager.LayerChangeListener, MainLayerManager.ActiveLayerChangeListener {
      * @author Michael Zangl
      * @since 10271
      */
-    private class LayerInvalidatedListener implements PaintableInvalidationListener {
+    private final class LayerInvalidatedListener implements PaintableInvalidationListener {
         private boolean ignoreRepaint;
 
-        private final Set<MapViewPaintable> invalidatedLayers = Collections.newSetFromMap(new IdentityHashMap<MapViewPaintable, Boolean>());
+        private final Set<MapViewPaintable> invalidatedLayers = Collections.newSetFromMap(new IdentityHashMap<>());
 
         @Override
         public void paintableInvalidated(PaintableInvalidationEvent event) {
@@ -158,7 +166,7 @@ LayerManager.LayerChangeListener, MainLayerManager.ActiveLayerChangeListener {
         /**
          * Attempts to trace repaints that did not originate from this listener. Good to find missed {@link MapView#repaint()}s in code.
          */
-        protected synchronized void traceRandomRepaint() {
+        private synchronized void traceRandomRepaint() {
             if (!ignoreRepaint) {
                 Logging.trace("Repaint: {0} from {1}", Thread.currentThread().getStackTrace()[3], Thread.currentThread());
             }
@@ -169,8 +177,8 @@ LayerManager.LayerChangeListener, MainLayerManager.ActiveLayerChangeListener {
          * Retrieves a set of all layers that have been marked as invalid since the last call to this method.
          * @return The layers
          */
-        protected synchronized Set<MapViewPaintable> collectInvalidatedLayers() {
-            Set<MapViewPaintable> layers = Collections.newSetFromMap(new IdentityHashMap<MapViewPaintable, Boolean>());
+        private synchronized Set<MapViewPaintable> collectInvalidatedLayers() {
+            Set<MapViewPaintable> layers = Collections.newSetFromMap(new IdentityHashMap<>());
             layers.addAll(invalidatedLayers);
             invalidatedLayers.clear();
             return layers;
@@ -235,6 +243,9 @@ LayerManager.LayerChangeListener, MainLayerManager.ActiveLayerChangeListener {
     private Rectangle lastClipBounds = new Rectangle();
     private transient MapMover mapMover;
 
+    private final List<? extends JComponent> mapNavigationComponents;
+    private final Stroke worldBorderStroke = new BasicStroke(1.0f);
+
     /**
      * The listener that listens to invalidations of all layers.
      */
@@ -290,12 +301,13 @@ LayerManager.LayerChangeListener, MainLayerManager.ActiveLayerChangeListener {
             }
         });
 
-        setFocusTraversalKeysEnabled(!Shortcut.findShortcut(KeyEvent.VK_TAB, 0).isPresent());
+        setFocusTraversalKeysEnabled(Shortcut.findShortcut(KeyEvent.VK_TAB, 0).isEmpty());
 
-        for (JComponent c : getMapNavigationComponents(this)) {
+        mapNavigationComponents = getMapNavigationComponents(this);
+        for (JComponent c : mapNavigationComponents) {
             add(c);
         }
-        if (AutoFilterManager.PROP_AUTO_FILTER_ENABLED.get()) {
+        if (Boolean.TRUE.equals(AutoFilterManager.PROP_AUTO_FILTER_ENABLED.get())) {
             AutoFilterManager.getInstance().enableAutoFilterRule(AutoFilterManager.PROP_AUTO_FILTER_RULE.get());
         }
         setTransferHandler(new OsmTransferHandler());
@@ -311,7 +323,7 @@ LayerManager.LayerChangeListener, MainLayerManager.ActiveLayerChangeListener {
         Dimension size = zoomSlider.getPreferredSize();
         zoomSlider.setSize(size);
         zoomSlider.setLocation(3, 0);
-        zoomSlider.setFocusTraversalKeysEnabled(!Shortcut.findShortcut(KeyEvent.VK_TAB, 0).isPresent());
+        zoomSlider.setFocusTraversalKeysEnabled(Shortcut.findShortcut(KeyEvent.VK_TAB, 0).isEmpty());
 
         MapScaler scaler = new MapScaler(forMapView);
         scaler.setPreferredLineLength(size.width - 10);
@@ -319,6 +331,13 @@ LayerManager.LayerChangeListener, MainLayerManager.ActiveLayerChangeListener {
         scaler.setLocation(3, size.height);
 
         return Arrays.asList(zoomSlider, scaler);
+    }
+
+    private static BufferedImage getAcceleratedImage(Component mv, int width, int height) {
+        if (GraphicsEnvironment.isHeadless()) {
+            return new BufferedImage(width, height, BufferedImage.TYPE_3BYTE_BGR);
+        }
+        return mv.getGraphicsConfiguration().createCompatibleImage(width, height, Transparency.OPAQUE);
     }
 
     // remebered geometry of the component
@@ -397,6 +416,8 @@ LayerManager.LayerChangeListener, MainLayerManager.ActiveLayerChangeListener {
         ProjectionRegistry.removeProjectionChangeListener(layer);
         layer.removePropertyChangeListener(this);
         invalidatedListener.removeFrom(layer);
+        if (layer == getNativeScaleLayer())
+            setNativeScaleLayer(null);
         layer.destroy();
         AudioPlayer.reset();
 
@@ -537,13 +558,13 @@ LayerManager.LayerChangeListener, MainLayerManager.ActiveLayerChangeListener {
                 && nonChangedLayers.equals(visibleLayers.subList(0, nonChangedLayers.size()));
 
         if (null == offscreenBuffer || offscreenBuffer.getWidth() != width || offscreenBuffer.getHeight() != height) {
-            offscreenBuffer = new BufferedImage(width, height, BufferedImage.TYPE_3BYTE_BGR);
+            offscreenBuffer = getAcceleratedImage(this, width, height);
         }
 
         if (!canUseBuffer || nonChangedLayersBuffer == null) {
             if (null == nonChangedLayersBuffer
                     || nonChangedLayersBuffer.getWidth() != width || nonChangedLayersBuffer.getHeight() != height) {
-                nonChangedLayersBuffer = new BufferedImage(width, height, BufferedImage.TYPE_3BYTE_BGR);
+                nonChangedLayersBuffer = getAcceleratedImage(this, width, height);
             }
             Graphics2D g2 = nonChangedLayersBuffer.createGraphics();
             g2.setClip(scaledClip);
@@ -567,7 +588,8 @@ LayerManager.LayerChangeListener, MainLayerManager.ActiveLayerChangeListener {
         }
 
         nonChangedLayers.clear();
-        nonChangedLayers.addAll(visibleLayers.subList(0, nonChangedLayersCount));
+        if (nonChangedLayersCount > 0)
+            nonChangedLayers.addAll(visibleLayers.subList(0, nonChangedLayersCount));
         lastViewID = getViewID();
         lastClipBounds = g.getClipBounds();
 
@@ -655,6 +677,7 @@ LayerManager.LayerChangeListener, MainLayerManager.ActiveLayerChangeListener {
 
     private void drawWorldBorders(Graphics2D tempG) {
         tempG.setColor(Color.WHITE);
+        tempG.setStroke(worldBorderStroke);
         Bounds b = getProjection().getWorldBoundsLatLon();
 
         int w = getWidth();
@@ -816,8 +839,9 @@ LayerManager.LayerChangeListener, MainLayerManager.ActiveLayerChangeListener {
      */
     public String getLayerInformationForSourceTag() {
         return layerManager.getVisibleLayersInZOrder().stream()
-                .filter(layer -> layer.getChangesetSourceTag() != null && !layer.getChangesetSourceTag().trim().isEmpty())
-                .map(layer -> layer.getChangesetSourceTag().trim())
+                .map(Layer::getChangesetSourceTag)
+                .filter(not(Utils::isStripEmpty))
+                .map(String::trim)
                 .distinct()
                 .collect(Collectors.joining("; "));
     }
@@ -907,5 +931,16 @@ LayerManager.LayerChangeListener, MainLayerManager.ActiveLayerChangeListener {
      */
     public final MapMover getMapMover() {
         return mapMover;
+    }
+
+    /**
+     * Set the visibility of the navigation component
+     * @param visible {@code true} to make the navigation component visible
+     * @since 18755
+     */
+    public void setMapNavigationComponentVisibility(boolean visible) {
+        for (JComponent c : mapNavigationComponents) {
+            c.setVisible(visible);
+        }
     }
 }

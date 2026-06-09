@@ -15,12 +15,13 @@ import javax.swing.JPanel;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Tag;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPreset;
+import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetItemGuiSupport;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetLabel;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPresets;
 import org.openstreetmap.josm.tools.GBC;
 
 /**
- * Adds a link to an other preset.
+ * Adds a link to another preset.
  * @since 8863
  */
 public class PresetLink extends TextItem {
@@ -44,7 +45,7 @@ public class PresetLink extends TextItem {
     public String preset_name = ""; // NOSONAR
 
     /**
-     * Creates a label to be inserted aboive this link
+     * Creates a label to be inserted above this link
      * @return a label
      */
     public JLabel createLabel() {
@@ -53,13 +54,14 @@ public class PresetLink extends TextItem {
     }
 
     @Override
-    public boolean addToPanel(JPanel p, Collection<OsmPrimitive> sel, boolean presetInitiallyMatches) {
+    public boolean addToPanel(JPanel p, TaggingPresetItemGuiSupport support) {
         final String presetName = preset_name;
         Optional<TaggingPreset> found = TaggingPresets.getTaggingPresets().stream().filter(preset -> presetName.equals(preset.name)).findFirst();
         if (found.isPresent()) {
             TaggingPreset t = found.get();
             JLabel lbl = new TaggingPresetLabel(t);
-            lbl.addMouseListener(new TaggingPresetMouseAdapter(t, sel));
+            lbl.addMouseListener(new TaggingPresetMouseAdapter(t, support.getSelected()));
+            lbl.applyComponentOrientation(support.getDefaultComponentOrientation());
             p.add(lbl, GBC.eol().fill(GBC.HORIZONTAL));
         }
         return false;

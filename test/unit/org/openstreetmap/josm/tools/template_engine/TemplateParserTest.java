@@ -1,15 +1,13 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.tools.template_engine;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.Arrays;
 import java.util.List;
 
-import org.junit.Assert;
-import org.junit.BeforeClass;
-import org.junit.Test;
-import org.openstreetmap.josm.JOSMFixture;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.Relation;
 import org.openstreetmap.josm.data.osm.RelationMember;
@@ -21,22 +19,13 @@ import org.openstreetmap.josm.testutils.DatasetFactory;
 /**
  * Unit tests of {@link TemplateParser} class.
  */
-public class TemplateParserTest {
-
-    /**
-     * Setup test.
-     */
-    @BeforeClass
-    public static void setUp() {
-        JOSMFixture.createUnitTestFixture().init();
-    }
-
+class TemplateParserTest {
     /**
      * Test to parse an empty string.
      * @throws ParseError if the template cannot be parsed
      */
     @Test
-    public void testEmpty() throws ParseError {
+    void testEmpty() throws ParseError {
         TemplateParser parser = new TemplateParser("");
         assertEquals(new StaticText(""), parser.parse());
     }
@@ -46,7 +35,7 @@ public class TemplateParserTest {
      * @throws ParseError if the template cannot be parsed
      */
     @Test
-    public void testVariable() throws ParseError {
+    void testVariable() throws ParseError {
         TemplateParser parser = new TemplateParser("abc{var}\\{ef\\$\\{g");
         assertEquals(CompoundTemplateEntry.fromArray(new StaticText("abc"),
                 new Variable("var"), new StaticText("{ef${g")), parser.parse());
@@ -57,7 +46,7 @@ public class TemplateParserTest {
      * @throws ParseError if the template cannot be parsed
      */
     @Test
-    public void testConditionWhitespace() throws ParseError {
+    void testConditionWhitespace() throws ParseError {
         TemplateParser parser = new TemplateParser("?{ '{name} {desc}' | '{name}' | '{desc}'    }");
         Condition condition = new Condition(Arrays.asList(
             CompoundTemplateEntry.fromArray(new Variable("name"), new StaticText(" "), new Variable("desc")),
@@ -71,7 +60,7 @@ public class TemplateParserTest {
      * @throws ParseError if the template cannot be parsed
      */
     @Test
-    public void testConditionNoWhitespace() throws ParseError {
+    void testConditionNoWhitespace() throws ParseError {
         TemplateParser parser = new TemplateParser("?{'{name} {desc}'|'{name}'|'{desc}'}");
         Condition condition = new Condition(Arrays.asList(
                 CompoundTemplateEntry.fromArray(new Variable("name"), new StaticText(" "), new Variable("desc")),
@@ -90,7 +79,7 @@ public class TemplateParserTest {
      * @throws SearchParseError if an error has been encountered while compiling
      */
     @Test
-    public void testConditionSearchExpression() throws ParseError, SearchParseError {
+    void testConditionSearchExpression() throws ParseError, SearchParseError {
         TemplateParser parser = new TemplateParser("?{ admin_level = 2 'NUTS 1' | admin_level = 4 'NUTS 2' |  '{admin_level}'}");
         Condition condition = new Condition(Arrays.asList(
                 new SearchExpressionCondition(compile("admin_level = 2"), new StaticText("NUTS 1")),
@@ -138,12 +127,12 @@ public class TemplateParserTest {
      * @throws ParseError if the template cannot be parsed
      */
     @Test
-    public void testFilling() throws ParseError {
+    void testFilling() throws ParseError {
         TemplateParser parser = new TemplateParser("{name} u{unknown}u i{number}i");
         TemplateEntry entry = parser.parse();
         StringBuilder sb = new StringBuilder();
         entry.appendText(sb, dataProvider);
-        Assert.assertEquals("waypointName uu i10i", sb.toString());
+        assertEquals("waypointName uu i10i", sb.toString());
     }
 
     /**
@@ -151,7 +140,7 @@ public class TemplateParserTest {
      * @throws ParseError if the template cannot be parsed
      */
     @Test
-    public void testFillingSearchExpression() throws ParseError {
+    void testFillingSearchExpression() throws ParseError {
         TemplateParser parser = new TemplateParser("?{ admin_level = 2 'NUTS 1' | admin_level = 4 'NUTS 2' |  '{admin_level}'}");
         TemplateEntry templateEntry = parser.parse();
 
@@ -159,12 +148,12 @@ public class TemplateParserTest {
         Relation r = new Relation();
         r.put("admin_level", "2");
         templateEntry.appendText(sb, r);
-        Assert.assertEquals("NUTS 1", sb.toString());
+        assertEquals("NUTS 1", sb.toString());
 
         sb.setLength(0);
         r.put("admin_level", "5");
         templateEntry.appendText(sb, r);
-        Assert.assertEquals("5", sb.toString());
+        assertEquals("5", sb.toString());
     }
 
     /**
@@ -172,13 +161,13 @@ public class TemplateParserTest {
      * @throws ParseError if the template cannot be parsed
      */
     @Test
-    public void testPrintAll() throws ParseError {
+    void testPrintAll() throws ParseError {
         TemplateParser parser = new TemplateParser("{special:everything}");
         TemplateEntry entry = parser.parse();
         StringBuilder sb = new StringBuilder();
         entry.appendText(sb, dataProvider);
-        Assert.assertEquals("name=waypointName, number=10", sb.toString());
-        Assert.assertEquals("{special:everything}", entry.toString());
+        assertEquals("name=waypointName, number=10", sb.toString());
+        assertEquals("{special:everything}", entry.toString());
     }
 
     /**
@@ -186,12 +175,12 @@ public class TemplateParserTest {
      * @throws ParseError if the template cannot be parsed
      */
     @Test
-    public void testPrintMultiline() throws ParseError {
+    void testPrintMultiline() throws ParseError {
         TemplateParser parser = new TemplateParser("{name}\\n{number}");
         TemplateEntry entry = parser.parse();
         StringBuilder sb = new StringBuilder();
         entry.appendText(sb, dataProvider);
-        Assert.assertEquals("waypointName\n10", sb.toString());
+        assertEquals("waypointName\n10", sb.toString());
     }
 
     /**
@@ -199,17 +188,17 @@ public class TemplateParserTest {
      * @throws ParseError if the template cannot be parsed
      */
     @Test
-    public void testSpecialVariable() throws ParseError {
+    void testSpecialVariable() throws ParseError {
         TemplateParser parser = new TemplateParser("{name}u{special:localName}u{special:special:key}");
         TemplateEntry templateEntry = parser.parse();
 
         StringBuilder sb = new StringBuilder();
         templateEntry.appendText(sb, dataProvider);
-        Assert.assertEquals("waypointNameulocalNameuspecialKey", sb.toString());
+        assertEquals("waypointNameulocalNameuspecialKey", sb.toString());
     }
 
     @Test
-    public void testSearchExpression() throws Exception {
+    void testSearchExpression() throws Exception {
         compile("(parent type=type1 type=parent1) | (parent type=type2 type=parent2)");
         //"parent(type=type1,type=parent1) | (parent(type=type2,type=parent2)"
         //TODO
@@ -220,7 +209,7 @@ public class TemplateParserTest {
      * @throws ParseError if the template cannot be parsed
      */
     @Test
-    public void testSwitchContext() throws ParseError {
+    void testSwitchContext() throws ParseError {
         TemplateParser parser = new TemplateParser("!{parent() type=parent2 '{name}'}");
         DatasetFactory ds = new DatasetFactory();
         Relation parent1 = ds.addRelation(1);
@@ -237,11 +226,11 @@ public class TemplateParserTest {
         TemplateEntry entry = parser.parse();
         entry.appendText(sb, child);
 
-        Assert.assertEquals("name_parent2", sb.toString());
+        assertEquals("name_parent2", sb.toString());
     }
 
     @Test
-    public void testSetAnd() throws ParseError {
+    void testSetAnd() throws ParseError {
         TemplateParser parser = new TemplateParser("!{(parent(type=child) type=parent) & (parent type=child subtype=parent) '{name}'}");
         DatasetFactory ds = new DatasetFactory();
         Relation parent1 = ds.addRelation(1);
@@ -256,11 +245,11 @@ public class TemplateParserTest {
         TemplateEntry entry = parser.parse();
         entry.appendText(sb, child);
 
-        Assert.assertEquals("name_parent1", sb.toString());
+        assertEquals("name_parent1", sb.toString());
     }
 
     @Test
-    public void testSetOr() throws ParseError {
+    void testSetOr() throws ParseError {
         TemplateParser parser = new TemplateParser("!{(parent(type=type1) type=parent1) | (parent type=type2 type=parent2) '{name}'}");
         DatasetFactory ds = new DatasetFactory();
         Relation parent1 = ds.addRelation(1);
@@ -283,11 +272,11 @@ public class TemplateParserTest {
         entry.appendText(sb, child1);
         entry.appendText(sb, child2);
 
-        Assert.assertEquals("name_parent1name_parent2", sb.toString());
+        assertEquals("name_parent1name_parent2", sb.toString());
     }
 
     @Test
-    public void testMultilevel() throws ParseError {
+    void testMultilevel() throws ParseError {
         TemplateParser parser = new TemplateParser(
                 "!{(parent(parent(type=type1)) type=grandparent) | (parent type=type2 type=parent2) '{name}'}");
         DatasetFactory ds = new DatasetFactory();
@@ -316,23 +305,23 @@ public class TemplateParserTest {
         entry.appendText(sb, child1);
         entry.appendText(sb, child2);
 
-        Assert.assertEquals("grandparent_namename_parent2", sb.toString());
-    }
-
-    @Test(expected = ParseError.class)
-    public void testErrorsNot() throws ParseError {
-        TemplateParser parser = new TemplateParser("!{-parent() '{name}'}");
-        parser.parse();
-    }
-
-    @Test(expected = ParseError.class)
-    public void testErrorOr() throws ParseError {
-        TemplateParser parser = new TemplateParser("!{parent() | type=type1 '{name}'}");
-        parser.parse();
+        assertEquals("grandparent_namename_parent2", sb.toString());
     }
 
     @Test
-    public void testChild() throws ParseError {
+    void testErrorsNot() {
+        TemplateParser parser = new TemplateParser("!{-parent() '{name}'}");
+        assertThrows(ParseError.class, parser::parse);
+    }
+
+    @Test
+    void testErrorOr() {
+        TemplateParser parser = new TemplateParser("!{parent() | type=type1 '{name}'}");
+        assertThrows(ParseError.class, parser::parse);
+    }
+
+    @Test
+    void testChild() throws ParseError {
         TemplateParser parser = new TemplateParser("!{((child(type=type1) type=child1) | (child type=type2 type=child2)) type=child2 '{name}'}");
         DatasetFactory ds = new DatasetFactory();
         Relation parent1 = ds.addRelation(1);
@@ -350,20 +339,19 @@ public class TemplateParserTest {
         parent1.addMember(new RelationMember("", child2));
         parent2.addMember(new RelationMember("", child2));
 
-
         StringBuilder sb = new StringBuilder();
         TemplateEntry entry = parser.parse();
         entry.appendText(sb, parent2);
 
-        Assert.assertEquals("child2", sb.toString());
+        assertEquals("child2", sb.toString());
     }
 
     @Test
-    public void testToStringCanBeParsedAgain() throws Exception {
+    void testToStringCanBeParsedAgain() throws Exception {
         final String s1 = "?{ '{name} ({desc})' | '{name} ({cmt})' | '{name}' | '{desc}' | '{cmt}' }";
         final String s2 = new TemplateParser(s1).parse().toString();
         final String s3 = new TemplateParser(s2).parse().toString();
-        Assert.assertEquals(s1, s2);
-        Assert.assertEquals(s2, s3);
+        assertEquals(s1, s2);
+        assertEquals(s2, s3);
     }
 }

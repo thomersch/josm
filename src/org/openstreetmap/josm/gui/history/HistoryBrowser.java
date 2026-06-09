@@ -5,12 +5,14 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.awt.BorderLayout;
 import java.awt.Dimension;
-import java.util.Arrays;
+import java.util.stream.Stream;
 
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
+import javax.swing.event.ChangeEvent;
+import javax.swing.event.ChangeListener;
 
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.OsmPrimitiveType;
@@ -18,11 +20,11 @@ import org.openstreetmap.josm.data.osm.history.History;
 import org.openstreetmap.josm.tools.Destroyable;
 
 /**
- * HistoryBrowser is an UI component which displays history information about an {@link OsmPrimitive}.
+ * HistoryBrowser is a UI component which displays history information about an {@link OsmPrimitive}.
  *
  * @since 1709
  */
-public class HistoryBrowser extends JPanel implements Destroyable {
+public class HistoryBrowser extends JPanel implements Destroyable, ChangeListener {
 
     /** the model */
     private transient HistoryBrowserModel model;
@@ -115,6 +117,7 @@ public class HistoryBrowser extends JPanel implements Destroyable {
     public void populate(History history) {
         boolean samePrimitive = model.isSamePrimitive(history); // needs to be before setHistory
         model.setHistory(history);
+        model.addChangeListener(this);
         if (samePrimitive) {
             // no need to rebuild the UI
             return;
@@ -159,13 +162,19 @@ public class HistoryBrowser extends JPanel implements Destroyable {
     public void destroy() {
         if (model != null) {
             model.unlinkAsListener();
+            model.removeChangeListener(this);
             model = null;
         }
-        Arrays.asList(tagInfoViewer, nodeListViewer, relationMemberListViewer, coordinateInfoViewer).stream()
+        Stream.of(tagInfoViewer, nodeListViewer, relationMemberListViewer, coordinateInfoViewer)
                 .filter(Destroyable.class::isInstance).forEach(Destroyable::destroy);
         tagInfoViewer = null;
         nodeListViewer = null;
         relationMemberListViewer = null;
         coordinateInfoViewer = null;
+    }
+
+    @Override
+    public void stateChanged(ChangeEvent e) {
+        tagInfoViewer.adjustWidths();
     }
 }

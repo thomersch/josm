@@ -1,32 +1,23 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.coor.conversion;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.coor.LatLon;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.Projection;
 
 /**
  * Unit tests for class {@link LatLonParser}.
  */
-public class LatLonParserTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().projection();
-
+@Projection
+class LatLonParserTest {
     /**
      * Unit test of {@link LatLonParser#parse} method.
      */
     @Test
-    public void testParse() {
+    void testParse() {
         assertEquals(new LatLon(49.29918, 19.24788), LatLonParser.parse("49.29918° 19.24788°"));
         assertEquals(new LatLon(49.29918, 19.24788), LatLonParser.parse("N 49.29918 E 19.24788°"));
         assertEquals(new LatLon(49.29918, 19.24788), LatLonParser.parse("49.29918° 19.24788°"));
@@ -53,17 +44,17 @@ public class LatLonParserTest {
     /**
      * Unit test of {@link LatLonParser#parse} method - invalid case 1.
      */
-    @Test(expected = IllegalArgumentException.class)
-    public void testParseInvalid1() {
-        LatLonParser.parse("48°45'S 23°30'S");
+    @Test
+    void testParseInvalid1() {
+        assertThrows(IllegalArgumentException.class, () -> LatLonParser.parse("48°45'S 23°30'S"));
     }
 
     /**
      * Unit test of {@link LatLonParser#parse} method - invalid case 2.
      */
-    @Test(expected = IllegalArgumentException.class)
-    public void testParseInvalid2() {
-        LatLonParser.parse("47°45'N 24°00'S");
+    @Test
+    void testParseInvalid2() {
+        assertThrows(IllegalArgumentException.class, () -> LatLonParser.parse("47°45'N 24°00'S"));
     }
 
 }

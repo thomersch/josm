@@ -50,12 +50,15 @@ import org.openstreetmap.josm.tools.Logging;
 public class UploadPrimitivesTask extends AbstractUploadTask {
     private boolean uploadCanceled;
     private Exception lastException;
+    /** The objects to upload. Successfully uploaded objects are removed. */
     private final APIDataSet toUpload;
     private OsmServerWriter writer;
     private final OsmDataLayer layer;
     private Changeset changeset;
     private final Set<IPrimitive> processedPrimitives;
     private final UploadStrategySpecification strategy;
+    /** Initial number of objects to be uploaded */
+    private final int numObjectsToUpload;
 
     /**
      * Creates the task
@@ -75,14 +78,21 @@ public class UploadPrimitivesTask extends AbstractUploadTask {
         ensureParameterNotNull(layer, "layer");
         ensureParameterNotNull(strategy, "strategy");
         ensureParameterNotNull(changeset, "changeset");
+        ensureParameterNotNull(toUpload, "toUpload");
         this.toUpload = toUpload;
+        this.numObjectsToUpload = toUpload.getSize();
         this.layer = layer;
         this.changeset = changeset;
         this.strategy = strategy;
         this.processedPrimitives = new HashSet<>();
     }
 
-    protected MaxChangesetSizeExceededPolicy askMaxChangesetSizeExceedsPolicy() {
+    /**
+     * Prompt the user about how to proceed.
+     *
+     * @return the policy selected by the user
+     */
+    protected MaxChangesetSizeExceededPolicy promptUserForPolicy() {
         ButtonSpec[] specs = {
                 new ButtonSpec(
                         tr("Continue uploading"),
@@ -103,7 +113,7 @@ public class UploadPrimitivesTask extends AbstractUploadTask {
                         null /* no specific help text */
                 )
         };
-        int numObjectsToUploadLeft = toUpload.getSize() - processedPrimitives.size();
+        int numObjectsToUploadLeft = numObjectsToUpload - processedPrimitives.size();
         String msg1 = tr("The server reported that the current changeset was closed.<br>"
                 + "This is most likely because the changesets size exceeded the max. size<br>"
                 + "of {0} objects on the server ''{1}''.",
@@ -135,7 +145,7 @@ public class UploadPrimitivesTask extends AbstractUploadTask {
                 specs[0],
                 ht("/Action/Upload#ChangesetFull")
         );
-        switch(ret) {
+        switch (ret) {
         case 0: return MaxChangesetSizeExceededPolicy.AUTOMATICALLY_OPEN_NEW_CHANGESETS;
         case 1: return MaxChangesetSizeExceededPolicy.FILL_ONE_CHANGESET_AND_RETURN_TO_UPLOAD_DIALOG;
         case 2:
@@ -145,29 +155,29 @@ public class UploadPrimitivesTask extends AbstractUploadTask {
     }
 
     /**
-     * Opens a new changeset.
+     * Handles a server changeset full response.
+     * <p>
+     * Handles a server changeset full response by either aborting or opening a new changeset, if the
+     * user requested it so.
+     *
+     * @return true if the upload process should continue with the new changeset, false if the
+     *         upload should be interrupted
+     * @throws OsmTransferException "if something goes wrong."
      */
-    protected void openNewChangeset() {
-        // make sure the current changeset is removed from the upload dialog.
-        ChangesetCache.getInstance().update(changeset);
-        Changeset newChangeSet = new Changeset();
-        newChangeSet.setKeys(this.changeset.getKeys());
-        this.changeset = newChangeSet;
-    }
-
-    protected boolean recoverFromChangesetFullException() throws OsmTransferException {
-        if (toUpload.getSize() - processedPrimitives.size() == 0) {
+    protected boolean handleChangesetFullResponse() throws OsmTransferException {
+        if (processedPrimitives.size() >= numObjectsToUpload) {
             strategy.setPolicy(MaxChangesetSizeExceededPolicy.ABORT);
             return false;
         }
         if (strategy.getPolicy() == null || strategy.getPolicy() == MaxChangesetSizeExceededPolicy.ABORT) {
-            strategy.setPolicy(askMaxChangesetSizeExceedsPolicy());
+            strategy.setPolicy(promptUserForPolicy());
         }
-        switch(strategy.getPolicy()) {
+        switch (strategy.getPolicy()) {
         case AUTOMATICALLY_OPEN_NEW_CHANGESETS:
-            // prepare the state of the task for a next iteration in uploading.
-            closeChangesetIfRequired();
-            openNewChangeset();
+            final Changeset newChangeSet = new Changeset();
+            newChangeSet.setKeys(changeset.getKeys());
+            closeChangeset();
+            this.changeset = newChangeSet;
             toUpload.removeProcessed(processedPrimitives);
             return true;
         case ABORT:
@@ -255,11 +265,13 @@ public class UploadPrimitivesTask extends AbstractUploadTask {
                 try {
                     getProgressMonitor().subTask(
                             trn("Uploading {0} object...", "Uploading {0} objects...", toUpload.getSize(), toUpload.getSize()));
+                    getProgressMonitor().setTicks(0); // needed in 2nd and further loop executions
                     synchronized (this) {
                         writer = new OsmServerWriter();
                     }
                     writer.uploadOsm(strategy, toUpload.getPrimitives(), changeset, getProgressMonitor().createSubTaskMonitor(1, false));
-
+                    // If the changeset was new, now it is open.
+                    ChangesetCache.getInstance().update(changeset);
                     // if we get here we've successfully uploaded the data. Exit the loop.
                     break;
                 } catch (OsmTransferCanceledException e) {
@@ -273,24 +285,25 @@ public class UploadPrimitivesTask extends AbstractUploadTask {
                     if (writer != null) {
                         processedPrimitives.addAll(writer.getProcessedPrimitives()); // OsmPrimitive in => OsmPrimitive out
                     }
-                    switch(e.getSource()) {
+                    switch (e.getSource()) {
                     case UPLOAD_DATA:
                         // Most likely the changeset is full. Try to recover and continue
-                        // with a new changeset, but let the user decide first (see
-                        // recoverFromChangesetFullException)
-                        if (recoverFromChangesetFullException()) {
+                        // with a new changeset, but let the user decide first.
+                        if (handleChangesetFullResponse()) {
                             continue;
                         }
                         lastException = e;
                         break uploadloop;
-                    case UNSPECIFIED:
                     case UPDATE_CHANGESET:
+                    case CLOSE_CHANGESET:
+                    case UNSPECIFIED:
                     default:
                         // The changeset was closed when we tried to update it. Probably, our
                         // local list of open changesets got out of sync with the server state.
                         // The user will have to select another open changeset.
                         // Rethrow exception - this will be handled later.
                         changeset.setOpen(false);
+                        ChangesetCache.getInstance().update(changeset);
                         throw e;
                     }
                 } finally {
@@ -311,7 +324,7 @@ public class UploadPrimitivesTask extends AbstractUploadTask {
                 lastException = e;
             }
         } finally {
-            if (MessageNotifier.PROP_NOTIFIER_ENABLED.get()) {
+            if (Boolean.TRUE.equals(MessageNotifier.PROP_NOTIFIER_ENABLED.get())) {
                 MessageNotifier.start();
             }
         }
@@ -319,20 +332,43 @@ public class UploadPrimitivesTask extends AbstractUploadTask {
         cleanupAfterUpload();
     }
 
-    private void closeChangesetIfRequired() throws OsmTransferException {
-        if (strategy.isCloseChangesetAfterUpload() && changeset != null && !changeset.isNew() && changeset.isOpen()) {
-            OsmApi.getOsmApi().closeChangeset(changeset, progressMonitor.createSubTaskMonitor(0, false));
+    /**
+     * Closes the changeset on the server and locally.
+     *
+     * @throws OsmTransferException "if something goes wrong."
+     */
+    private void closeChangeset() throws OsmTransferException {
+        if (changeset != null && !changeset.isNew() && changeset.isOpen()) {
+            try {
+                OsmApi.getOsmApi().closeChangeset(changeset, progressMonitor.createSubTaskMonitor(0, false));
+            } catch (ChangesetClosedException e) {
+                // Do not raise a stink, probably the changeset timed out.
+                Logging.trace(e);
+            } finally {
+                changeset.setOpen(false);
+                ChangesetCache.getInstance().update(changeset);
+            }
         }
     }
 
-    @Override protected void finish() {
+    private void closeChangesetIfRequired() throws OsmTransferException {
+        if (strategy.isCloseChangesetAfterUpload()) {
+            closeChangeset();
+        }
+    }
 
-        // depending on the success of the upload operation and on the policy for
-        // multi changeset uploads this will sent the user back to the appropriate
-        // place in JOSM, either
-        // - to an error dialog
-        // - to the Upload Dialog
-        // - to map editing
+    /**
+     * Depending on the success of the upload operation and on the policy for
+     * multi changeset uploads this will send the user back to the appropriate
+     * place in JOSM, either:
+     * <ul>
+     * <li>to an error dialog,
+     * <li>to the Upload Dialog, or
+     * <li>to map editing.
+     * </ul>
+     */
+    @Override
+    protected void finish() {
         GuiHelper.runInEDT(() -> {
             // if the changeset is still open after this upload we want it to be selected on the next upload
             ChangesetCache.getInstance().update(changeset);
@@ -341,7 +377,7 @@ public class UploadPrimitivesTask extends AbstractUploadTask {
             }
             if (uploadCanceled) return;
             if (lastException == null) {
-                HtmlPanel panel = new HtmlPanel(
+                final HtmlPanel panel = new HtmlPanel(
                         "<h3><a href=\"" + Config.getUrls().getBaseBrowseUrl() + "/changeset/" + changeset.getId() + "\">"
                                 + tr("Upload successful!") + "</a></h3>");
                 panel.enableClickableHyperlinks();
@@ -362,9 +398,8 @@ public class UploadPrimitivesTask extends AbstractUploadTask {
                     /* do nothing if unknown policy */
                     return;
                 if (e.getSource() == ChangesetClosedException.Source.UPLOAD_DATA) {
-                    switch(strategy.getPolicy()) {
+                    switch (strategy.getPolicy()) {
                     case ABORT:
-                        break; /* do nothing - we return to map editing */
                     case AUTOMATICALLY_OPEN_NEW_CHANGESETS:
                         break; /* do nothing - we return to map editing */
                     case FILL_ONE_CHANGESET_AND_RETURN_TO_UPLOAD_DIALOG:
@@ -374,6 +409,8 @@ public class UploadPrimitivesTask extends AbstractUploadTask {
                         UploadDialog.getUploadDialog().setUploadedPrimitives(toUpload);
                         UploadDialog.getUploadDialog().setVisible(true);
                         break;
+                    default:
+                        throw new IllegalStateException("Unexpected value: " + strategy.getPolicy());
                     }
                 } else {
                     handleFailedUpload(lastException);

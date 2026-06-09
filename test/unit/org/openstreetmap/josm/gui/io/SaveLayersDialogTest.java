@@ -1,43 +1,51 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.io;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.awt.Component;
+import java.awt.GraphicsEnvironment;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.Collections;
 import java.util.List;
+
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JOptionPane;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.osm.DataSet;
+import org.openstreetmap.josm.data.osm.UploadPolicy;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.io.IllegalDataException;
+import org.openstreetmap.josm.io.OsmReader;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 import org.openstreetmap.josm.testutils.mockers.JOptionPaneSimpleMocker;
+import org.openstreetmap.josm.testutils.mockers.WindowMocker;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import mockit.Invocation;
+import mockit.Mock;
+import mockit.MockUp;
 
 /**
  * Unit tests of {@link SaveLayersDialog} class.
  */
-public class SaveLayersDialogTest {
-
-    /**
-     * Setup tests
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+@BasicPreferences
+class SaveLayersDialogTest {
     /**
      * Test of {@link SaveLayersDialog#confirmSaveLayerInfosOK}.
      */
     @Test
-    public void testConfirmSaveLayerInfosOK() {
+    void testConfirmSaveLayerInfosOK() {
         final List<SaveLayerInfo> list = Collections.singletonList(new SaveLayerInfo(new OsmDataLayer(new DataSet(), null, null)));
 
         final JOptionPaneSimpleMocker jopsMocker = new JOptionPaneSimpleMocker() {
@@ -116,5 +124,82 @@ public class SaveLayersDialogTest {
         jopsMocker.getMockResultMap().clear();
 
         assertTrue(SaveLayersDialog.confirmSaveLayerInfosOK(new SaveLayersModel()));
+    }
+
+    /**
+     * Non-regression test for #22817: No warning when deleting a layer with changes and discourages upload
+     * @param policy The upload policy to test
+     * @throws IOException if an error occurs
+     * @throws IllegalDataException if an error occurs
+     */
+    @ParameterizedTest
+    @EnumSource(value = UploadPolicy.class)
+    void testNonRegression22817(UploadPolicy policy) throws IOException, IllegalDataException {
+        File file = new File(TestUtils.getRegressionDataFile(22817, "data.osm"));
+        InputStream is = new FileInputStream(file);
+        final OsmDataLayer osmDataLayer = new OsmDataLayer(OsmReader.parseDataSet(is, null), null, null);
+        osmDataLayer.onPostLoadFromFile();
+        osmDataLayer.getDataSet().setUploadPolicy(policy);
+        osmDataLayer.setAssociatedFile(file);
+        assertTrue(osmDataLayer.getDataSet().isModified());
+        assertFalse(osmDataLayer.requiresSaveToFile());
+        assertTrue(osmDataLayer.getDataSet().requiresUploadToServer());
+        assertEquals(policy != UploadPolicy.BLOCKED, osmDataLayer.requiresUploadToServer());
+        assertEquals(policy != UploadPolicy.BLOCKED, osmDataLayer.isUploadable());
+        new WindowMocker();
+        // Needed since the *first call* is to check whether we are in a headless environment
+        new GraphicsEnvironmentMock();
+        // Needed since we need to mock out the UI
+        SaveLayersDialogMock saveLayersDialogMock = new SaveLayersDialogMock();
+        assertTrue(SaveLayersDialog.saveUnsavedModifications(Collections.singleton(osmDataLayer), SaveLayersDialog.Reason.DELETE));
+        int res = saveLayersDialogMock.getUserActionCalled;
+        if (policy == UploadPolicy.NORMAL) {
+            assertEquals(1, res, "The user should have been asked for an action on the layer");
+        } else {
+            assertEquals(0, res, "The user should not have been asked for an action on the layer");
+
+        }
+    }
+
+    private static final class GraphicsEnvironmentMock extends MockUp<GraphicsEnvironment> {
+        @Mock
+        public static boolean isHeadless(Invocation invocation) {
+            return false;
+        }
+    }
+
+    private static final class SaveLayersDialogMock extends MockUp<SaveLayersDialog> {
+        private final SaveLayersModel model = new SaveLayersModel();
+        private int getUserActionCalled = 0;
+        @Mock
+        public void $init(Component parent) {
+            // Do nothing
+        }
+
+        @Mock
+        public void prepareForSavingAndUpdatingLayers(final SaveLayersDialog.Reason reason) {
+            // Do nothing
+        }
+
+        @Mock
+        public SaveLayersModel getModel() {
+            return this.model;
+        }
+
+        @Mock
+        public void setVisible(boolean b) {
+            // Do nothing
+        }
+
+        @Mock
+        public SaveLayersDialog.UserAction getUserAction() {
+            this.getUserActionCalled++;
+            return SaveLayersDialog.UserAction.PROCEED;
+        }
+
+        @Mock
+        public void closeDialog() {
+            // Do nothing
+        }
     }
 }

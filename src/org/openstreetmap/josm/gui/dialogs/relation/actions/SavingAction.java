@@ -4,12 +4,17 @@ package org.openstreetmap.josm.gui.dialogs.relation.actions;
 import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.awt.Component;
+import java.util.ArrayList;
+import java.util.List;
 
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 
 import org.openstreetmap.josm.command.AddCommand;
 import org.openstreetmap.josm.command.ChangeCommand;
+import org.openstreetmap.josm.command.ChangeMembersCommand;
+import org.openstreetmap.josm.command.ChangePropertyCommand;
+import org.openstreetmap.josm.command.Command;
 import org.openstreetmap.josm.command.conflict.ConflictAddCommand;
 import org.openstreetmap.josm.data.UndoRedoHandler;
 import org.openstreetmap.josm.data.conflict.Conflict;
@@ -18,6 +23,7 @@ import org.openstreetmap.josm.data.osm.Relation;
 import org.openstreetmap.josm.gui.HelpAwareOptionPane;
 import org.openstreetmap.josm.gui.HelpAwareOptionPane.ButtonSpec;
 import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.dialogs.relation.IRelationEditor;
 import org.openstreetmap.josm.gui.dialogs.relation.RelationDialogManager;
 import org.openstreetmap.josm.gui.dialogs.relation.RelationEditor;
 import org.openstreetmap.josm.gui.tagging.TagEditorModel;
@@ -48,8 +54,8 @@ abstract class SavingAction extends AbstractRelationEditorAction {
         tagEditorModel.applyToPrimitive(newRelation);
         getMemberTableModel().applyToRelation(newRelation);
         // If the user wanted to create a new relation, but hasn't added any members or
-        // tags, don't add an empty relation
-        if (newRelation.isEmpty() && !newRelation.hasKeys())
+        // tags (specifically the "type" tag), don't add the relation
+        if (!newRelation.isUseful())
             return;
         UndoRedoHandler.getInstance().add(new AddCommand(getLayer().getDataSet(), newRelation));
 
@@ -85,9 +91,17 @@ abstract class SavingAction extends AbstractRelationEditorAction {
         Relation editedRelation = new Relation(originRelation);
         tagEditorModel.applyToPrimitive(editedRelation);
         getMemberTableModel().applyToRelation(editedRelation);
-        if (!editedRelation.hasEqualSemanticAttributes(originRelation, false)) {
+        List<Command> cmds = new ArrayList<>();
+        if (!originRelation.getMembers().equals(editedRelation.getMembers())) {
+            cmds.add(new ChangeMembersCommand(originRelation, editedRelation.getMembers()));
+        }
+        Command cmdProps = ChangePropertyCommand.build(originRelation, editedRelation);
+        if (cmdProps != null)
+            cmds.add(cmdProps);
+        if (cmds.size() >= 2) {
             UndoRedoHandler.getInstance().add(new ChangeCommand(originRelation, editedRelation));
-        } else {
+        } else if (!cmds.isEmpty()) {
+            UndoRedoHandler.getInstance().add(cmds.get(0));
             editedRelation.setMembers(null); // see #19885
         }
     }
@@ -147,37 +161,39 @@ abstract class SavingAction extends AbstractRelationEditorAction {
     }
 
     protected boolean applyChanges() {
-        if (editorAccess.getEditor().getRelation() == null) {
+        IRelationEditor editor = editorAccess.getEditor();
+        if (editor.getRelation() == null) {
             applyNewRelation(getTagModel());
         } else if (isEditorDirty()) {
-            if (editorAccess.getEditor().isDirtyRelation()) {
+            if (editor.isDirtyRelation()) {
                 if (confirmClosingBecauseOfDirtyState()) {
-                    if (getLayer().getConflicts().hasConflictForMy(editorAccess.getEditor().getRelation())) {
+                    if (getLayer().getConflicts().hasConflictForMy(editor.getRelation())) {
                         warnDoubleConflict();
                         return false;
                     }
+                    getEditor().setIsSaving(true); // see #24444
                     applyExistingConflictingRelation(getTagModel());
                     hideEditor();
                     return false;
                 } else
                     return false;
             } else {
+                getEditor().setIsSaving(true); // see #24444
                 applyExistingNonConflictingRelation(getTagModel());
             }
         }
-        editorAccess.getEditor().setRelation(editorAccess.getEditor().getRelation());
+        editor.setRelation(editor.getRelation());
         return true;
     }
 
     protected void hideEditor() {
         if (editorAccess.getEditor() instanceof Component) {
             ((Component) editorAccess.getEditor()).setVisible(false);
+            editorAccess.getEditor().setRelation(null);
         }
     }
 
     protected boolean isEditorDirty() {
-        Relation snapshot = editorAccess.getEditor().getRelationSnapshot();
-        return (snapshot != null && !getMemberTableModel().hasSameMembersAs(snapshot)) || getTagModel().isDirty()
-                || getEditor().getRelation() == null || getEditor().getRelation().getDataSet() == null;
+        return editorAccess.getEditor().isDirtyEditor();
     }
 }

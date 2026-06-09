@@ -12,6 +12,7 @@ import java.awt.geom.Path2D;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
@@ -28,6 +29,7 @@ import org.openstreetmap.gui.jmapviewer.interfaces.ICoordinate;
 import org.openstreetmap.gui.jmapviewer.interfaces.MapMarker;
 import org.openstreetmap.gui.jmapviewer.interfaces.TileSource;
 import org.openstreetmap.josm.data.Bounds;
+import org.openstreetmap.josm.data.coor.ILatLon;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.BBox;
 import org.openstreetmap.josm.data.osm.DataSet;
@@ -142,21 +144,31 @@ public class SlippyMapBBoxChooser extends JosmMapViewer implements BBoxChooser, 
 
         MainApplication.getLayerManager().addActiveLayerChangeListener(this);
 
-        new SlippyMapControler(this, this);
+        new SlippyMapController(this, this);
     }
 
-    private static LinkedHashMap<String, TileSource> getAllTileSources() {
+    private static Map<String, TileSource> getAllTileSources() {
         // using a LinkedHashMap of <id, TileSource> to retain ordering but provide deduplication
         return providers.stream().flatMap(
             provider -> provider.getTileSources().stream()
         ).collect(Collectors.toMap(
-            TileSource::getId,
+            ts -> getTileSourceId(ts),
             ts -> ts,
             (oldTs, newTs) -> oldTs,
             LinkedHashMap::new
         ));
     }
 
+    /**
+     * In case the tile source has no ID, use the name
+     */
+    private static String getTileSourceId(TileSource ts) {
+        String id = ts.getId();
+        if (id == null)
+            id = ts.getName();
+        return id;
+    }
+    
     /**
      * Get the distance in meter that correspond to 100 px on screen.
      * @return the distance in meter that correspond to 100 px on screen
@@ -167,8 +179,8 @@ public class SlippyMapBBoxChooser extends JosmMapViewer implements BBoxChooser, 
         int h = getHeight() / 2;
         ICoordinate c1 = getPosition(w - 50, h);
         ICoordinate c2 = getPosition(w + 50, h);
-        final LatLon ll1 = new LatLon(c1.getLat(), c1.getLon());
-        final LatLon ll2 = new LatLon(c2.getLat(), c2.getLon());
+        final ILatLon ll1 = new LatLon(c1.getLat(), c1.getLon());
+        final ILatLon ll2 = new LatLon(c2.getLat(), c2.getLon());
         double gcd = ll1.greatCircleDistance(ll2);
         return gcd <= 0 ? 0.1 : gcd;
     }
@@ -246,7 +258,7 @@ public class SlippyMapBBoxChooser extends JosmMapViewer implements BBoxChooser, 
     }
 
     /**
-     * Handles a {@link SlippyMapControler#mouseMoved} event
+     * Handles a {@link SlippyMapController#mouseMoved} event
      * @param point The point in the view
      */
     public void handleMouseMoved(Point point) {
@@ -364,7 +376,7 @@ public class SlippyMapBBoxChooser extends JosmMapViewer implements BBoxChooser, 
      * @since 6364
      */
     public final void refreshTileSources() {
-        final LinkedHashMap<String, TileSource> newTileSources = getAllTileSources();
+        final Map<String, TileSource> newTileSources = getAllTileSources();
         final TileSource currentTileSource = this.getTileController().getTileSource();
 
         // re-add the currently active TileSource to prevent inconsistent display of menu

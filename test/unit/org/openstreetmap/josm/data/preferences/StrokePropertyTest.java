@@ -1,48 +1,41 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.preferences;
 
-import static org.junit.Assert.assertArrayEquals;
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.awt.BasicStroke;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.spi.preferences.Config;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
 /**
  * Test {@link StrokeProperty}
  * @author Michael Zangl
  */
-public class StrokePropertyTest {
-    /**
-     * This is a preference test
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences();
-
+// This is a preference test
+@BasicPreferences
+class StrokePropertyTest {
     /**
      * Test {@link StrokeProperty#get()}
      */
     @Test
-    public void testGetValue() {
+    void testGetValue() {
         StrokeProperty property = new StrokeProperty("x", "1");
 
         Config.getPref().put("x", "11");
         BasicStroke bs = property.get();
         assertWide(bs);
         assertEquals(11, bs.getLineWidth(), 1e-10);
-        assertEquals(null, bs.getDashArray());
+        assertNull(bs.getDashArray());
 
         Config.getPref().put("x", ".5");
         bs = property.get();
         assertThin(bs);
         assertEquals(.5, bs.getLineWidth(), 1e-10);
-        assertEquals(null, bs.getDashArray());
+        assertNull(bs.getDashArray());
 
         Config.getPref().put("x", "2 1");
         bs = property.get();
@@ -60,27 +53,27 @@ public class StrokePropertyTest {
         bs = property.get();
         assertThin(bs);
         assertEquals(1, bs.getLineWidth(), 1e-10);
-        assertEquals(null, bs.getDashArray());
+        assertNull(bs.getDashArray());
 
         // ignore dashes
         Config.getPref().put("x", "11 0 0 0.0001");
         bs = property.get();
         assertWide(bs);
         assertEquals(11, bs.getLineWidth(), 1e-10);
-        assertEquals(null, bs.getDashArray());
+        assertNull(bs.getDashArray());
     }
 
     /**
      * Test {@link StrokeProperty#put(BasicStroke)}
      */
     @Test
-    public void testPutValue() {
+    void testPutValue() {
         StrokeProperty property = new StrokeProperty("x", new BasicStroke(12));
         BasicStroke bs = property.get();
 
         assertWide(bs);
         assertEquals(12, bs.getLineWidth(), 1e-10);
-        assertEquals(null, bs.getDashArray());
+        assertNull(bs.getDashArray());
 
         property.put(new BasicStroke(2, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 1, new float[] {0.1f, 1, 10}, 0));
         bs = property.get();

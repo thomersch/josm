@@ -1,26 +1,26 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.actions;
 
-import static org.junit.Assert.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import java.util.Arrays;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.coor.EastNorth;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.testutils.annotations.Main;
+import org.openstreetmap.josm.testutils.annotations.Projection;
 
 /**
  * Unit tests for class {@link UnJoinNodeWayAction}.
  */
-public final class UnJoinNodeWayActionTest {
+@Main
+@Projection
+final class UnJoinNodeWayActionTest {
 
     /**
      * Prepare the class for the test. The notification system must be disabled.
@@ -32,16 +32,9 @@ public final class UnJoinNodeWayActionTest {
          */
         @Override
         public void notify(String msg, int messageType) {
-            return;
+            // Do nothing
         }
     }
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
 
     /**
      * Test case: Ignore irrelevant nodes
@@ -50,7 +43,7 @@ public final class UnJoinNodeWayActionTest {
      * see #10396
      */
     @Test
-    public void testTicket10396() {
+    void testTicket10396() {
         DataSet dataSet = new DataSet();
         OsmDataLayer layer = new OsmDataLayer(dataSet, OsmDataLayer.createNewName(), null);
 
@@ -64,7 +57,7 @@ public final class UnJoinNodeWayActionTest {
         dataSet.addPrimitive(n4);
 
         Way w = new Way();
-        w.setNodes(Arrays.asList(new Node[] {n1, n2, n3}));
+        w.setNodes(Arrays.asList(n1, n2, n3));
         dataSet.addPrimitive(w);
 
         dataSet.addSelected(n2);
@@ -82,6 +75,6 @@ public final class UnJoinNodeWayActionTest {
         }
 
         // Ensures node n2 remove from w
-        assertFalse("Node n2 wasn't removed from way w.", w.containsNode(n2));
+        assertFalse(w.containsNode(n2), "Node n2 wasn't removed from way w.");
     }
 }

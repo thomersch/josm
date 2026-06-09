@@ -1,6 +1,7 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.dialogs;
 
+import static org.openstreetmap.josm.tools.I18n.marktr;
 import static org.openstreetmap.josm.tools.I18n.tr;
 import static org.openstreetmap.josm.tools.I18n.trn;
 
@@ -37,8 +38,8 @@ import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.ListSelectionListener;
 import javax.swing.event.PopupMenuEvent;
 
-import org.openstreetmap.josm.actions.AbstractShowHistoryAction;
 import org.openstreetmap.josm.actions.AbstractSelectAction;
+import org.openstreetmap.josm.actions.AbstractShowHistoryAction;
 import org.openstreetmap.josm.actions.AutoScaleAction;
 import org.openstreetmap.josm.actions.AutoScaleAction.AutoScaleMode;
 import org.openstreetmap.josm.actions.relation.EditRelationAction;
@@ -93,6 +94,8 @@ import org.openstreetmap.josm.tools.bugreport.BugReport;
  * @since 8
  */
 public class SelectionListDialog extends ToggleDialog {
+    private static final String SELECTION_CASING = marktr("Selection");
+    private static final String SELECTION = "selection";
     private JList<OsmPrimitive> lstPrimitives;
     private final DefaultListSelectionModel selectionModel = new DefaultListSelectionModel();
     private final SelectionListModel model = new SelectionListModel(selectionModel);
@@ -146,9 +149,9 @@ public class SelectionListDialog extends ToggleDialog {
      * Constructs a new {@code SelectionListDialog}.
      */
     public SelectionListDialog() {
-        super(tr("Selection"), "selectionlist", tr("Open a selection list window."),
+        super(tr(SELECTION_CASING), /* ICON(dialogs/) */ "selectionlist", tr("Open a selection list window."),
                 Shortcut.registerShortcut("subwindow:selection", tr("Windows: {0}",
-                tr("Selection")), KeyEvent.VK_T, Shortcut.ALT_SHIFT),
+                tr(SELECTION_CASING)), KeyEvent.VK_T, Shortcut.ALT_SHIFT),
                 150, // default height
                 true // default is "show dialog"
         );
@@ -174,7 +177,7 @@ public class SelectionListDialog extends ToggleDialog {
     public void showNotify() {
         SelectionEventManager.getInstance().addSelectionListenerForEdt(actShowHistory);
         SelectionEventManager.getInstance().addSelectionListenerForEdt(model);
-        DatasetEventManager.getInstance().addDatasetListener(model, FireMode.IN_EDT);
+        DatasetEventManager.getInstance().addDatasetListener(model, FireMode.IN_EDT_CONSOLIDATED);
         MainApplication.getLayerManager().addActiveLayerChangeListener(actSearch);
         // editLayerChanged also gets the selection history of the level. Listener calls setJOSMSelection when fired.
         MainApplication.getLayerManager().addAndFireActiveLayerChangeListener(model);
@@ -394,7 +397,7 @@ public class SelectionListDialog extends ToggleDialog {
         ZoomToJOSMSelectionAction() {
             putValue(NAME, tr("Zoom to selection"));
             putValue(SHORT_DESCRIPTION, tr("Zoom to selection"));
-            new ImageProvider("dialogs/autoscale", "selection").getResource().attachImageIcon(this, true);
+            new ImageProvider("dialogs/autoscale", SELECTION).getResource().attachImageIcon(this, true);
             updateEnabledState();
         }
 
@@ -433,7 +436,7 @@ public class SelectionListDialog extends ToggleDialog {
          * Constructs a new {@code ZoomToListSelection}.
          */
         ZoomToListSelection() {
-            new ImageProvider("dialogs/autoscale", "selection").getResource().attachImageIcon(this, true);
+            new ImageProvider("dialogs/autoscale", SELECTION).getResource().attachImageIcon(this, true);
             updateEnabledState();
         }
 
@@ -463,7 +466,7 @@ public class SelectionListDialog extends ToggleDialog {
 
     /**
      * The list model for the list of OSM primitives in the current JOSM selection.
-     *
+     * <p>
      * The model also maintains a history of the last {@link SelectionListModel#SELECTION_HISTORY_SIZE}
      * JOSM selection.
      *
@@ -492,12 +495,12 @@ public class SelectionListDialog extends ToggleDialog {
          * @return a summary of the current JOSM selection
          */
         public synchronized String getJOSMSelectionSummary() {
-            if (selection.isEmpty()) return tr("Selection");
+            if (selection.isEmpty()) return tr(SELECTION_CASING);
             int numNodes = 0;
             int numWays = 0;
             int numRelations = 0;
             for (OsmPrimitive p: selection) {
-                switch(p.getType()) {
+                switch (p.getType()) {
                 case NODE: numNodes++; break;
                 case WAY: numWays++; break;
                 case RELATION: numRelations++; break;
@@ -525,7 +528,7 @@ public class SelectionListDialog extends ToggleDialog {
             IntStream.range(1, history.size())
                     .filter(i -> history.get(i).equals(selection))
                     .findFirst()
-                    .ifPresent(i -> history.remove(i));
+                    .ifPresent(history::remove);
             int maxsize = Config.getPref().getInt("select.history-size", SELECTION_HISTORY_SIZE);
             while (history.size() > maxsize) {
                 history.removeLast();
@@ -635,6 +638,9 @@ public class SelectionListDialog extends ToggleDialog {
          * Sorts the current elements in the selection
          */
         public synchronized void sort() {
+            if (Config.getPref().getBoolean("selection.no_sort", false)) {
+                return;
+            }
             int size = selection.size();
             if (size > 1 && size <= Config.getPref().getInt("selection.no_sort_above", 100_000)) {
                 boolean quick = size > Config.getPref().getInt("selection.fast_sort_above", 10_000);
@@ -646,7 +652,7 @@ public class SelectionListDialog extends ToggleDialog {
                             ? OsmPrimitiveComparator.comparingUniqueId()
                             : OsmPrimitiveComparator.comparingNames()));
                 } catch (IllegalArgumentException e) {
-                    throw BugReport.intercept(e).put("size", size).put("quick", quick).put("selection", selection);
+                    throw BugReport.intercept(e).put("size", size).put("quick", quick).put(SELECTION, selection);
                 }
             }
         }
@@ -834,7 +840,7 @@ public class SelectionListDialog extends ToggleDialog {
      */
     protected static class SelectionHistoryPopup extends JPopupMenu {
         public static void launch(Component parent, Collection<Collection<? extends OsmPrimitive>> history) {
-            if (history == null || history.isEmpty()) return;
+            if (Utils.isEmpty(history)) return;
             if (parent.isShowing()) {
                 JPopupMenu menu = new SelectionHistoryPopup(history);
                 Rectangle r = parent.getBounds();

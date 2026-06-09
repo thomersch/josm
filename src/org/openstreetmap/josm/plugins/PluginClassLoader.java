@@ -58,24 +58,49 @@ public class PluginClassLoader extends DynamicURLClassLoader {
     protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
         Class<?> result = findLoadedClass(name);
         if (result == null) {
-            for (PluginClassLoader dep : dependencies) {
-                try {
-                    result = dep.loadClass(name, resolve);
-                    if (result != null) {
-                        return result;
-                    }
-                } catch (ClassNotFoundException e) {
-                    // do nothing
-                    Logging.trace("Plugin class not found in {0}: {1}", dep, e.getMessage());
-                    Logging.trace(e);
-                }
+            result = findClassInDependencies(name, resolve);
+            try {
+                // Will delegate to parent.loadClass(name, resolve) if needed
+                result = super.loadClass(name, resolve);
+            } catch (ClassNotFoundException e) {
+                Logging.trace("Plugin class not found in super {0}: {1}", this, e.getMessage());
+                Logging.trace(e);
             }
-            result = super.loadClass(name, resolve);
+        }
+        // IcedTea-Web JNLPClassLoader overrides loadClass(String) but not loadClass(String, boolean)
+        if (result == null && getParent() != null) {
+            try {
+                result = getParent().loadClass(name);
+            } catch (ClassNotFoundException e) {
+                Logging.trace("Plugin class not found in parent {0}: {1}", getParent(), e.getMessage());
+                Logging.trace(e);
+            }
         }
         if (result != null) {
             return result;
         }
         throw new ClassNotFoundException(name);
+    }
+
+    /**
+     * Try to find the specified class in this classes dependencies
+     * @param name The name of the class to find
+     * @param resolve {@code true} to resolve the class
+     * @return the class, if found, otherwise {@code null}
+     */
+    private Class<?> findClassInDependencies(String name, boolean resolve) {
+        for (PluginClassLoader dep : dependencies) {
+            try {
+                Class<?> result = dep.loadClass(name, resolve);
+                if (result != null) {
+                    return result;
+                }
+            } catch (ClassNotFoundException e) {
+                Logging.trace("Plugin class not found in dep {0}: {1}", dep, e.getMessage());
+                Logging.trace(e);
+            }
+        }
+        return null;
     }
 
     @Override

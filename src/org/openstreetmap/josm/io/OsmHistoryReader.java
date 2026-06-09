@@ -34,13 +34,13 @@ public class OsmHistoryReader {
     private final InputStream in;
     private final HistoryDataSet data;
 
-    private class Parser extends AbstractParser {
+    private final class Parser extends AbstractParser {
 
-        protected String getCurrentPosition() {
+        String getCurrentPosition() {
             if (locator == null)
                 return "";
-            return new StringBuilder().append('(').append(locator.getLineNumber())
-                                      .append(',').append(locator.getColumnNumber()).append(')').toString();
+            return "(" + locator.getLineNumber() +
+                    ',' + locator.getColumnNumber() + ')';
         }
 
         @Override

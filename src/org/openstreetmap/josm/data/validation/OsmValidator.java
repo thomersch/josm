@@ -44,6 +44,8 @@ import org.openstreetmap.josm.data.validation.tests.Coastlines;
 import org.openstreetmap.josm.data.validation.tests.ConditionalKeys;
 import org.openstreetmap.josm.data.validation.tests.ConnectivityRelations;
 import org.openstreetmap.josm.data.validation.tests.CrossingWays;
+import org.openstreetmap.josm.data.validation.tests.CycleDetector;
+import org.openstreetmap.josm.data.validation.tests.DirectionNodes;
 import org.openstreetmap.josm.data.validation.tests.DuplicateNode;
 import org.openstreetmap.josm.data.validation.tests.DuplicateRelation;
 import org.openstreetmap.josm.data.validation.tests.DuplicateWay;
@@ -80,6 +82,7 @@ import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.AlphanumComparator;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.Stopwatch;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * A OSM data validator.
@@ -110,6 +113,7 @@ public final class OsmValidator {
     @SuppressWarnings("unchecked")
     private static final Class<Test>[] CORE_TEST_CLASSES = new Class[] {// NOPMD
         /* FIXME - unique error numbers for tests aren't properly unique - ignoring will not work as expected */
+        /* Error codes are class.getName().hashCode() + "_" + oldCode. There should almost never be a collision. */
         DuplicateNode.class, // ID    1 ..   99
         OverlappingWays.class, // ID  101 ..  199
         UntaggedNode.class, // ID  201 ..  299
@@ -148,9 +152,12 @@ public final class OsmValidator {
         ApiCapabilitiesTest.class, // 3400 .. 3499
         LongSegment.class, // 3500 .. 3599
         PublicTransportRouteTest.class, // 3600 .. 3699
-        RightAngleBuildingTest.class, // 3700 .. 3799
+        // 3700 .. 3799 is automatically removed since it clashed with pt_assistant.
         SharpAngles.class, // 3800 .. 3899
         ConnectivityRelations.class, // 3900 .. 3999
+        DirectionNodes.class, // 4000 .. 4099
+        RightAngleBuildingTest.class, // 4100 .. 4199
+        CycleDetector.class, // 4200 .. 4299
     };
 
     /**
@@ -214,14 +221,13 @@ public final class OsmValidator {
 
     private static void loadIgnoredErrors() {
         ignoredErrors.clear();
-        if (ValidatorPrefHelper.PREF_USE_IGNORE.get()) {
+        if (Boolean.TRUE.equals(ValidatorPrefHelper.PREF_USE_IGNORE.get())) {
             Config.getPref().getListOfMaps(ValidatorPrefHelper.PREF_IGNORELIST).forEach(ignoredErrors::putAll);
             Path path = Paths.get(getValidatorDir()).resolve("ignorederrors");
             try {
                 if (path.toFile().exists()) {
                     try {
-                        TreeSet<String> treeSet = new TreeSet<>();
-                        treeSet.addAll(Files.readAllLines(path, StandardCharsets.UTF_8));
+                        TreeSet<String> treeSet = new TreeSet<>(Files.readAllLines(path, StandardCharsets.UTF_8));
                         treeSet.forEach(ignore -> ignoredErrors.putIfAbsent(ignore, ""));
                         removeLegacyEntries(true);
 
@@ -243,28 +249,36 @@ public final class OsmValidator {
 
     private static void removeLegacyEntries(boolean force) {
         // see #19053:
+        boolean wasChanged = removeLegacyEntry(force, true, "3000");
+        // see #18230 (pt_assistant, RightAngleBuildingTest)
+        wasChanged |= removeLegacyEntry(force, false, "3701");
+
+        if (wasChanged) {
+            saveIgnoredErrors();
+        }
+    }
+
+    private static boolean removeLegacyEntry(boolean force, boolean keep, String prefix) {
         boolean wasChanged = false;
         if (force) {
             Iterator<Entry<String, String>> iter = ignoredErrors.entrySet().iterator();
             while (iter.hasNext()) {
                 Entry<String, String> entry = iter.next();
-                if (entry.getKey().startsWith("3000_")) {
+                if (entry.getKey().startsWith(prefix + "_")) {
                     Logging.warn(tr("Cannot handle ignore list entry {0}", entry));
                     iter.remove();
                     wasChanged = true;
                 }
             }
         }
-        String legacyEntry = ignoredErrors.remove("3000");
-        if (legacyEntry != null) {
+        String legacyEntry = ignoredErrors.remove(prefix);
+        if (keep && legacyEntry != null) {
             if (!legacyEntry.isEmpty()) {
-                addIgnoredError("3000_" + legacyEntry, legacyEntry);
+                addIgnoredError(prefix + "_" + legacyEntry, legacyEntry);
             }
             wasChanged = true;
         }
-        if (wasChanged) {
-            saveIgnoredErrors();
-        }
+        return wasChanged;
     }
 
     /**
@@ -361,7 +375,7 @@ public final class OsmValidator {
      */
     public static JTree buildJTreeList() {
         DefaultMutableTreeNode root = new DefaultMutableTreeNode(tr("Ignore list"));
-        final Pattern elemId1Pattern = Pattern.compile(":(r|w|n)_");
+        final Pattern elemId1Pattern = Pattern.compile(":([rwn])_");
         final Pattern elemId2Pattern = Pattern.compile("^[0-9]+$");
         for (Entry<String, String> e: ignoredErrors.entrySet()) {
             String key = e.getKey();
@@ -388,7 +402,7 @@ public final class OsmValidator {
             DefaultMutableTreeNode trunk;
             DefaultMutableTreeNode branch;
 
-            if (description != null && !description.isEmpty()) {
+            if (!Utils.isEmpty(description)) {
                 trunk = inTree(root, description);
                 branch = inTree(trunk, key);
                 trunk.add(branch);
@@ -454,20 +468,20 @@ public final class OsmValidator {
                 }
                 if (tr("Ignore list").equals(description))
                     description = "";
-                if (!key.matches("^[0-9]+(_.*|$)")) {
+                if (!key.matches("^-?[0-9]+(_.*|$)")) {
                     description = key;
                     key = "";
                 }
 
                 String item = child.getUserObject().toString();
                 String entry = null;
-                if (item.matches("^\\[(r|w|n)_.*")) {
+                if (item.matches("^\\[([rwn])_.*")) {
                     // list of elements (produced with list.toString() method)
                     entry = key + ":" + item.substring(1, item.lastIndexOf(']')).replace(", ", ":");
-                } else if (item.matches("^(r|w|n)_.*")) {
+                } else if (item.matches("^([rwn])_.*")) {
                     // single element
                     entry = key + ":" + item;
-                } else if (item.matches("^[0-9]+(_.*|)$")) {
+                } else if (item.matches("^-?[0-9]+(_.*|)$")) {
                     // no element ids
                     entry = item;
                 }
@@ -499,10 +513,11 @@ public final class OsmValidator {
         List<Map<String, String>> list = new ArrayList<>();
         cleanupIgnoredErrors();
         ignoredErrors.remove("3000"); // see #19053
+        ignoredErrors.remove("3701"); // see #18230
         list.add(ignoredErrors);
         int i = 0;
         while (i < list.size()) {
-            if (list.get(i) == null || list.get(i).isEmpty()) {
+            if (Utils.isEmpty(list.get(i))) {
                 list.remove(i);
                 continue;
             }
@@ -604,7 +619,7 @@ public final class OsmValidator {
     }
 
     /**
-     * Initialize grid details based on current projection system. Values based on
+     * Initialize grid details based on the current projection system. Values based on
      * the original value fixed for EPSG:4326 (10000) using heuristics (that is, test&amp;error
      * until most bugs were discovered while keeping the processing time reasonable)
      */
@@ -633,7 +648,7 @@ public final class OsmValidator {
     private static boolean testsInitialized;
 
     /**
-     * Initializes all tests if this operations hasn't been performed already.
+     * Initializes all tests if this operation hasn't been performed already.
      */
     public static synchronized void initializeTests() {
         if (!testsInitialized) {
@@ -656,7 +671,7 @@ public final class OsmValidator {
                 if (test.enabled) {
                     test.initialize();
                 }
-            } catch (Exception e) { // NOPMD
+            } catch (Exception e) {
                 String message = tr("Error initializing test {0}:\n {1}", test.getClass().getSimpleName(), e);
                 Logging.error(message);
                 if (!GraphicsEnvironment.isHeadless()) {

@@ -10,14 +10,11 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 import javax.swing.JCheckBox;
 import javax.swing.JPanel;
 
-import ch.poole.openinghoursparser.OpeningHoursParser;
-import ch.poole.openinghoursparser.ParseException;
-import ch.poole.openinghoursparser.Rule;
-import ch.poole.openinghoursparser.Util;
 import org.openstreetmap.josm.command.ChangePropertyCommand;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.preferences.BooleanProperty;
@@ -26,6 +23,12 @@ import org.openstreetmap.josm.data.validation.Severity;
 import org.openstreetmap.josm.data.validation.Test.TagTest;
 import org.openstreetmap.josm.data.validation.TestError;
 import org.openstreetmap.josm.tools.GBC;
+import org.openstreetmap.josm.tools.Utils;
+
+import ch.poole.openinghoursparser.OpeningHoursParseException;
+import ch.poole.openinghoursparser.OpeningHoursParser;
+import ch.poole.openinghoursparser.Rule;
+import ch.poole.openinghoursparser.Util;
 
 /**
  * Tests the correct usage of the opening hour syntax of the tags
@@ -91,7 +94,7 @@ public class OpeningHourTest extends TagTest {
      * @return a list of {@link TestError} or an empty list
      */
     List<TestError> checkOpeningHourSyntax(final String key, final String value, OsmPrimitive p, Locale locale) {
-        if (value == null || value.isEmpty()) {
+        if (Utils.isEmpty(value)) {
             return Collections.emptyList();
         }
 
@@ -99,14 +102,18 @@ public class OpeningHourTest extends TagTest {
         String prettifiedValue = null;
         try {
             final boolean strict = PREF_STRICT_MODE.get();
-            final List<Rule> rules = new OpeningHoursParser(new StringReader(value)).rules(strict);
+            final List<Rule> rules = new OpeningHoursParser(new StringReader(value)).rules(strict, false);
             prettifiedValue = Util.rulesToOpeningHoursString(rules);
             if (!Objects.equals(value, prettifiedValue) && !strict) {
                 // parse again in strict mode for detailed message
-                new OpeningHoursParser(new StringReader(value)).rules(true);
+                new OpeningHoursParser(new StringReader(value)).rules(true, false);
             }
-        } catch (ParseException e) {
-            return Collections.singletonList(createTestError(Severity.WARNING, e.getMessage(), key, value, prettifiedValue, p));
+        } catch (OpeningHoursParseException e) {
+            String message = e.getExceptions().stream()
+                    .map(OpeningHoursParseException::getMessage)
+                    .distinct()
+                    .collect(Collectors.joining("; "));
+            return Collections.singletonList(createTestError(Severity.WARNING, message, key, value, prettifiedValue, p));
         }
 
         if (!includeOtherSeverityChecks() || Objects.equals(value, prettifiedValue)) {
@@ -119,6 +126,16 @@ public class OpeningHourTest extends TagTest {
 
     @Override
     public void check(final OsmPrimitive p) {
+        addErrorsForPrimitive(p, this.errors);
+    }
+
+    /**
+     * Checks the tags of the given primitive and adds validation errors to the given list.
+     * @param p The primitive to test
+     * @param errors The list to add validation errors to
+     * @since 17643
+     */
+    public void addErrorsForPrimitive(OsmPrimitive p, Collection<TestError> errors) {
         if (p.isTagged()) {
             for (String key : KEYS_TO_CHECK) {
                 errors.addAll(checkOpeningHourSyntax(key, p.get(key), p, Locale.getDefault()));

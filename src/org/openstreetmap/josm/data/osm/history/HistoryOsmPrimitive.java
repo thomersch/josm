@@ -4,9 +4,9 @@ package org.openstreetmap.josm.data.osm.history;
 import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.text.MessageFormat;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -24,7 +24,6 @@ import org.openstreetmap.josm.data.osm.User;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.tools.CheckParameterUtil;
 import org.openstreetmap.josm.tools.Logging;
-import org.openstreetmap.josm.tools.date.DateUtils;
 
 /**
  * Represents an immutable OSM primitive in the context of a historical view on OSM data.
@@ -37,7 +36,7 @@ public abstract class HistoryOsmPrimitive implements Tagged, Comparable<HistoryO
     private final User user;
     private final long changesetId;
     private Changeset changeset;
-    private final Date timestamp;
+    private final Instant timestamp;
     private final long version;
     private Map<String, String> tags;
 
@@ -53,7 +52,7 @@ public abstract class HistoryOsmPrimitive implements Tagged, Comparable<HistoryO
      *
      * @throws IllegalArgumentException if preconditions are violated
      */
-    protected HistoryOsmPrimitive(long id, long version, boolean visible, User user, long changesetId, Date timestamp) {
+    protected HistoryOsmPrimitive(long id, long version, boolean visible, User user, long changesetId, Instant timestamp) {
         this(id, version, visible, user, changesetId, timestamp, true);
     }
 
@@ -72,7 +71,7 @@ public abstract class HistoryOsmPrimitive implements Tagged, Comparable<HistoryO
      * @throws IllegalArgumentException if preconditions are violated
      * @since 5440
      */
-    protected HistoryOsmPrimitive(long id, long version, boolean visible, User user, long changesetId, Date timestamp,
+    protected HistoryOsmPrimitive(long id, long version, boolean visible, User user, long changesetId, Instant timestamp,
             boolean checkHistoricParams) {
         ensurePositiveLong(id, "id");
         ensurePositiveLong(version, "version");
@@ -86,7 +85,7 @@ public abstract class HistoryOsmPrimitive implements Tagged, Comparable<HistoryO
         this.visible = visible;
         this.user = user;
         this.changesetId = changesetId;
-        this.timestamp = DateUtils.cloneDate(timestamp);
+        this.timestamp = timestamp;
         this.tags = new HashMap<>();
     }
 
@@ -95,7 +94,7 @@ public abstract class HistoryOsmPrimitive implements Tagged, Comparable<HistoryO
      * @param p the primitive
      */
     protected HistoryOsmPrimitive(OsmPrimitive p) {
-        this(p.getId(), p.getVersion(), p.isVisible(), p.getUser(), p.getChangesetId(), p.getTimestamp());
+        this(p.getId(), p.getVersion(), p.isVisible(), p.getUser(), p.getChangesetId(), p.getInstant());
     }
 
     /**
@@ -159,8 +158,8 @@ public abstract class HistoryOsmPrimitive implements Tagged, Comparable<HistoryO
      * Returns the timestamp.
      * @return the timestamp
      */
-    public Date getTimestamp() {
-        return DateUtils.cloneDate(timestamp);
+    public Instant getInstant() {
+        return timestamp;
     }
 
     /**
@@ -363,7 +362,7 @@ public abstract class HistoryOsmPrimitive implements Tagged, Comparable<HistoryO
         } catch (IllegalStateException e) {
             Logging.log(Logging.LEVEL_ERROR, "Cannot change visibility for "+data+':', e);
         }
-        data.setTimestamp(timestamp);
+        data.setInstant(timestamp);
         data.setKeys(tags);
         data.setOsmId(id, (int) version);
     }

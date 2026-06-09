@@ -2,7 +2,6 @@
 package org.openstreetmap.josm.gui.dialogs.relation;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.BitSet;
 import java.util.Collection;
 import java.util.Collections;
@@ -50,8 +49,8 @@ import org.openstreetmap.josm.gui.tagging.presets.TaggingPresets;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.util.SortableTableModel;
 import org.openstreetmap.josm.gui.widgets.OsmPrimitivesTableModel;
-import org.openstreetmap.josm.tools.ArrayUtils;
 import org.openstreetmap.josm.tools.JosmRuntimeException;
+import org.openstreetmap.josm.tools.Utils;
 import org.openstreetmap.josm.tools.bugreport.BugReport;
 
 /**
@@ -133,8 +132,10 @@ implements TableModelListener, DataSelectionListener, DataSetListener, OsmPrimit
     public void dataChanged(DataChangedEvent event) {
         // just trigger a repaint - the display name of the relation members may have changed
         Collection<RelationMember> sel = getSelectedMembers();
-        GuiHelper.runInEDTAndWait(this::fireTableDataChanged);
-        setSelectedMembers(sel);
+        GuiHelper.runInEDT(() -> {
+            fireTableDataChanged();
+            setSelectedMembers(sel);
+        });
     }
 
     @Override
@@ -178,9 +179,8 @@ implements TableModelListener, DataSelectionListener, DataSetListener, OsmPrimit
     public void wayNodesChanged(WayNodesChangedEvent event) {
         if (hasMembersReferringTo(Collections.singleton(event.getChangedWay()))) {
             // refresh connectivity
-            for (int i = 0; i < members.size(); i++) {
-                fireTableCellUpdated(i, 2 /* the column with the connectivity arrow */);
-            }
+            fireTableChanged(new TableModelEvent(this, 0, members.size(),
+                    2 /* The column with the connectivity arrow */));
         }
     }
 
@@ -247,9 +247,10 @@ implements TableModelListener, DataSelectionListener, DataSetListener, OsmPrimit
             return members.get(rowIndex).getMember();
         case 2:
             return getWayConnection(rowIndex);
+        default:
+            // should not happen
+            return null;
         }
-        // should not happen
-        return null;
     }
 
     @Override
@@ -309,12 +310,12 @@ implements TableModelListener, DataSelectionListener, DataSetListener, OsmPrimit
         int offset = 0;
         final ListSelectionModel selectionModel = getSelectionModel();
         selectionModel.setValueIsAdjusting(true);
-        for (int row : selectedRows) {
-            row -= offset;
-            if (members.size() > row) {
-                members.remove(row);
-                selectionModel.removeIndexInterval(row, row);
-                offset++;
+        for (int[] row : Utils.groupIntegers(selectedRows)) {
+            if (members.size() > row[0] - offset) {
+                // Remove (inclusive)
+                members.subList(row[0] - offset, row[1] - offset + 1).clear();
+                selectionModel.removeIndexInterval(row[0] - offset, row[1] - offset);
+                offset += row[1] - row[0] + 1;
             }
         }
         selectionModel.setValueIsAdjusting(false);
@@ -418,7 +419,7 @@ implements TableModelListener, DataSelectionListener, DataSetListener, OsmPrimit
     }
 
     private void addMembersAtIndex(List<? extends OsmPrimitive> primitives, int index) {
-        if (primitives == null || primitives.isEmpty())
+        if (Utils.isEmpty(primitives))
             return;
         int idx = index;
         for (OsmPrimitive primitive : primitives) {
@@ -446,11 +447,27 @@ implements TableModelListener, DataSelectionListener, DataSetListener, OsmPrimit
 
     void addMembersAtIndexKeepingOldSelection(final Iterable<RelationMember> newMembers, final int index) {
         int idx = index;
+        // Avoid having the inserted rows from being part of the selection. See JOSM #12617, #17906, #21889.
+        int[] originalSelection = null;
+        if (selectedIndices().anyMatch(selectedRow -> selectedRow == index)) {
+            originalSelection = getSelectedIndices();
+        }
         for (RelationMember member : newMembers) {
             members.add(idx++, member);
         }
         invalidateConnectionType();
         fireTableRowsInserted(index, idx - 1);
+        if (originalSelection != null) {
+            final DefaultListSelectionModel model = this.getSelectionModel();
+            model.setValueIsAdjusting(true);
+            model.clearSelection();
+            final int tIdx = idx;
+            // Avoiding many addSelectionInterval calls is critical for performance.
+            for (int[] row : Utils.groupIntegers(IntStream.of(originalSelection).map(i -> i < index ? i : i + tIdx - index).toArray())) {
+                model.addSelectionInterval(row[0], row[1]);
+            }
+            model.setValueIsAdjusting(false);
+        }
     }
 
     public void addMembersAtBeginning(List<? extends OsmPrimitive> primitives) {
@@ -512,7 +529,7 @@ implements TableModelListener, DataSelectionListener, DataSetListener, OsmPrimit
      * @return a collection with the currently selected relation members
      */
     public Collection<RelationMember> getSelectedMembers() {
-        return Arrays.stream(getSelectedIndices())
+        return selectedIndices()
                 .mapToObj(members::get)
                 .collect(Collectors.toList());
     }
@@ -536,9 +553,11 @@ implements TableModelListener, DataSelectionListener, DataSetListener, OsmPrimit
      */
     public Set<OsmPrimitive> getChildPrimitives(Collection<? extends OsmPrimitive> referenceSet) {
         if (referenceSet == null) return null;
+        Collection<? extends OsmPrimitive> referenceActualSet = referenceSet instanceof Set ?
+                (Set<? extends OsmPrimitive>) referenceSet : new HashSet<>(referenceSet);
         return members.stream()
-                .filter(m -> referenceSet.contains(m.getMember()))
                 .map(RelationMember::getMember)
+                .filter(referenceActualSet::contains)
                 .collect(Collectors.toSet());
     }
 
@@ -548,7 +567,7 @@ implements TableModelListener, DataSelectionListener, DataSetListener, OsmPrimit
      * @param selectedMembers the collection of selected members
      */
     public void setSelectedMembers(Collection<RelationMember> selectedMembers) {
-        if (selectedMembers == null || selectedMembers.isEmpty()) {
+        if (Utils.isEmpty(selectedMembers)) {
             getSelectionModel().clearSelection();
             return;
         }
@@ -572,7 +591,7 @@ implements TableModelListener, DataSelectionListener, DataSetListener, OsmPrimit
      * @param selectedIndices the collection of selected member indices
      */
     public void setSelectedMembersIdx(Collection<Integer> selectedIndices) {
-        if (selectedIndices == null || selectedIndices.isEmpty()) {
+        if (Utils.isEmpty(selectedIndices)) {
             getSelectionModel().clearSelection();
             return;
         }
@@ -653,7 +672,7 @@ implements TableModelListener, DataSelectionListener, DataSetListener, OsmPrimit
      * otherwise
      */
     public static boolean hasMembersReferringTo(Collection<RelationMember> members, Collection<OsmPrimitive> primitives) {
-        if (primitives == null || primitives.isEmpty())
+        if (Utils.isEmpty(primitives))
             return false;
         Set<OsmPrimitive> referrers = members.stream().map(RelationMember::getMember).collect(Collectors.toSet());
         return primitives.stream().anyMatch(referrers::contains);
@@ -691,10 +710,7 @@ implements TableModelListener, DataSelectionListener, DataSetListener, OsmPrimit
         }
         addToSelectedMembers(selected);
         getSelectionModel().setValueIsAdjusting(false);
-        int[] selectedIndices = getSelectedIndices();
-        if (selectedIndices.length > 0) {
-            fireMakeMemberVisible(selectedIndices[0]);
-        }
+        selectedIndices().findFirst().ifPresent(this::fireMakeMemberVisible);
     }
 
     /**
@@ -722,7 +738,7 @@ implements TableModelListener, DataSelectionListener, DataSetListener, OsmPrimit
             sortedMembers = newMembers;
         } else {
             sortedMembers = relationSorter.sortMembers(selectedMembers);
-            List<Integer> selectedIndices = ArrayUtils.toList(getSelectedIndices());
+            List<Integer> selectedIndices = selectedIndices().boxed().collect(Collectors.toList());
             newMembers = new ArrayList<>();
             boolean inserted = false;
             for (int i = 0; i < members.size(); i++) {
@@ -783,8 +799,8 @@ implements TableModelListener, DataSelectionListener, DataSetListener, OsmPrimit
      */
     @Override
     public void reverse() {
-        List<Integer> selectedIndices = ArrayUtils.toList(getSelectedIndices());
-        List<Integer> selectedIndicesReversed = ArrayUtils.toList(getSelectedIndices());
+        List<Integer> selectedIndices = selectedIndices().boxed().collect(Collectors.toList());
+        List<Integer> selectedIndicesReversed = selectedIndices().boxed().collect(Collectors.toList());
 
         if (selectedIndices.size() <= 1) {
             Collections.reverse(members);

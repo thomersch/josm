@@ -14,7 +14,7 @@ import java.awt.event.MouseWheelEvent;
 import java.awt.event.MouseWheelListener;
 import java.io.File;
 import java.io.IOException;
-import java.text.DateFormat;
+import java.time.format.FormatStyle;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Objects;
@@ -56,6 +56,7 @@ import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.ColorHelper;
 import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.Logging;
+import org.openstreetmap.josm.tools.Utils;
 import org.openstreetmap.josm.tools.date.DateUtils;
 
 /**
@@ -275,7 +276,7 @@ public class NoteLayer extends AbstractModifiableLayer implements MouseListener,
             if (v != null) {
                 v.setSize(maxWidth, 0);
                 int w = (int) Math.ceil(v.getPreferredSpan(View.X_AXIS));
-                int h = (int) Math.ceil(v.getPreferredSpan(View.Y_AXIS)) + 10;
+                int h = (int) Math.ceil(v.getPreferredSpan(View.Y_AXIS)) + 20; // see #18372 and #15550
                 pane.setPreferredSize(new Dimension(w, h));
             }
         }
@@ -310,15 +311,15 @@ public class NoteLayer extends AbstractModifiableLayer implements MouseListener,
         for (NoteComment comment : note.getComments()) {
             String commentText = comment.getText();
             //closing a note creates an empty comment that we don't want to show
-            if (commentText != null && !commentText.trim().isEmpty()) {
+            if (!Utils.isStripEmpty(commentText)) {
                 sb.append("<hr/>");
                 String userName = XmlWriter.encode(comment.getUser().getName());
-                if (userName == null || userName.trim().isEmpty()) {
+                if (Utils.isStripEmpty(userName)) {
                     userName = "&lt;Anonymous&gt;";
                 }
                 sb.append(userName)
                   .append(" on ")
-                  .append(DateUtils.getDateFormat(DateFormat.MEDIUM).format(comment.getCommentTimestamp()))
+                  .append(DateUtils.getDateFormatter(FormatStyle.MEDIUM).format(comment.getCommentTimestamp()))
                   .append(":<br>");
                 String htmlText = XmlWriter.encode(comment.getText(), true);
                 // encode method leaves us with entity instead of \n

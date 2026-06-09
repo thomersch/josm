@@ -1,6 +1,7 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.layer.geoimage;
 
+import static java.util.stream.Collectors.toList;
 import static org.openstreetmap.josm.tools.I18n.tr;
 import static org.openstreetmap.josm.tools.I18n.trn;
 
@@ -19,43 +20,44 @@ import java.awt.event.MouseEvent;
 import java.awt.event.MouseMotionAdapter;
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Set;
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import javax.swing.Action;
 import javax.swing.Icon;
-import javax.swing.JOptionPane;
+import javax.swing.ImageIcon;
 
 import org.openstreetmap.josm.actions.AutoScaleAction;
+import org.openstreetmap.josm.actions.ExpertToggleAction;
 import org.openstreetmap.josm.actions.RenameLayerAction;
-import org.openstreetmap.josm.actions.mapmode.SelectLassoAction;
 import org.openstreetmap.josm.actions.mapmode.MapMode;
 import org.openstreetmap.josm.actions.mapmode.SelectAction;
+import org.openstreetmap.josm.actions.mapmode.SelectLassoAction;
 import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.data.Data;
 import org.openstreetmap.josm.data.ImageData;
 import org.openstreetmap.josm.data.ImageData.ImageDataUpdateListener;
 import org.openstreetmap.josm.data.gpx.GpxData;
-import org.openstreetmap.josm.data.gpx.WayPoint;
+import org.openstreetmap.josm.data.gpx.GpxImageEntry;
+import org.openstreetmap.josm.data.gpx.GpxTrack;
+import org.openstreetmap.josm.data.gpx.TimeSource;
+import org.openstreetmap.josm.data.imagery.street_level.IImageEntry;
 import org.openstreetmap.josm.data.osm.visitor.BoundingXYVisitor;
+import org.openstreetmap.josm.data.preferences.NamedColorProperty;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.MapFrame;
 import org.openstreetmap.josm.gui.MapFrame.MapModeChangeListener;
 import org.openstreetmap.josm.gui.MapView;
 import org.openstreetmap.josm.gui.NavigatableComponent;
-import org.openstreetmap.josm.gui.PleaseWaitRunnable;
 import org.openstreetmap.josm.gui.dialogs.LayerListDialog;
 import org.openstreetmap.josm.gui.dialogs.LayerListPopup;
-import org.openstreetmap.josm.gui.io.importexport.JpgImporter;
 import org.openstreetmap.josm.gui.layer.AbstractModifiableLayer;
 import org.openstreetmap.josm.gui.layer.GpxLayer;
 import org.openstreetmap.josm.gui.layer.JumpToMarkerActions.JumpToMarkerLayer;
@@ -63,26 +65,46 @@ import org.openstreetmap.josm.gui.layer.JumpToMarkerActions.JumpToNextMarker;
 import org.openstreetmap.josm.gui.layer.JumpToMarkerActions.JumpToPreviousMarker;
 import org.openstreetmap.josm.gui.layer.Layer;
 import org.openstreetmap.josm.gui.layer.MainLayerManager.ActiveLayerChangeListener;
+import org.openstreetmap.josm.gui.util.imagery.Vector3D;
 import org.openstreetmap.josm.tools.ImageProvider;
-import org.openstreetmap.josm.tools.Logging;
+import org.openstreetmap.josm.tools.ListenerList;
 import org.openstreetmap.josm.tools.Utils;
 
 /**
  * Layer displaying geotagged pictures.
+ * @since 99
  */
 public class GeoImageLayer extends AbstractModifiableLayer implements
-        JumpToMarkerLayer, NavigatableComponent.ZoomChangeListener, ImageDataUpdateListener {
+        JumpToMarkerLayer, NavigatableComponent.ZoomChangeListener, ImageDataUpdateListener,
+        IGeoImageLayer {
 
     private static final List<Action> menuAdditions = new LinkedList<>();
 
     private static volatile List<MapMode> supportedMapModes;
 
     private final ImageData data;
-    GpxLayer gpxLayer;
+    private final ListenerList<IGeoImageLayer.ImageChangeListener> imageChangeListeners = ListenerList.create();
+    GpxData gpxData;
     GpxLayer gpxFauxLayer;
+    GpxData gpxFauxData;
+
+    private CorrelateGpxWithImages gpxCorrelateAction;
 
     private final Icon icon = ImageProvider.get("dialogs/geoimage/photo-marker");
     private final Icon selectedIcon = ImageProvider.get("dialogs/geoimage/photo-marker-selected");
+    private final Icon selectedIconNotImageViewer = generateSelectedIconNotImageViewer(this.selectedIcon);
+
+    private static Icon generateSelectedIconNotImageViewer(Icon selectedIcon) {
+        Color color = new NamedColorProperty("geoimage.selected.not.image.viewer", new Color(50, 0, 0)).get();
+        BufferedImage bi = new BufferedImage(selectedIcon.getIconWidth(), selectedIcon.getIconHeight(), BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g2d = bi.createGraphics();
+        selectedIcon.paintIcon(null, g2d, 0, 0);
+        g2d.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_ATOP, 0.5f));
+        g2d.setColor(color);
+        g2d.fillRect(0, 0, selectedIcon.getIconWidth(), selectedIcon.getIconHeight());
+        g2d.dispose();
+        return new ImageIcon(bi);
+    }
 
     boolean useThumbs;
     private final ExecutorService thumbsLoaderExecutor =
@@ -151,11 +173,24 @@ public class GeoImageLayer extends AbstractModifiableLayer implements
      * @since 6392
      */
     public GeoImageLayer(final List<ImageEntry> data, GpxLayer gpxLayer, final String name, boolean useThumbs) {
-        super(name != null ? name : tr("Geotagged Images"));
+        this(data, gpxLayer != null ? gpxLayer.data : null, name, useThumbs);
+    }
+
+    /**
+     * Constructs a new {@code GeoImageLayer}.
+     * @param data The list of images to display
+     * @param gpxData The associated GPX data
+     * @param name Layer name
+     * @param useThumbs Thumbnail display flag
+     * @since 18078
+     */
+    public GeoImageLayer(final List<ImageEntry> data, GpxData gpxData, final String name, boolean useThumbs) {
+        super(!Utils.isStripEmpty(name) ? name : tr("Geotagged Images"));
         this.data = new ImageData(data);
-        this.gpxLayer = gpxLayer;
+        this.gpxData = gpxData;
         this.useThumbs = useThumbs;
         this.data.addImageDataUpdateListener(this);
+        this.data.setLayer(this);
     }
 
     private final class ImageMouseListener extends MouseAdapter {
@@ -216,160 +251,10 @@ public class GeoImageLayer extends AbstractModifiableLayer implements
                     }
                 } else {
                     data.setSelectedImage(img);
+                    ImageViewerDialog.getInstance().displayImages(Collections.singletonList(img));
                 }
+                GeoImageLayer.this.invalidate(); // Needed to update which image is being shown in the image viewer in the mapview
             }
-        }
-    }
-
-    /**
-     * Loads a set of images, while displaying a dialog that indicates what the plugin is currently doing.
-     * In facts, this object is instantiated with a list of files. These files may be JPEG files or
-     * directories. In case of directories, they are scanned to find all the images they contain.
-     * Then all the images that have be found are loaded as ImageEntry instances.
-     */
-    static final class Loader extends PleaseWaitRunnable {
-
-        private boolean canceled;
-        private GeoImageLayer layer;
-        private final Collection<File> selection;
-        private final Set<String> loadedDirectories = new HashSet<>();
-        private final Set<String> errorMessages;
-        private final GpxLayer gpxLayer;
-
-        Loader(Collection<File> selection, GpxLayer gpxLayer) {
-            super(tr("Extracting GPS locations from EXIF"));
-            this.selection = selection;
-            this.gpxLayer = gpxLayer;
-            errorMessages = new LinkedHashSet<>();
-        }
-
-        private void rememberError(String message) {
-            this.errorMessages.add(message);
-        }
-
-        @Override
-        protected void realRun() throws IOException {
-
-            progressMonitor.subTask(tr("Starting directory scan"));
-            Collection<File> files = new ArrayList<>();
-            try {
-                addRecursiveFiles(files, selection);
-            } catch (IllegalStateException e) {
-                Logging.debug(e);
-                rememberError(e.getMessage());
-            }
-
-            if (canceled)
-                return;
-            progressMonitor.subTask(tr("Read photos..."));
-            progressMonitor.setTicksCount(files.size());
-
-            // read the image files
-            List<ImageEntry> entries = new ArrayList<>(files.size());
-
-            for (File f : files) {
-
-                if (canceled) {
-                    break;
-                }
-
-                progressMonitor.subTask(tr("Reading {0}...", f.getName()));
-                progressMonitor.worked(1);
-
-                ImageEntry e = new ImageEntry(f);
-                e.extractExif();
-                entries.add(e);
-            }
-            layer = new GeoImageLayer(entries, gpxLayer);
-            files.clear();
-        }
-
-        private void addRecursiveFiles(Collection<File> files, Collection<File> sel) {
-            boolean nullFile = false;
-
-            for (File f : sel) {
-
-                if (canceled) {
-                    break;
-                }
-
-                if (f == null) {
-                    nullFile = true;
-
-                } else if (f.isDirectory()) {
-                    String canonical = null;
-                    try {
-                        canonical = f.getCanonicalPath();
-                    } catch (IOException e) {
-                        Logging.error(e);
-                        rememberError(tr("Unable to get canonical path for directory {0}\n",
-                                f.getAbsolutePath()));
-                    }
-
-                    if (canonical == null || loadedDirectories.contains(canonical)) {
-                        continue;
-                    } else {
-                        loadedDirectories.add(canonical);
-                    }
-
-                    File[] children = f.listFiles(JpgImporter.FILE_FILTER_WITH_FOLDERS);
-                    if (children != null) {
-                        progressMonitor.subTask(tr("Scanning directory {0}", f.getPath()));
-                        addRecursiveFiles(files, Arrays.asList(children));
-                    } else {
-                        rememberError(tr("Error while getting files from directory {0}\n", f.getPath()));
-                    }
-
-                } else {
-                    files.add(f);
-                }
-            }
-
-            if (nullFile) {
-                throw new IllegalStateException(tr("One of the selected files was null"));
-            }
-        }
-
-        private String formatErrorMessages() {
-            StringBuilder sb = new StringBuilder();
-            sb.append("<html>");
-            if (errorMessages.size() == 1) {
-                sb.append(Utils.escapeReservedCharactersHTML(errorMessages.iterator().next()));
-            } else {
-                sb.append(Utils.joinAsHtmlUnorderedList(errorMessages));
-            }
-            sb.append("</html>");
-            return sb.toString();
-        }
-
-        @Override protected void finish() {
-            if (!errorMessages.isEmpty()) {
-                JOptionPane.showMessageDialog(
-                        MainApplication.getMainFrame(),
-                        formatErrorMessages(),
-                        tr("Error"),
-                        JOptionPane.ERROR_MESSAGE
-                        );
-            }
-            if (layer != null) {
-                MainApplication.getLayerManager().addLayer(layer);
-
-                if (!canceled && !layer.getImageData().getImages().isEmpty()) {
-                    boolean noGeotagFound = true;
-                    for (ImageEntry e : layer.getImageData().getImages()) {
-                        if (e.getPos() != null) {
-                            noGeotagFound = false;
-                        }
-                    }
-                    if (noGeotagFound) {
-                        new CorrelateGpxWithImages(layer).actionPerformed(null);
-                    }
-                }
-            }
-        }
-
-        @Override protected void cancel() {
-            canceled = true;
         }
     }
 
@@ -379,12 +264,45 @@ public class GeoImageLayer extends AbstractModifiableLayer implements
      * @param gpxLayer the gpx layer
      */
     public static void create(Collection<File> files, GpxLayer gpxLayer) {
-        MainApplication.worker.execute(new Loader(files, gpxLayer));
+        MainApplication.worker.execute(new ImagesLoader(files, gpxLayer));
+    }
+
+    @Override
+    public void clearSelection() {
+        this.getImageData().clearSelectedImage();
+    }
+
+    @Override
+    public boolean containsImage(IImageEntry<?> imageEntry) {
+        if (imageEntry instanceof ImageEntry) {
+            return this.data.getImages().contains(imageEntry);
+        }
+        return false;
     }
 
     @Override
     public Icon getIcon() {
         return ImageProvider.get("dialogs/geoimage", ImageProvider.ImageSizes.LAYER);
+    }
+
+    @Override
+    public List<ImageEntry> getSelection() {
+        return this.getImageData().getSelectedImages();
+    }
+
+    @Override
+    public List<IImageEntry<?>> getInvalidGeoImages() {
+        return this.getImageData().getImages().stream().filter(entry -> entry.getPos() == null || !entry.getPos().isValid()).collect(toList());
+    }
+
+    @Override
+    public void addImageChangeListener(ImageChangeListener listener) {
+        this.imageChangeListeners.addListener(listener);
+    }
+
+    @Override
+    public void removeImageChangeListener(ImageChangeListener listener) {
+        this.imageChangeListeners.removeListener(listener);
     }
 
     /**
@@ -397,7 +315,6 @@ public class GeoImageLayer extends AbstractModifiableLayer implements
 
     @Override
     public Action[] getMenuEntries() {
-
         List<Action> entries = new ArrayList<>();
         entries.add(LayerListDialog.getInstance().createShowHideLayerAction());
         entries.add(LayerListDialog.getInstance().createDeleteLayerAction());
@@ -405,7 +322,11 @@ public class GeoImageLayer extends AbstractModifiableLayer implements
         entries.add(LayerListDialog.getInstance().createMergeLayerAction(this));
         entries.add(new RenameLayerAction(null, this));
         entries.add(SeparatorLayerAction.INSTANCE);
-        entries.add(new CorrelateGpxWithImages(this));
+        entries.add(getGpxCorrelateAction());
+        if (ExpertToggleAction.isExpert()) {
+            entries.add(new EditImagesSequenceAction(this));
+            entries.add(new LayerGpxExportAction(this));
+        }
         entries.add(new ShowThumbnailAction(this));
         if (!menuAdditions.isEmpty()) {
             entries.add(SeparatorLayerAction.INSTANCE);
@@ -418,7 +339,6 @@ public class GeoImageLayer extends AbstractModifiableLayer implements
         entries.add(new LayerListPopup.InfoAction(this));
 
         return entries.toArray(new Action[0]);
-
     }
 
     /**
@@ -444,7 +364,8 @@ public class GeoImageLayer extends AbstractModifiableLayer implements
                 + "</html>";
     }
 
-    @Override public Object getInfoComponent() {
+    @Override
+    public Object getInfoComponent() {
         return infoText();
     }
 
@@ -546,10 +467,10 @@ public class GeoImageLayer extends AbstractModifiableLayer implements
                 startLoadThumbs();
             }
 
-            if (null == offscreenBuffer || offscreenBuffer.getWidth() != width  // reuse the old buffer if possible
+            if (null == offscreenBuffer
+                    || offscreenBuffer.getWidth() != width  // reuse the old buffer if possible
                     || offscreenBuffer.getHeight() != height) {
-                offscreenBuffer = new BufferedImage(width, height,
-                        BufferedImage.TYPE_INT_ARGB);
+                offscreenBuffer = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
                 updateOffscreenBuffer = true;
             }
 
@@ -561,7 +482,7 @@ public class GeoImageLayer extends AbstractModifiableLayer implements
                 tempG.fillRect(0, 0, width, height);
                 tempG.setComposite(saveComp);
 
-                for (ImageEntry e : data.getImages()) {
+                for (ImageEntry e : data.searchImages(bounds)) {
                     paintImage(e, mv, clip, tempG);
                 }
                 for (ImageEntry img: this.data.getSelectedImages()) {
@@ -572,7 +493,7 @@ public class GeoImageLayer extends AbstractModifiableLayer implements
             }
             g.drawImage(offscreenBuffer, 0, 0, null);
         } else {
-            for (ImageEntry e : data.getImages()) {
+            for (ImageEntry e : data.searchImages(bounds)) {
                 if (e.getPos() == null) {
                     continue;
                 }
@@ -586,63 +507,66 @@ public class GeoImageLayer extends AbstractModifiableLayer implements
         for (ImageEntry e: data.getSelectedImages()) {
             if (e != null && e.getPos() != null) {
                 Point p = mv.getPoint(e.getPos());
-
-                int imgWidth;
-                int imgHeight;
-                if (useThumbs && e.hasThumbnail()) {
-                    Dimension d = scaledDimension(e.getThumbnail());
-                    if (d != null) {
-                        imgWidth = d.width;
-                        imgHeight = d.height;
-                    } else {
-                        imgWidth = -1;
-                        imgHeight = -1;
-                    }
-                } else {
-                    imgWidth = selectedIcon.getIconWidth();
-                    imgHeight = selectedIcon.getIconHeight();
-                }
+                Dimension imgDim = getImageDimension(e);
 
                 if (e.getExifImgDir() != null) {
-                    // Multiplier must be larger than sqrt(2)/2=0.71.
-                    double arrowlength = Math.max(25, Math.max(imgWidth, imgHeight) * 0.85);
-                    double arrowwidth = arrowlength / 1.4;
-
-                    double dir = e.getExifImgDir();
-                    // Rotate 90 degrees CCW
-                    double headdir = (dir < 90) ? dir + 270 : dir - 90;
-                    double leftdir = (headdir < 90) ? headdir + 270 : headdir - 90;
-                    double rightdir = (headdir > 270) ? headdir - 270 : headdir + 90;
-
-                    double ptx = p.x + Math.cos(Utils.toRadians(headdir)) * arrowlength;
-                    double pty = p.y + Math.sin(Utils.toRadians(headdir)) * arrowlength;
-
-                    double ltx = p.x + Math.cos(Utils.toRadians(leftdir)) * arrowwidth/2;
-                    double lty = p.y + Math.sin(Utils.toRadians(leftdir)) * arrowwidth/2;
-
-                    double rtx = p.x + Math.cos(Utils.toRadians(rightdir)) * arrowwidth/2;
-                    double rty = p.y + Math.sin(Utils.toRadians(rightdir)) * arrowwidth/2;
-
-                    g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                    g.setColor(new Color(255, 255, 255, 192));
-                    int[] xar = {(int) ltx, (int) ptx, (int) rtx, (int) ltx};
-                    int[] yar = {(int) lty, (int) pty, (int) rty, (int) lty};
-                    g.fillPolygon(xar, yar, 4);
-                    g.setColor(Color.black);
-                    g.setStroke(new BasicStroke(1.2f));
-                    g.drawPolyline(xar, yar, 3);
+                    Vector3D imgRotation = ImageViewerDialog.getInstance().getRotation(e);
+                    drawDirectionArrow(g, p, e.getExifImgDir()
+                            + (imgRotation != null ? Utils.toDegrees(imgRotation.getPolarAngle()) : 0d), imgDim);
                 }
 
                 if (useThumbs && e.hasThumbnail()) {
                     g.setColor(new Color(128, 0, 0, 122));
-                    g.fillRect(p.x - imgWidth / 2, p.y - imgHeight / 2, imgWidth, imgHeight);
-                } else {
+                    g.fillRect(p.x - imgDim.width / 2, p.y - imgDim.height / 2, imgDim.width, imgDim.height);
+                } else if (e.equals(ImageViewerDialog.getCurrentImage())) {
                     selectedIcon.paintIcon(mv, g,
-                            p.x - imgWidth / 2,
-                            p.y - imgHeight / 2);
+                            p.x - imgDim.width / 2,
+                            p.y - imgDim.height / 2);
+                } else {
+                    selectedIconNotImageViewer.paintIcon(mv, g,
+                            p.x - imgDim.width / 2,
+                            p.y - imgDim.height / 2);
                 }
             }
         }
+    }
+
+    protected Dimension getImageDimension(ImageEntry e) {
+        if (useThumbs && e.hasThumbnail()) {
+            Dimension d = scaledDimension(e.getThumbnail());
+            return d != null ? d : new Dimension(-1, -1);
+        } else {
+            return new Dimension(selectedIcon.getIconWidth(), selectedIcon.getIconHeight());
+        }
+    }
+
+    protected static void drawDirectionArrow(Graphics2D g, Point p, double dir, Dimension imgDim) {
+        // Multiplier must be larger than sqrt(2)/2=0.71.
+        double arrowlength = Math.max(25, Math.max(imgDim.width, imgDim.height) * 0.85);
+        double arrowwidth = arrowlength / 1.4;
+
+        // Rotate 90 degrees CCW
+        double headdir = (dir < 90) ? dir + 270 : dir - 90;
+        double leftdir = (headdir < 90) ? headdir + 270 : headdir - 90;
+        double rightdir = (headdir > 270) ? headdir - 270 : headdir + 90;
+
+        double ptx = p.x + Math.cos(Utils.toRadians(headdir)) * arrowlength;
+        double pty = p.y + Math.sin(Utils.toRadians(headdir)) * arrowlength;
+
+        double ltx = p.x + Math.cos(Utils.toRadians(leftdir)) * arrowwidth/2;
+        double lty = p.y + Math.sin(Utils.toRadians(leftdir)) * arrowwidth/2;
+
+        double rtx = p.x + Math.cos(Utils.toRadians(rightdir)) * arrowwidth/2;
+        double rty = p.y + Math.sin(Utils.toRadians(rightdir)) * arrowwidth/2;
+
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setColor(new Color(255, 255, 255, 192));
+        int[] xar = {(int) ltx, (int) ptx, (int) rtx, (int) ltx};
+        int[] yar = {(int) lty, (int) pty, (int) rty, (int) lty};
+        g.fillPolygon(xar, yar, 4);
+        g.setColor(Color.black);
+        g.setStroke(new BasicStroke(1.2f));
+        g.drawPolyline(xar, yar, 3);
     }
 
     @Override
@@ -656,9 +580,6 @@ public class GeoImageLayer extends AbstractModifiableLayer implements
      * Show current photo on map and in image viewer.
      */
     public void showCurrentPhoto() {
-        if (data.getSelectedImage() != null) {
-            clearOtherCurrentPhotos();
-        }
         updateBufferAndRepaint();
     }
 
@@ -764,18 +685,6 @@ public class GeoImageLayer extends AbstractModifiableLayer implements
     }
 
     /**
-     * Clears the currentPhoto of the other GeoImageLayer's. Otherwise there could be multiple selected photos.
-     */
-    private void clearOtherCurrentPhotos() {
-        for (GeoImageLayer layer:
-                 MainApplication.getLayerManager().getLayersOfType(GeoImageLayer.class)) {
-            if (layer != this) {
-                layer.getImageData().clearSelectedImage();
-            }
-        }
-    }
-
-    /**
      * Registers a map mode for which the functionality of this layer should be available.
      * @param mapMode Map mode to be registered
      * @since 6392
@@ -820,12 +729,11 @@ public class GeoImageLayer extends AbstractModifiableLayer implements
 
         mapModeListener = (oldMapMode, newMapMode) -> {
             MapView mapView = MainApplication.getMap().mapView;
+            mapView.removeMouseListener(mouseAdapter);
+            mapView.removeMouseMotionListener(mouseMotionAdapter);
             if (newMapMode == null || isSupportedMapMode(newMapMode)) {
                 mapView.addMouseListener(mouseAdapter);
                 mapView.addMouseMotionListener(mouseMotionAdapter);
-            } else {
-                mapView.removeMouseListener(mouseAdapter);
-                mapView.removeMouseMotionListener(mouseMotionAdapter);
             }
         };
 
@@ -839,18 +747,16 @@ public class GeoImageLayer extends AbstractModifiableLayer implements
             }
         };
         MainApplication.getLayerManager().addActiveLayerChangeListener(activeLayerChangeListener);
-
-        MapFrame map = MainApplication.getMap();
-        if (map.getToggleDialog(ImageViewerDialog.class) == null) {
-            ImageViewerDialog.createInstance();
-            map.addToggleDialog(ImageViewerDialog.getInstance());
-        }
     }
 
     @Override
     public synchronized void destroy() {
         super.destroy();
         stopLoadThumbs();
+        if (gpxCorrelateAction != null) {
+            gpxCorrelateAction.destroy();
+            gpxCorrelateAction = null;
+        }
         MapView mapView = MainApplication.getMap().mapView;
         mapView.removeMouseListener(mouseAdapter);
         mapView.removeMouseMotionListener(mouseMotionAdapter);
@@ -890,7 +796,7 @@ public class GeoImageLayer extends AbstractModifiableLayer implements
 
     /**
      * Stop to load thumbnails.
-     *
+     * <p>
      * Can be called at any time to make sure that the
      * thumbnail loader is stopped.
      */
@@ -903,7 +809,7 @@ public class GeoImageLayer extends AbstractModifiableLayer implements
 
     /**
      * Called to signal that the loading of thumbnails has finished.
-     *
+     * <p>
      * Usually called from {@link ThumbsLoader} in another thread.
      */
     public void thumbsLoaded() {
@@ -936,11 +842,33 @@ public class GeoImageLayer extends AbstractModifiableLayer implements
     }
 
     /**
-     * Returns the associated GPX layer.
-     * @return The associated GPX layer
+     * Returns the associated GPX data if any.
+     * @return The associated GPX data or {@code null}
+     * @since 18078
+     */
+    public GpxData getGpxData() {
+        return gpxData;
+    }
+
+    /**
+     * Returns the associated GPX layer if any.
+     * @return The associated GPX layer or {@code null}
      */
     public GpxLayer getGpxLayer() {
-        return gpxLayer;
+        return gpxData != null ? MainApplication.getLayerManager().getLayersOfType(GpxLayer.class)
+                .stream().filter(l -> gpxData.equals(l.getGpxData()))
+                .findFirst().orElseThrow(IllegalStateException::new) : null;
+    }
+
+    /**
+     * Returns the gpxCorrelateAction
+     * @return the gpxCorrelateAction
+     */
+    public synchronized CorrelateGpxWithImages getGpxCorrelateAction() {
+        if (gpxCorrelateAction == null) {
+            gpxCorrelateAction = new CorrelateGpxWithImages(this);
+        }
+        return gpxCorrelateAction;
     }
 
     /**
@@ -949,27 +877,44 @@ public class GeoImageLayer extends AbstractModifiableLayer implements
      * @since 14802
      */
     public synchronized GpxLayer getFauxGpxLayer() {
-        if (gpxLayer != null) return getGpxLayer();
+        GpxLayer gpxLayer = getGpxLayer();
+        if (gpxLayer != null) return gpxLayer;
         if (gpxFauxLayer == null) {
-            GpxData gpxData = new GpxData();
-            List<ImageEntry> imageList = data.getImages();
-            for (ImageEntry image : imageList) {
-                WayPoint twaypoint = new WayPoint(image.getPos());
-                gpxData.addWaypoint(twaypoint);
-            }
-            gpxFauxLayer = new GpxLayer(gpxData);
+            gpxFauxLayer = new GpxLayer(getFauxGpxData());
         }
         return gpxFauxLayer;
     }
 
+    /**
+     * Returns a faux GPX data built from the images or the associated GPX layer data.
+     * @return A faux GPX data or the associated GPX layer data
+     * @since 18065
+     */
+    public synchronized GpxData getFauxGpxData() {
+        GpxLayer gpxLayer = getGpxLayer();
+        if (gpxLayer != null) return gpxLayer.data;
+        if (gpxFauxData == null) {
+            gpxFauxData = new GpxData();
+            gpxFauxData.addTrack(new GpxTrack(Collections.singletonList(
+                    data.getImages().stream().map(ImageEntry::asWayPoint).filter(Objects::nonNull).collect(toList())),
+                    Collections.emptyMap()));
+        }
+        return gpxFauxData;
+    }
+
     @Override
     public void jumpToNextMarker() {
-        data.selectNextImage();
+        data.setSelectedImage(data.getNextImage());
+        if (data.getSelectedImage() != null)
+            ImageViewerDialog.getInstance().displayImages(Collections.singletonList(data.getSelectedImage()));
+
     }
 
     @Override
     public void jumpToPreviousMarker() {
-        data.selectPreviousImage();
+        data.setSelectedImage(data.getPreviousImage());
+        if (data.getSelectedImage() != null)
+            ImageViewerDialog.getInstance().displayImages(Collections.singletonList(data.getSelectedImage()));
     }
 
     /**
@@ -1000,10 +945,13 @@ public class GeoImageLayer extends AbstractModifiableLayer implements
     @Override
     public void selectedImageChanged(ImageData data) {
         showCurrentPhoto();
+        this.imageChangeListeners.fireEvent(e -> e.imageChanged(this, null, data.getSelectedImages()));
     }
 
     @Override
     public void imageDataUpdated(ImageData data) {
+        this.gpxFauxLayer = null;
+        this.gpxFauxData = null;
         updateBufferAndRepaint();
     }
 
@@ -1014,6 +962,34 @@ public class GeoImageLayer extends AbstractModifiableLayer implements
 
     @Override
     public Data getData() {
-        return data;
+        return getImageData();
+    }
+
+    void applyTmp() {
+        data.getImages().forEach(ImageEntry::applyTmp);
+    }
+
+    void discardTmp() {
+        data.getImages().forEach(ImageEntry::discardTmp);
+    }
+
+    /**
+     * Returns a list of images that fulfill the given criteria.
+     * Default setting is to return untagged images, but may be overwritten.
+     * @param exif also returns images with exif-gps info
+     * @param tagged also returns tagged images
+     * @param gpsTime use GPS Time if true, instead of Camera RTC Time
+     * @return matching images
+     * @since 19455 gpsTime was added
+     */
+    List<ImageEntry> getSortedImgList(boolean exif, boolean tagged, TimeSource timeSource) {
+        return data.getImages().stream()
+                .filter(timeSource == TimeSource.EXIFGPSTIME ? GpxImageEntry::hasExifGpsTime : GpxImageEntry::hasExifTime)
+                .filter(e -> e.getExifCoor() == null || exif)
+                .filter(e -> tagged || !e.isTagged() || e.getExifCoor() != null)
+                .sorted(timeSource == TimeSource.EXIFGPSTIME
+                    ? Comparator.comparing(ImageEntry::getExifGpsInstant)
+                    : Comparator.comparing(ImageEntry::getExifInstant))
+                .collect(toList());
     }
 }

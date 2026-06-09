@@ -1,21 +1,21 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.osm;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.Filter.FilterPreferenceEntry;
@@ -23,26 +23,16 @@ import org.openstreetmap.josm.data.osm.search.SearchMode;
 import org.openstreetmap.josm.data.osm.search.SearchParseError;
 import org.openstreetmap.josm.gui.progress.NullProgressMonitor;
 import org.openstreetmap.josm.io.OsmReader;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import nl.jqno.equalsverifier.EqualsVerifier;
 import nl.jqno.equalsverifier.Warning;
 
 /**
  * Unit tests for class {@link Filter}.
  */
-public class FilterTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+class FilterTest {
     @Test
-    public void testBasic() throws SearchParseError {
+    void testBasic() throws SearchParseError {
         DataSet ds = new DataSet();
         Node n1 = new Node(LatLon.ZERO);
         n1.put("amenity", "parking");
@@ -51,14 +41,12 @@ public class FilterTest {
         ds.addPrimitive(n1);
         ds.addPrimitive(n2);
 
-        Collection<OsmPrimitive> all = new HashSet<>();
-        all.addAll(Arrays.asList(new OsmPrimitive[] {n1, n2}));
+        Collection<OsmPrimitive> all = new HashSet<>(Arrays.asList(n1, n2));
 
-        List<Filter> filters = new LinkedList<>();
         Filter f1 = new Filter();
         f1.text = "fixme";
         f1.hiding = true;
-        filters.addAll(Arrays.asList(new Filter[] {f1}));
+        List<Filter> filters = new LinkedList<>(Collections.singletonList(f1));
 
         FilterMatcher filterMatcher = new FilterMatcher();
         filterMatcher.update(filters);
@@ -70,7 +58,7 @@ public class FilterTest {
     }
 
     @Test
-    public void testFilter() throws Exception {
+    void testFilter() throws Exception {
         for (int i : new int[] {1, 2, 3, 11, 12, 13, 14, 15}) {
             DataSet ds;
             try (InputStream is = Files.newInputStream(Paths.get("nodist/data/filterTests.osm"))) {
@@ -100,7 +88,7 @@ public class FilterTest {
                 f1.hiding = true;
                 Filter f2 = new Filter();
                 f2.text = "highway";
-                filters.addAll(Arrays.asList(new Filter[] {f1, f2}));
+                filters.addAll(Arrays.asList(f1, f2));
                 break;
             }
             case 11: {
@@ -119,7 +107,7 @@ public class FilterTest {
                 Filter f2 = new Filter();
                 f2.text = "water";
                 f2.mode = SearchMode.remove;
-                filters.addAll(Arrays.asList(new Filter[] {f1, f2}));
+                filters.addAll(Arrays.asList(f1, f2));
                 break;
             }
             case 13: {
@@ -132,7 +120,7 @@ public class FilterTest {
                 f2.mode = SearchMode.remove;
                 Filter f3 = new Filter();
                 f3.text = "natural";
-                filters.addAll(Arrays.asList(new Filter[] {f1, f2, f3}));
+                filters.addAll(Arrays.asList(f1, f2, f3));
                 break;
             }
             case 14: {
@@ -150,7 +138,7 @@ public class FilterTest {
                 Filter f4 = new Filter();
                 f4.text = "name";
                 f4.mode = SearchMode.remove;
-                filters.addAll(Arrays.asList(new Filter[] {f1, f2, f3, f4}));
+                filters.addAll(Arrays.asList(f1, f2, f3, f4));
                 break;
             }
             case 15: {
@@ -162,7 +150,7 @@ public class FilterTest {
                 f2.text = "water";
                 f2.mode = SearchMode.remove;
                 f2.hiding = true; // Remove only hide flag so water should stay disabled
-                filters.addAll(Arrays.asList(new Filter[] {f1, f2}));
+                filters.addAll(Arrays.asList(f1, f2));
                 break;
             }
             default: throw new AssertionError();
@@ -182,13 +170,13 @@ public class FilterTest {
                     foundAtLeastOne = true;
                     if (!osm.get(key).equals(filterCode(osm))) {
                         failedPrimitives.append(String.format(
-                                "Object %s. Expected [%s] but was [%s]%n", osm.toString(), osm.get(key), filterCode(osm)));
+                                "Object %s. Expected [%s] but was [%s]%n", osm, osm.get(key), filterCode(osm)));
                     }
                 }
             }
             assertTrue(foundAtLeastOne);
             if (failedPrimitives.length() != 0)
-                throw new AssertionError(String.format("Run #%d%n%s", i, failedPrimitives.toString()));
+                throw new AssertionError(String.format("Run #%d%n%s", i, failedPrimitives));
         }
     }
 
@@ -196,7 +184,7 @@ public class FilterTest {
      * Unit tests of {@link Filter.FilterPreferenceEntry} class.
      */
     @Test
-    public void testFilterPreferenceEntry() {
+    void testFilterPreferenceEntry() {
         Filter f = new Filter();
         FilterPreferenceEntry fpe = f.getPreferenceEntry();
 
@@ -242,7 +230,7 @@ public class FilterTest {
      * Unit test of methods {@link FilterPreferenceEntry#equals} and {@link FilterPreferenceEntry#hashCode}.
      */
     @Test
-    public void testEqualsContract() {
+    void testEqualsContract() {
         TestUtils.assumeWorkingEqualsVerifier();
         EqualsVerifier.forClass(FilterPreferenceEntry.class).usingGetClass()
             .suppress(Warning.NONFINAL_FIELDS)

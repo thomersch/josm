@@ -1,13 +1,18 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.history;
 
+import static org.openstreetmap.josm.tools.I18n.tr;
+
 import java.awt.Color;
 import java.awt.Component;
 
+import javax.swing.BorderFactory;
 import javax.swing.JLabel;
 import javax.swing.JTable;
+import javax.swing.SwingConstants;
 import javax.swing.table.TableCellRenderer;
 
+import org.openstreetmap.josm.data.osm.history.HistoryOsmPrimitive;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 
 /**
@@ -31,22 +36,6 @@ public class TagTableCellRenderer extends JLabel implements TableCellRenderer {
         setOpaque(true);
     }
 
-    protected void setBackgroundReadable(String key, TagTableModel model, boolean isSelected, boolean hasFocus, boolean isValue) {
-        final TwoColumnDiff.Item.DiffItemType diffItemType;
-        if ((!model.hasTag(key) && model.isCurrentPointInTime())
-                || (!model.oppositeHasTag(key) && model.isReferencePointInTime())) {
-            diffItemType = TwoColumnDiff.Item.DiffItemType.DELETED;
-        } else if ((!model.oppositeHasTag(key) && model.isCurrentPointInTime())
-                || (!model.hasTag(key) && model.isReferencePointInTime())) {
-            diffItemType = TwoColumnDiff.Item.DiffItemType.INSERTED;
-        } else if (isValue && model.hasTag(key) && model.oppositeHasTag(key) && !model.hasSameValueAsOpposite(key)) {
-            diffItemType = TwoColumnDiff.Item.DiffItemType.CHANGED;
-        } else {
-            diffItemType = TwoColumnDiff.Item.DiffItemType.EMPTY;
-        }
-        GuiHelper.setBackgroundReadable(this, diffItemType.getColor(isSelected, hasFocus));
-    }
-
     @Override
     public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus,
             int row, int column) {
@@ -58,8 +47,10 @@ public class TagTableCellRenderer extends JLabel implements TableCellRenderer {
         TagTableModel model = getTagTableModel(table);
 
         String text = "";
+        String tooltip = null;
+        setBorder(null);
         if (model.hasTag(key)) {
-            switch(column) {
+            switch (column) {
             case TagTableColumnModel.COLUMN_KEY:
                 // the name column
                 text = key;
@@ -68,13 +59,23 @@ public class TagTableCellRenderer extends JLabel implements TableCellRenderer {
                 // the value column
                 text = model.getValue(key);
                 break;
+            case TagTableColumnModel.COLUMN_VERSION:
+                HistoryOsmPrimitive primitive = model.getWhichChangedTag(key);
+                if (primitive != null) {
+                    text = model.getVersionString(primitive);
+                    tooltip = tr("Key ''{0}'' was changed in version {1}", key, primitive.getVersion());
+                    setBorder(BorderFactory.createMatteBorder(0, 0, 0, 2, model.getVersionColor(primitive)));
+                }
+                break;
             default: // Do nothing
             }
         }
 
         setText(text);
-        setToolTipText(text);
-        setBackgroundReadable(key, model, isSelected, table.hasFocus(), column == TagTableColumnModel.COLUMN_VALUE);
+        setToolTipText(tooltip != null ? tooltip : text);
+        setHorizontalAlignment(column == TagTableColumnModel.COLUMN_VERSION ? SwingConstants.TRAILING : SwingConstants.LEADING);
+        TwoColumnDiff.Item.DiffItemType diffItemType = model.getDiffItemType(key, column == TagTableColumnModel.COLUMN_VALUE);
+        GuiHelper.setBackgroundReadable(this, diffItemType.getColor(isSelected, table.hasFocus()));
         return this;
     }
 

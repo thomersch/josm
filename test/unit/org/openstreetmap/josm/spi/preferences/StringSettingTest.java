@@ -1,30 +1,23 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.spi.preferences;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import nl.jqno.equalsverifier.EqualsVerifier;
 
 /**
  * Test {@link StringSetting}.
  */
-public class StringSettingTest {
-    /**
-     * This is a preference test
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences();
-
+// This is a preference test
+@BasicPreferences
+class StringSettingTest {
     /**
      * Unit test of methods {@link StringSetting#equals} and {@link StringSetting#hashCode}.
      */
     @Test
-    public void testEqualsContract() {
+    void testEqualsContract() {
         TestUtils.assumeWorkingEqualsVerifier();
         EqualsVerifier.forClass(StringSetting.class).usingGetClass()
             .withIgnoredFields("isNew", "time")

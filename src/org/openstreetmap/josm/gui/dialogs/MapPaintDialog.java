@@ -7,6 +7,7 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.event.ActionEvent;
@@ -26,7 +27,6 @@ import java.util.Collection;
 import java.util.List;
 
 import javax.swing.AbstractAction;
-import javax.swing.DefaultButtonModel;
 import javax.swing.DefaultListSelectionModel;
 import javax.swing.ImageIcon;
 import javax.swing.JCheckBox;
@@ -37,6 +37,7 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JTable;
+import javax.swing.JToggleButton.ToggleButtonModel;
 import javax.swing.ListSelectionModel;
 import javax.swing.SingleSelectionModel;
 import javax.swing.SwingConstants;
@@ -121,11 +122,11 @@ public class MapPaintDialog extends ToggleDialog {
         model = new StylesModel();
 
         cbWireframe = new JCheckBox();
-        JLabel wfLabel = new JLabel(tr("Wireframe View"), ImageProvider.get("dialogs/mappaint", "wireframe_small"), JLabel.HORIZONTAL);
+        JLabel wfLabel = new JLabel(tr("Wireframe View"), ImageProvider.get("dialogs/mappaint", "wireframe_small"), SwingConstants.HORIZONTAL);
         wfLabel.setFont(wfLabel.getFont().deriveFont(Font.PLAIN));
         wfLabel.setLabelFor(cbWireframe);
 
-        cbWireframe.setModel(new DefaultButtonModel() {
+        cbWireframe.setModel(new ToggleButtonModel() {
             @Override
             public void setSelected(boolean b) {
                 super.setSelected(b);
@@ -295,7 +296,7 @@ public class MapPaintDialog extends ToggleDialog {
         }
     }
 
-    private class StyleSourceRenderer extends DefaultTableCellRenderer {
+    private final class StyleSourceRenderer extends DefaultTableCellRenderer {
         @Override
         public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
             if (value == null)
@@ -310,17 +311,18 @@ public class MapPaintDialog extends ToggleDialog {
         }
     }
 
-    protected class OnOffAction extends AbstractAction implements ListSelectionListener {
+    protected class OnOffAction extends JosmAction implements ListSelectionListener {
         /**
          * Constructs a new {@code OnOffAction}.
          */
         public OnOffAction() {
-            putValue(NAME, tr("On/Off"));
-            putValue(SHORT_DESCRIPTION, tr("Turn selected styles on or off"));
-            new ImageProvider("apply").getResource().attachImageIcon(this, true);
+            super(tr("On/Off"), "apply", tr("Turn selected styles on or off"),
+                    Shortcut.registerShortcut("map:paint:style:on_off", tr("Filter: Add"), KeyEvent.VK_UNDEFINED, Shortcut.NONE),
+                    false, false);
             updateEnabledState();
         }
 
+        @Override
         protected void updateEnabledState() {
             setEnabled(!cbWireframe.isSelected() && tblStyles.getSelectedRowCount() > 0);
         }
@@ -341,7 +343,7 @@ public class MapPaintDialog extends ToggleDialog {
     /**
      * The action to move down the currently selected entries in the list.
      */
-    protected class MoveUpDownAction extends AbstractAction implements ListSelectionListener {
+    protected class MoveUpDownAction extends JosmAction implements ListSelectionListener {
 
         private final int increment;
 
@@ -350,13 +352,18 @@ public class MapPaintDialog extends ToggleDialog {
          * @param isDown {@code true} to move the entry down, {@code false} to move it up
          */
         public MoveUpDownAction(boolean isDown) {
+            super(isDown ? tr("Down") : tr("Up"), "dialogs/" + (isDown ? "down" : "up"),
+                    isDown ? tr("Move the selected entry one row down.") : tr("Move the selected entry one row up."),
+                    isDown ? Shortcut.registerShortcut("map:paint:style:down", tr("Map Paint Styles: Move selected entry down"),
+                            KeyEvent.VK_UNDEFINED, Shortcut.NONE)
+                    : Shortcut.registerShortcut("map:paint:style:up", tr("Map Paint Styles: Move selected entry up"),
+                            KeyEvent.VK_UNDEFINED, Shortcut.NONE),
+                    false, false);
             increment = isDown ? 1 : -1;
-            putValue(NAME, isDown ? tr("Down") : tr("Up"));
-            new ImageProvider("dialogs", isDown ? "down" : "up").getResource().attachImageIcon(this, true);
-            putValue(SHORT_DESCRIPTION, isDown ? tr("Move the selected entry one row down.") : tr("Move the selected entry one row up."));
             updateEnabledState();
         }
 
+        @Override
         public void updateEnabledState() {
             int[] sel = tblStyles.getSelectedRows();
             setEnabled(!cbWireframe.isSelected() && MapPaintStyles.canMoveStyles(sel, increment));
@@ -568,7 +575,7 @@ public class MapPaintDialog extends ToggleDialog {
                 tabs.setTabComponentAt(pos, lblErrors);
                 tabs.setEnabledAt(pos, false);
             } else {
-                JLabel lblErrors = new JLabel(tr(title), icon, JLabel.HORIZONTAL);
+                JLabel lblErrors = new JLabel(tr(title), icon, SwingConstants.HORIZONTAL);
                 lblErrors.setLabelFor(pErrors);
                 tabs.setTabComponentAt(pos, lblErrors);
             }
@@ -594,7 +601,7 @@ public class MapPaintDialog extends ToggleDialog {
             }
             text.append(tableRow(tr("Style is currently active?"), s.active ? tr("Yes") : tr("No")))
                 .append("</table>");
-            p.add(new JScrollPane(new HtmlPanel(text.toString())), GBC.eol().fill(GBC.BOTH));
+            p.add(new JScrollPane(new HtmlPanel(text.toString())), GBC.eol().fill(GridBagConstraints.BOTH));
             return p;
         }
 
@@ -663,7 +670,7 @@ public class MapPaintDialog extends ToggleDialog {
 
             final int sel = tblStyles.getSelectionModel().getLeadSelectionIndex();
             final StyleSource style = sel >= 0 && sel < model.getRowCount() ? model.getRow(sel) : null;
-            if (style == null || style.settings.isEmpty()) {
+            if (style == null || Utils.isEmpty(style.settings)) {
                 setMenu.setEnabled(false);
             } else {
                 // Add settings groups

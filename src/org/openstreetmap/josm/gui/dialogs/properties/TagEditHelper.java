@@ -1,11 +1,13 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.dialogs.properties;
 
+import static org.openstreetmap.josm.tools.I18n.marktr;
 import static org.openstreetmap.josm.tools.I18n.tr;
 import static org.openstreetmap.josm.tools.I18n.trn;
 
 import java.awt.BorderLayout;
 import java.awt.Component;
+import java.awt.ComponentOrientation;
 import java.awt.Container;
 import java.awt.Cursor;
 import java.awt.Dimension;
@@ -13,11 +15,9 @@ import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
-import java.awt.datatransfer.Clipboard;
-import java.awt.datatransfer.Transferable;
 import java.awt.event.ActionEvent;
-import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
+import java.awt.event.FocusListener;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
@@ -44,8 +44,6 @@ import javax.swing.AbstractAction;
 import javax.swing.Action;
 import javax.swing.Box;
 import javax.swing.ButtonGroup;
-import javax.swing.ComboBoxModel;
-import javax.swing.DefaultListCellRenderer;
 import javax.swing.ImageIcon;
 import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JComponent;
@@ -60,8 +58,9 @@ import javax.swing.JTable;
 import javax.swing.KeyStroke;
 import javax.swing.ListCellRenderer;
 import javax.swing.SwingUtilities;
+import javax.swing.event.PopupMenuEvent;
+import javax.swing.event.PopupMenuListener;
 import javax.swing.table.DefaultTableModel;
-import javax.swing.text.JTextComponent;
 
 import org.openstreetmap.josm.actions.JosmAction;
 import org.openstreetmap.josm.actions.search.SearchAction;
@@ -70,10 +69,12 @@ import org.openstreetmap.josm.command.Command;
 import org.openstreetmap.josm.command.SequenceCommand;
 import org.openstreetmap.josm.data.UndoRedoHandler;
 import org.openstreetmap.josm.data.osm.DataSet;
+import org.openstreetmap.josm.data.osm.Filter;
 import org.openstreetmap.josm.data.osm.OsmDataManager;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.OsmPrimitiveType;
 import org.openstreetmap.josm.data.osm.Tag;
+import org.openstreetmap.josm.data.osm.Tagged;
 import org.openstreetmap.josm.data.osm.search.SearchCompiler;
 import org.openstreetmap.josm.data.osm.search.SearchParseError;
 import org.openstreetmap.josm.data.osm.search.SearchSetting;
@@ -83,14 +84,19 @@ import org.openstreetmap.josm.data.preferences.IntegerProperty;
 import org.openstreetmap.josm.data.preferences.ListProperty;
 import org.openstreetmap.josm.data.preferences.StringProperty;
 import org.openstreetmap.josm.data.tagging.ac.AutoCompletionItem;
+import org.openstreetmap.josm.gui.ConditionalOptionPaneUtil;
 import org.openstreetmap.josm.gui.ExtendedDialog;
 import org.openstreetmap.josm.gui.IExtendedDialog;
 import org.openstreetmap.josm.gui.MainApplication;
-import org.openstreetmap.josm.gui.datatransfer.ClipboardUtils;
-import org.openstreetmap.josm.gui.tagging.ac.AutoCompletingComboBox;
+import org.openstreetmap.josm.gui.tagging.ac.AutoCompComboBox;
+import org.openstreetmap.josm.gui.tagging.ac.AutoCompEvent;
+import org.openstreetmap.josm.gui.tagging.ac.AutoCompListener;
 import org.openstreetmap.josm.gui.tagging.ac.AutoCompletionManager;
+import org.openstreetmap.josm.gui.tagging.presets.items.KeyedItem;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.util.WindowGeometry;
+import org.openstreetmap.josm.gui.widgets.JosmListCellRenderer;
+import org.openstreetmap.josm.gui.widgets.OrientationAction;
 import org.openstreetmap.josm.gui.widgets.PopupMenuLauncher;
 import org.openstreetmap.josm.io.XmlWriter;
 import org.openstreetmap.josm.tools.GBC;
@@ -115,16 +121,18 @@ public class TagEditHelper {
     protected Collection<OsmPrimitive> sel;
 
     private String changedKey;
-    private String objKey;
 
     static final Comparator<AutoCompletionItem> DEFAULT_AC_ITEM_COMPARATOR =
             (o1, o2) -> String.CASE_INSENSITIVE_ORDER.compare(o1.getValue(), o2.getValue());
 
+    private static final String CANCEL_TR = marktr("Cancel");
+    private static final String CANCEL = "cancel";
+    private static final String HTML = "<html>";
+    private static final String DUMMY = "dummy";
     /** Default number of recent tags */
     public static final int DEFAULT_LRU_TAGS_NUMBER = 5;
     /** Maximum number of recent tags */
     public static final int MAX_LRU_TAGS_NUMBER = 30;
-
     /** Autocomplete keys by default */
     public static final BooleanProperty AUTOCOMPLETE_KEYS = new BooleanProperty("properties.autocomplete-keys", true);
     /** Autocomplete values by default */
@@ -138,9 +146,12 @@ public class TagEditHelper {
             DEFAULT_LRU_TAGS_NUMBER);
     /** The preference storage of recent tags */
     public static final ListProperty PROPERTY_RECENT_TAGS = new ListProperty("properties.recent-tags",
-            Collections.<String>emptyList());
-    /** The preference list of tags which should not be remembered, since r9940 */
+            Collections.emptyList());
+    /** The preference filter of tags which should not be remembered, since r9940 */
     public static final StringProperty PROPERTY_TAGS_TO_IGNORE = new StringProperty("properties.recent-tags.ignore",
+            new SearchSetting().writeToString());
+    /** The preference filter for tag keys for which values should not be auto-completed, since r19483 */
+    public static final StringProperty NO_AUTOCOMPLETE_KEYS = new StringProperty("properties.autocomplete.exclude-keys",
             new SearchSetting().writeToString());
 
     /**
@@ -175,10 +186,11 @@ public class TagEditHelper {
 
     final RecentTagCollection recentTags = new RecentTagCollection(MAX_LRU_TAGS_NUMBER);
     SearchSetting tagsToIgnore;
+    SearchSetting noAutocomplete;
 
     /**
      * Copy of recently added tags in sorted from newest to oldest order.
-     *
+     * <p>
      * We store the maximum number of recent tags to allow dynamic change of number of tags shown in the preferences.
      * Used to cache initial status.
      */
@@ -192,6 +204,38 @@ public class TagEditHelper {
     }
 
     /**
+     * A custom list cell renderer that adds the value count to some items.
+     */
+    static class TEHListCellRenderer extends JosmListCellRenderer<AutoCompletionItem> {
+        protected Map<String, Integer> map;
+
+        TEHListCellRenderer(Component component, ListCellRenderer<? super AutoCompletionItem> renderer, Map<String, Integer> map) {
+            super(component, renderer);
+            this.map = map;
+        }
+
+        @Override
+        public Component getListCellRendererComponent(JList<? extends AutoCompletionItem> list, AutoCompletionItem value,
+                                                    int index, boolean isSelected, boolean cellHasFocus) {
+            Integer count = null;
+            // if there is a value count add it to the text
+            if (map != null) {
+                String text = value == null ? "" : value.toString();
+                count = map.get(text);
+                if (count != null) {
+                    value = new AutoCompletionItem(tr("{0} ({1})", text, count));
+                }
+            }
+            Component l = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+            l.setComponentOrientation(component.getComponentOrientation());
+            if (count != null) {
+                l.setFont(l.getFont().deriveFont(Font.ITALIC + Font.BOLD));
+            }
+            return l;
+        }
+    }
+
+    /**
      * Constructs a new {@code TagEditHelper}.
      * @param tagTable tag table
      * @param propertyData table model
@@ -201,6 +245,7 @@ public class TagEditHelper {
         this.tagTable = tagTable;
         this.tagData = propertyData;
         this.valueCount = valueCount;
+        this.noAutocomplete = SearchSetting.readFromString(NO_AUTOCOMPLETE_KEYS.get());
     }
 
     /**
@@ -243,24 +288,24 @@ public class TagEditHelper {
         DataSet activeDataSet = OsmDataManager.getInstance().getActiveDataSet();
         if (activeDataSet == null)
             return;
-        try {
-            activeDataSet.beginUpdate();
-            sel = OsmDataManager.getInstance().getInProgressSelection();
-            if (sel == null || sel.isEmpty())
-                return;
+        final Collection<OsmPrimitive> selection = updateSelection();
 
-            final AddTagsDialog addDialog = getAddTagsDialog();
+        if (Utils.isEmpty(selection))
+            return;
 
-            addDialog.showDialog();
+        final AddTagsDialog addDialog = getAddTagsDialog();
 
-            addDialog.destroyActions();
-            if (addDialog.getValue() == 1)
-                addDialog.performTagAdding();
-            else
+        addDialog.showDialog();
+
+        addDialog.destroyActions();
+        activeDataSet.update(() -> {
+            // Remote control can cause the selection to change, see #23191.
+            if (addDialog.getValue() == 1 && (selection.equals(updateSelection()) || warnSelectionChanged())) {
+                addDialog.performTagAdding(selection);
+            } else {
                 addDialog.undoAllTagsAdding();
-        } finally {
-            activeDataSet.endUpdate();
-        }
+            }
+        });
     }
 
     /**
@@ -279,14 +324,11 @@ public class TagEditHelper {
     */
     public void editTag(final int row, boolean focusOnKey) {
         changedKey = null;
-        sel = OsmDataManager.getInstance().getInProgressSelection();
-        if (sel == null || sel.isEmpty())
+        updateSelection();
+        if (Utils.isEmpty(sel))
             return;
 
-        String key = getDataKey(row);
-        objKey = key;
-
-        final IEditTagDialog editDialog = getEditTagDialog(row, focusOnKey, key);
+        final IEditTagDialog editDialog = getEditTagDialog(row, focusOnKey, getDataKey(row));
         editDialog.showDialog();
         if (editDialog.getValue() != 1)
             return;
@@ -296,6 +338,7 @@ public class TagEditHelper {
     /**
      * Extracted interface of {@link EditTagDialog}.
      */
+    @SuppressWarnings("PMD.ImplicitFunctionalInterface")
     protected interface IEditTagDialog extends IExtendedDialog {
         /**
          * Edit tags of multiple selected objects according to selected ComboBox values
@@ -326,6 +369,21 @@ public class TagEditHelper {
     }
 
     /**
+     * Update the current selection for this editor
+     */
+    private Collection<OsmPrimitive> updateSelection() {
+        final DataSet activeDataSet = OsmDataManager.getInstance().getActiveDataSet();
+        activeDataSet.getReadLock().lock();
+        try {
+            Collection<OsmPrimitive> selection = new ArrayList<>(OsmDataManager.getInstance().getInProgressSelection());
+            this.sel = selection;
+            return selection;
+        } finally {
+            activeDataSet.getReadLock().unlock();
+        }
+    }
+
+    /**
      * For a given key k, return a list of keys which are used as keys for
      * auto-completing values to increase the search space.
      * @param key the key k
@@ -335,7 +393,7 @@ public class TagEditHelper {
         if ("name".equals(key) || "addr:street".equals(key))
             return Arrays.asList("addr:street", "name");
         else
-            return Arrays.asList(key);
+            return Collections.singletonList(key);
     }
 
     /**
@@ -343,7 +401,7 @@ public class TagEditHelper {
      */
     public void loadTagsIfNeeded() {
         loadTagsToIgnore();
-        if (PROPERTY_REMEMBER_TAGS.get() && recentTags.isEmpty()) {
+        if (Boolean.TRUE.equals(PROPERTY_REMEMBER_TAGS.get()) && recentTags.isEmpty()) {
             recentTags.loadFromPreference(PROPERTY_RECENT_TAGS);
         }
     }
@@ -377,7 +435,7 @@ public class TagEditHelper {
      * Store recently used tags in preferences if needed.
      */
     public void saveTagsIfNeeded() {
-        if (PROPERTY_REMEMBER_TAGS.get() && !recentTags.isEmpty()) {
+        if (Boolean.TRUE.equals(PROPERTY_REMEMBER_TAGS.get()) && !recentTags.isEmpty()) {
             recentTags.saveToPreference(PROPERTY_RECENT_TAGS);
         }
     }
@@ -399,6 +457,41 @@ public class TagEditHelper {
     }
 
     /**
+     * Returns the edited item with whitespaces removed
+     * @param cb the combobox
+     * @return the edited item with whitespaces removed
+     * @since 18173
+     */
+    public static String getEditItem(AutoCompComboBox<AutoCompletionItem> cb) {
+        return Utils.removeWhiteSpaces(cb.getEditorItemAsString());
+    }
+
+    /**
+     * Returns the selected item or the edited item as string
+     * @param cb the combobox
+     * @return the selected item or the edited item as string
+     * @since 18173
+     */
+    public static String getSelectedOrEditItem(AutoCompComboBox<AutoCompletionItem> cb) {
+        final Object selectedItem = cb.getSelectedItem();
+        if (selectedItem != null)
+            return selectedItem.toString();
+        return getEditItem(cb);
+    }
+
+    /**
+     * Warn user about a selection change
+     * @return {@code true} if the user wants to apply the tag change to the old selection
+     */
+    private static boolean warnSelectionChanged() {
+        return ConditionalOptionPaneUtil.showConfirmationDialog("properties.selection-changed",
+                MainApplication.getMainFrame(),
+                tr("Data selection has changed since the dialog was opened"),
+                tr("Apply tag change to old selection?"),
+                JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE, JOptionPane.YES_OPTION);
+    }
+
+    /**
      * Warns user about a key being overwritten.
      * @param action The action done by the user. Must state what key is changed
      * @param togglePref  The preference to save the checkbox state to
@@ -408,8 +501,8 @@ public class TagEditHelper {
         return new ExtendedDialog(
                 MainApplication.getMainFrame(),
                 tr("Overwrite tag"),
-                tr("Overwrite"), tr("Cancel"))
-            .setButtonIcons("ok", "cancel")
+                tr("Overwrite"), tr(CANCEL_TR))
+            .setButtonIcons("ok", CANCEL)
             .setContent(action)
             .setCancelButton(2)
             .toggleEnable(togglePref)
@@ -420,35 +513,16 @@ public class TagEditHelper {
         private final String key;
         private final transient Map<String, Integer> m;
         private final transient Comparator<AutoCompletionItem> usedValuesAwareComparator;
+        private final transient AutoCompletionManager autocomplete;
 
-        private final transient ListCellRenderer<AutoCompletionItem> cellRenderer = new ListCellRenderer<AutoCompletionItem>() {
-            private final DefaultListCellRenderer def = new DefaultListCellRenderer();
-            @Override
-            public Component getListCellRendererComponent(JList<? extends AutoCompletionItem> list,
-                    AutoCompletionItem value, int index, boolean isSelected, boolean cellHasFocus) {
-                Component c = def.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-                if (c instanceof JLabel) {
-                    String str = value.getValue();
-                    if (valueCount.containsKey(objKey)) {
-                        Map<String, Integer> map = valueCount.get(objKey);
-                        if (map.containsKey(str)) {
-                            str = tr("{0} ({1})", str, map.get(str));
-                            c.setFont(c.getFont().deriveFont(Font.ITALIC + Font.BOLD));
-                        }
-                    }
-                    ((JLabel) c).setText(str);
-                }
-                return c;
-            }
-        };
-
-        protected EditTagDialog(String key, Map<String, Integer> map, final boolean initialFocusOnKey) {
-            super(MainApplication.getMainFrame(), trn("Change value?", "Change values?", map.size()), tr("OK"), tr("Cancel"));
-            setButtonIcons("ok", "cancel");
+        protected EditTagDialog(String key, Map<String, Integer> map, boolean initialFocusOnKey) {
+            super(MainApplication.getMainFrame(), trn("Change value?", "Change values?", map.size()), tr("OK"), tr(CANCEL_TR));
+            setButtonIcons("ok", CANCEL);
             setCancelButton(2);
             configureContextsensitiveHelp("/Dialog/EditValue", true /* show help button */);
             this.key = key;
             this.m = map;
+            this.initialFocusOnKey = initialFocusOnKey;
 
             usedValuesAwareComparator = (o1, o2) -> {
                 boolean c1 = m.containsKey(o1.getValue());
@@ -463,77 +537,100 @@ public class TagEditHelper {
 
             JPanel mainPanel = new JPanel(new BorderLayout());
 
-            String msg = "<html>"+trn("This will change {0} object.",
+            String msg = HTML+trn("This will change {0} object.",
                     "This will change up to {0} objects.", sel.size(), sel.size())
                     +"<br><br>("+tr("An empty value deletes the tag.", key)+")</html>";
 
             mainPanel.add(new JLabel(msg), BorderLayout.NORTH);
 
-            JPanel p = new JPanel(new GridBagLayout());
+            JPanel p = new JPanel(new GridBagLayout()) {
+                /**
+                 * This hack allows the comboboxes to have their own orientation.
+                 * <p>
+                 * The problem is that
+                 * {@link org.openstreetmap.josm.gui.ExtendedDialog#showDialog ExtendedDialog} calls
+                 * {@code applyComponentOrientation} very late in the dialog construction process
+                 * thus overwriting the orientation the components have chosen for themselves.
+                 * <p>
+                 * This stops the propagation of {@code applyComponentOrientation}, thus all
+                 * components may (and have to) set their own orientation.
+                 */
+                @Override
+                public void applyComponentOrientation(ComponentOrientation o) {
+                    setComponentOrientation(o);
+                }
+            };
             mainPanel.add(p, BorderLayout.CENTER);
 
-            AutoCompletionManager autocomplete = AutoCompletionManager.of(OsmDataManager.getInstance().getActiveDataSet());
+            autocomplete = AutoCompletionManager.of(OsmDataManager.getInstance().getActiveDataSet());
             List<AutoCompletionItem> keyList = autocomplete.getTagKeys(DEFAULT_AC_ITEM_COMPARATOR);
 
-            keys = new AutoCompletingComboBox(key);
-            keys.setPossibleAcItems(keyList);
+            keys = new AutoCompComboBox<>();
+            keys.getModel().setComparator(Comparator.naturalOrder()); // according to Comparable
             keys.setEditable(true);
-            keys.setSelectedItem(key);
+            keys.setPrototypeDisplayValue(new AutoCompletionItem(DUMMY));
+            keys.getModel().addAllElements(keyList);
+            keys.setSelectedItemText(key);
 
             p.add(Box.createVerticalStrut(5), GBC.eol());
             p.add(new JLabel(tr("Key")), GBC.std());
             p.add(Box.createHorizontalStrut(10), GBC.std());
-            p.add(keys, GBC.eol().fill(GBC.HORIZONTAL));
+            p.add(keys, GBC.eol().fill(GridBagConstraints.HORIZONTAL));
 
             List<AutoCompletionItem> valueList = autocomplete.getTagValues(getAutocompletionKeys(key), usedValuesAwareComparator);
 
-            final String selection = m.size() != 1 ? tr("<different>") : m.entrySet().iterator().next().getKey();
+            final String selection = m.size() != 1 ? KeyedItem.DIFFERENT_I18N : m.entrySet().iterator().next().getKey();
 
-            values = new AutoCompletingComboBox(selection);
-            values.setRenderer(cellRenderer);
-
+            values = new AutoCompComboBox<>();
+            values.getModel().setComparator(Comparator.naturalOrder());
+            values.setRenderer(new TEHListCellRenderer(values, values.getRenderer(), valueCount.get(key)));
             values.setEditable(true);
-            values.setPossibleAcItems(valueList);
-            values.setSelectedItem(selection);
-            values.getEditor().setItem(selection);
+            values.setPrototypeDisplayValue(new AutoCompletionItem(DUMMY));
+            values.getModel().addAllElements(valueList);
+            values.setSelectedItemText(selection);
+
             p.add(Box.createVerticalStrut(5), GBC.eol());
             p.add(new JLabel(tr("Value")), GBC.std());
             p.add(Box.createHorizontalStrut(10), GBC.std());
-            p.add(values, GBC.eol().fill(GBC.HORIZONTAL));
-            values.getEditor().addActionListener(e -> buttonAction(0, null));
-            addFocusAdapter(autocomplete, usedValuesAwareComparator);
+            p.add(values, GBC.eol().fill(GridBagConstraints.HORIZONTAL));
+            p.add(Box.createVerticalStrut(2), GBC.eol());
 
-            addUpdateIconListener();
+            p.applyComponentOrientation(OrientationAction.getDefaultComponentOrientation());
+            keys.applyComponentOrientation(ComponentOrientation.LEFT_TO_RIGHT);
+            values.applyComponentOrientation(OrientationAction.getNamelikeOrientation(keys.getText()));
 
             setContent(mainPanel, false);
 
-            addWindowListener(new WindowAdapter() {
-                @Override
-                public void windowOpened(WindowEvent e) {
-                    if (initialFocusOnKey) {
-                        selectKeysComboBox();
-                    } else {
-                        selectValuesCombobox();
-                    }
-                }
-            });
+            addEventListeners();
+        }
+
+        @Override
+        public void autoCompBefore(AutoCompEvent e) {
+            updateValueModel(autocomplete, usedValuesAwareComparator);
+        }
+
+        @Override
+        public void popupMenuWillBecomeVisible(PopupMenuEvent e) {
+            updateValueModel(autocomplete, usedValuesAwareComparator);
         }
 
         @Override
         public void performTagEdit() {
-            String value = values.getEditItem();
+            String value = getEditItem(values);
             value = Normalizer.normalize(value, Normalizer.Form.NFC);
             if (value.isEmpty()) {
                 value = null; // delete the key
             }
-            String newkey = keys.getEditItem();
+            String newkey = getEditItem(keys);
             newkey = Normalizer.normalize(newkey, Normalizer.Form.NFC);
             if (newkey.isEmpty()) {
                 newkey = key;
                 value = null; // delete the key instead
             }
-            if (key.equals(newkey) && tr("<different>").equals(value))
+            if (key.equals(newkey) && KeyedItem.DIFFERENT_I18N.equals(value))
                 return;
+            if (value != null && key.equals(getEditItem(keys)) && m.size() == 1 && m.containsKey(getEditItem(values)))
+                return; // see #22814: avoid to create a command that wouldn't change anything
             if (key.equals(newkey) || value == null) {
                 UndoRedoHandler.getInstance().add(new ChangePropertyCommand(sel, newkey, value));
                 if (value != null) {
@@ -552,7 +649,7 @@ public class TagEditHelper {
                 }
                 Collection<Command> commands = new ArrayList<>();
                 commands.add(new ChangePropertyCommand(sel, key, null));
-                if (value.equals(tr("<different>"))) {
+                if (value.equals(KeyedItem.DIFFERENT_I18N)) {
                     String newKey = newkey;
                     sel.stream()
                             .filter(osm -> osm.hasKey(key))
@@ -572,9 +669,14 @@ public class TagEditHelper {
         }
     }
 
-    protected abstract class AbstractTagsDialog extends ExtendedDialog {
-        protected AutoCompletingComboBox keys;
-        protected AutoCompletingComboBox values;
+    protected abstract class AbstractTagsDialog extends ExtendedDialog implements AutoCompListener, FocusListener, PopupMenuListener {
+        protected AutoCompComboBox<AutoCompletionItem> keys;
+        protected AutoCompComboBox<AutoCompletionItem> values;
+        protected boolean initialFocusOnKey = true;
+        /**
+         * The 'values' model is currently holding values for this key. Used for lazy-loading of values.
+         */
+        protected String currentValuesModelKey = "";
 
         AbstractTagsDialog(Component parent, String title, String... buttonTexts) {
             super(parent, title, buttonTexts);
@@ -595,6 +697,7 @@ public class TagEditHelper {
 
             setRememberWindowGeometry(getClass().getName() + ".geometry",
                 WindowGeometry.centerInWindow(MainApplication.getMainFrame(), size));
+            keys.setFixedLocale(PROPERTY_FIX_TAG_LOCALE.get());
         }
 
         @Override
@@ -614,80 +717,99 @@ public class TagEditHelper {
                     }
                     rememberWindowGeometry(geometry);
                 }
-                keys.setFixedLocale(PROPERTY_FIX_TAG_LOCALE.get());
                 updateOkButtonIcon();
             }
             super.setVisible(visible);
         }
 
-        private void selectACComboBoxSavingUnixBuffer(AutoCompletingComboBox cb) {
-            // select combobox with saving unix system selection (middle mouse paste)
-            Clipboard sysSel = ClipboardUtils.getSystemSelection();
-            if (sysSel != null) {
-                Transferable old = ClipboardUtils.getClipboardContent(sysSel);
-                cb.requestFocusInWindow();
-                cb.getEditor().selectAll();
-                if (old != null) {
-                    sysSel.setContents(old, null);
-                }
-            } else {
-                cb.requestFocusInWindow();
-                cb.getEditor().selectAll();
+        /**
+         * Updates the values model if the key has changed
+         *
+         * @param autocomplete the autocompletion manager
+         * @param comparator sorting order for the items in the combo dropdown
+         */
+        protected void updateValueModel(AutoCompletionManager autocomplete, Comparator<AutoCompletionItem> comparator) {
+            String key = keys.getText();
+            if (!key.equals(currentValuesModelKey)) {
+                Logging.debug("updateValueModel: lazy loading values for key ''{0}''", key);
+                // key has changed, reload model
+                String savedText = values.getText();
+                values.getModel().removeAllElements();
+                values.getModel().addAllElements(autocomplete.getTagValues(getAutocompletionKeys(key), comparator));
+                values.applyComponentOrientation(OrientationAction.getNamelikeOrientation(key));
+                values.setSelectedItemText(savedText);
+                values.getEditor().selectAll();
+                currentValuesModelKey = key;
             }
-        }
-
-        public void selectKeysComboBox() {
-            selectACComboBoxSavingUnixBuffer(keys);
-        }
-
-        public void selectValuesCombobox() {
-            selectACComboBoxSavingUnixBuffer(values);
         }
 
         /**
-        * Create a focus handling adapter and apply in to the editor component of value
-        * autocompletion box.
-        * @param autocomplete Manager handling the autocompletion
-        * @param comparator Class to decide what values are offered on autocompletion
-        * @return The created adapter
-        */
-        protected FocusAdapter addFocusAdapter(final AutoCompletionManager autocomplete, final Comparator<AutoCompletionItem> comparator) {
-           // get the combo box' editor component
-           final JTextComponent editor = values.getEditorComponent();
-           // Refresh the values model when focus is gained
-           FocusAdapter focus = new FocusAdapter() {
-               @Override
-               public void focusGained(FocusEvent e) {
-                   Logging.trace("Focus gained by {0}, e={1}", values, e);
-                   String key = keys.getEditor().getItem().toString();
-                   List<AutoCompletionItem> correctItems = autocomplete.getTagValues(getAutocompletionKeys(key), comparator);
-                   ComboBoxModel<AutoCompletionItem> currentModel = values.getModel();
-                   final int size = correctItems.size();
-                   boolean valuesOK = size == currentModel.getSize()
-                           && IntStream.range(0, size).allMatch(i -> Objects.equals(currentModel.getElementAt(i), correctItems.get(i)));
-                   if (!valuesOK) {
-                       values.setPossibleAcItems(correctItems);
-                   }
-                   if (!Objects.equals(key, objKey)) {
-                       values.getEditor().selectAll();
-                       objKey = key;
-                   }
-               }
-           };
-           editor.addFocusListener(focus);
-           return focus;
+         * Check if values should be auto-completed for the given tag key.
+         * @param key the key
+         * @return false if auto-completion is disabled or if the key matches the exclusion filter, true else
+         */
+        private boolean autocompleteValuesForKey(String key) {
+            if (!AUTOCOMPLETE_VALUES.get())
+                return false;
+            if (noAutocomplete == null || Utils.isEmpty(noAutocomplete.text))
+                return true;
+            try {
+                return !SearchCompiler.compile(noAutocomplete).match(new Tag(key));
+            } catch (SearchParseError parseError) {
+                throw new IllegalStateException(parseError);
+            }
         }
 
-        protected void addUpdateIconListener() {
-            keys.addActionListener(ignore -> updateOkButtonIcon());
-            values.addActionListener(ignore -> updateOkButtonIcon());
+        protected void addEventListeners() {
+            // OK on Enter in values
+            values.getEditor().addActionListener(e -> buttonAction(0, null));
+            // update values orientation according to key
+            keys.getEditorComponent().addFocusListener(this);
+            // update the "values" data model before an autocomplete or list dropdown
+            values.getEditorComponent().addAutoCompListener(this);
+            values.addPopupMenuListener(this);
+            // set the initial focus to either combobox
+            addWindowListener(new WindowAdapter() {
+                @Override
+                public void windowOpened(WindowEvent e) {
+                    if (initialFocusOnKey) {
+                        keys.requestFocus();
+                    } else {
+                        values.requestFocus();
+                    }
+                }
+            });
         }
 
-        private void updateOkButtonIcon() {
+        @Override
+        public void autoCompPerformed(AutoCompEvent e) {
+        }
+
+        @Override
+        public void popupMenuWillBecomeInvisible(PopupMenuEvent e) {
+        }
+
+        @Override
+        public void popupMenuCanceled(PopupMenuEvent e) {
+        }
+
+        @Override
+        public void focusGained(FocusEvent e) {
+        }
+
+        @Override
+        public void focusLost(FocusEvent e) {
+            // update the values combobox orientation if the key changed
+            values.applyComponentOrientation(OrientationAction.getNamelikeOrientation(keys.getText()));
+            // update the auto-completion setting for the given tag key
+            values.setAutocompleteEnabled(autocompleteValuesForKey(keys.getText()));
+        }
+
+        protected void updateOkButtonIcon() {
             if (buttons.isEmpty()) {
                 return;
             }
-            buttons.get(0).setIcon(findIcon(keys.getSelectedOrEditItem(), values.getSelectedOrEditItem())
+            buttons.get(0).setIcon(findIcon(getSelectedOrEditItem(keys), getSelectedOrEditItem(values))
                     .orElse(ImageProvider.get("ok", ImageProvider.ImageSizes.LARGEICON)));
         }
 
@@ -717,59 +839,80 @@ public class TagEditHelper {
 
     protected class AddTagsDialog extends AbstractTagsDialog {
         private final List<JosmAction> recentTagsActions = new ArrayList<>();
-        protected final transient FocusAdapter focus;
         private final JPanel mainPanel;
         private JPanel recentTagsPanel;
 
         // Counter of added commands for possible undo
         private int commandCount;
+        private final transient AutoCompletionManager autocomplete;
 
         protected AddTagsDialog() {
-            super(MainApplication.getMainFrame(), tr("Add tag"), tr("OK"), tr("Cancel"));
-            setButtonIcons("ok", "cancel");
+            super(MainApplication.getMainFrame(), tr("Add tag"), tr("OK"), tr(CANCEL_TR));
+            setButtonIcons("ok", CANCEL);
             setCancelButton(2);
             configureContextsensitiveHelp("/Dialog/AddValue", true /* show help button */);
 
-            mainPanel = new JPanel(new GridBagLayout());
-            keys = new AutoCompletingComboBox();
-            values = new AutoCompletingComboBox();
+            mainPanel = new JPanel(new GridBagLayout()) {
+                /**
+                 * This hack allows the comboboxes to have their own orientation.
+                 * <p>
+                 * The problem is that
+                 * {@link org.openstreetmap.josm.gui.ExtendedDialog#showDialog ExtendedDialog} calls
+                 * {@code applyComponentOrientation} very late in the dialog construction process
+                 * thus overwriting the orientation the components have chosen for themselves.
+                 * <p>
+                 * This stops the propagation of {@code applyComponentOrientation}, thus all
+                 * components may (and have to) set their own orientation.
+                 */
+                @Override
+                public void applyComponentOrientation(ComponentOrientation o) {
+                    setComponentOrientation(o);
+                }
+            };
+            mainPanel.add(new JLabel(HTML+trn("This will change up to {0} object.",
+                "This will change up to {0} objects.", sel.size(), sel.size())
+                +"<br><br>"+tr("Please select a key")), GBC.eol().fill(GridBagConstraints.HORIZONTAL));
+
+            keys = new AutoCompComboBox<>();
+            keys.setPrototypeDisplayValue(new AutoCompletionItem(DUMMY));
+            keys.setEditable(true);
+            keys.getModel().setComparator(Comparator.naturalOrder()); // according to Comparable
             keys.setAutocompleteEnabled(AUTOCOMPLETE_KEYS.get());
+
+            mainPanel.add(keys, GBC.eop().fill(GridBagConstraints.HORIZONTAL));
+            mainPanel.add(new JLabel(tr("Choose a value")), GBC.eol());
+
+            values = new AutoCompComboBox<>();
+            values.setPrototypeDisplayValue(new AutoCompletionItem(DUMMY));
+            values.setEditable(true);
+            values.getModel().setComparator(Comparator.naturalOrder());
             values.setAutocompleteEnabled(AUTOCOMPLETE_VALUES.get());
 
-            mainPanel.add(new JLabel("<html>"+trn("This will change up to {0} object.",
-                "This will change up to {0} objects.", sel.size(), sel.size())
-                +"<br><br>"+tr("Please select a key")), GBC.eol().fill(GBC.HORIZONTAL));
+            mainPanel.add(values, GBC.eop().fill(GridBagConstraints.HORIZONTAL));
 
             cacheRecentTags();
-            AutoCompletionManager autocomplete = AutoCompletionManager.of(OsmDataManager.getInstance().getActiveDataSet());
+            autocomplete = AutoCompletionManager.of(OsmDataManager.getInstance().getActiveDataSet());
             List<AutoCompletionItem> keyList = autocomplete.getTagKeys(DEFAULT_AC_ITEM_COMPARATOR);
 
             // remove the object's tag keys from the list
             keyList.removeIf(item -> containsDataKey(item.getValue()));
 
-            keys.setPossibleAcItems(keyList);
-            keys.setEditable(true);
+            keys.getModel().addAllElements(keyList);
 
-            mainPanel.add(keys, GBC.eop().fill(GBC.HORIZONTAL));
-
-            mainPanel.add(new JLabel(tr("Choose a value")), GBC.eol());
-            values.setEditable(true);
-            mainPanel.add(values, GBC.eop().fill(GBC.HORIZONTAL));
+            updateValueModel(autocomplete, DEFAULT_AC_ITEM_COMPARATOR);
 
             // pre-fill first recent tag for which the key is not already present
             tags.stream()
                     .filter(tag -> !containsDataKey(tag.getKey()))
                     .findFirst()
                     .ifPresent(tag -> {
-                        keys.setSelectedItem(tag.getKey());
-                        values.setSelectedItem(tag.getValue());
+                        keys.setSelectedItemText(tag.getKey());
+                        values.setSelectedItemText(tag.getValue());
                     });
 
-            focus = addFocusAdapter(autocomplete, DEFAULT_AC_ITEM_COMPARATOR);
-            // fire focus event in advance or otherwise the popup list will be too small at first
-            focus.focusGained(null);
 
-            addUpdateIconListener();
+            keys.addActionListener(ignore -> updateOkButtonIcon());
+            values.addActionListener(ignore -> updateOkButtonIcon());
 
             // Add tag on Shift-Enter
             mainPanel.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(
@@ -779,16 +922,18 @@ public class TagEditHelper {
                     public void actionPerformed(ActionEvent e) {
                         performTagAdding();
                         refreshRecentTags();
-                        selectKeysComboBox();
+                        keys.requestFocus();
                     }
                 });
 
             suggestRecentlyAddedTags();
 
             mainPanel.add(Box.createVerticalGlue(), GBC.eop().fill());
+            mainPanel.applyComponentOrientation(OrientationAction.getDefaultComponentOrientation());
+
             setContent(mainPanel, false);
 
-            selectKeysComboBox();
+            addEventListeners();
 
             popupMenu.add(new AbstractAction(tr("Set number of recently added tags")) {
                 @Override
@@ -813,6 +958,16 @@ public class TagEditHelper {
             });
             rememberLastTags.setState(PROPERTY_REMEMBER_TAGS.get());
             popupMenu.add(rememberLastTags);
+        }
+
+        @Override
+        public void autoCompBefore(AutoCompEvent e) {
+            updateValueModel(autocomplete, DEFAULT_AC_ITEM_COMPARATOR);
+        }
+
+        @Override
+        public void popupMenuWillBecomeVisible(PopupMenuEvent e) {
+            updateValueModel(autocomplete, DEFAULT_AC_ITEM_COMPARATOR);
         }
 
         private JMenu buildMenuRecentExisting() {
@@ -865,12 +1020,12 @@ public class TagEditHelper {
             Shortcut.findShortcut(KeyEvent.VK_1, commandDownMask).ifPresent(sc ->
                     lines.add(sc.getKeyText() + ' ' + tr("to apply first suggestion"))
             );
-            lines.add(Shortcut.getKeyText(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, KeyEvent.SHIFT_DOWN_MASK)) + ' '
+            lines.add(Shortcut.getKeyText(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.SHIFT_DOWN_MASK)) + ' '
                     +tr("to add without closing the dialog"));
-            Shortcut.findShortcut(KeyEvent.VK_1, commandDownMask | KeyEvent.SHIFT_DOWN_MASK).ifPresent(sc ->
+            Shortcut.findShortcut(KeyEvent.VK_1, commandDownMask | InputEvent.SHIFT_DOWN_MASK).ifPresent(sc ->
                     lines.add(sc.getKeyText() + ' ' + tr("to add first suggestion without closing the dialog"))
             );
-            final JLabel helpLabel = new JLabel("<html>" + String.join("<br>", lines) + "</html>");
+            final JLabel helpLabel = new JLabel(HTML + String.join("<br>", lines) + "</html>");
             helpLabel.setFont(helpLabel.getFont().deriveFont(Font.PLAIN));
             contentPane.add(helpLabel, GBC.eol().fill(GridBagConstraints.HORIZONTAL).insets(5, 5, 5, 5));
             super.setContentPane(contentPane);
@@ -880,7 +1035,7 @@ public class TagEditHelper {
             String s = String.format("%d", PROPERTY_RECENT_TAGS_NUMBER.get());
             while (true) {
                 s = JOptionPane.showInputDialog(this, tr("Please enter the number of recently added tags to display"), s);
-                if (s == null || s.isEmpty()) {
+                if (Utils.isEmpty(s)) {
                     return;
                 }
                 try {
@@ -900,7 +1055,7 @@ public class TagEditHelper {
             if (recentTagsPanel == null) {
                 recentTagsPanel = new JPanel(new GridBagLayout());
                 buildRecentTagsPanel();
-                mainPanel.add(recentTagsPanel, GBC.eol().fill(GBC.HORIZONTAL));
+                mainPanel.add(recentTagsPanel, GBC.eol().fill(GridBagConstraints.HORIZONTAL));
             } else {
                 Dimension panelOldSize = recentTagsPanel.getPreferredSize();
                 recentTagsPanel.removeAll();
@@ -938,11 +1093,11 @@ public class TagEditHelper {
                         tr("Choose recent tag {0}", count), null, tr("Use this tag again"), sc, false) {
                     @Override
                     public void actionPerformed(ActionEvent e) {
-                        keys.setSelectedItem(t.getKey(), true);
+                        keys.setSelectedItemText(t.getKey());
                         // fix #7951, #8298 - update list of values before setting value (?)
-                        focus.focusGained(null);
-                        values.setSelectedItem(t.getValue(), true);
-                        selectValuesCombobox();
+                        updateValueModel(autocomplete, DEFAULT_AC_ITEM_COMPARATOR);
+                        values.setSelectedItemText(t.getValue());
+                        values.requestFocus();
                     }
                 };
                 /* POSSIBLE SHORTCUTS: 1,2,3,4,5,6,7,8,9,0=10 */
@@ -955,7 +1110,7 @@ public class TagEditHelper {
                         action.actionPerformed(null);
                         performTagAdding();
                         refreshRecentTags();
-                        selectKeysComboBox();
+                        keys.requestFocus();
                     }
                 };
                 recentTagsActions.add(action);
@@ -972,7 +1127,7 @@ public class TagEditHelper {
                 recentTagsPanel.add(new JLabel(action.isEnabled() ? icon : GuiHelper.getDisabledIcon(icon)), gbc);
                 // Create tag label
                 final String color = action.isEnabled() ? "" : "; color:gray";
-                final JLabel tagLabel = new JLabel("<html>"
+                final JLabel tagLabel = new JLabel(HTML
                         + "<style>td{" + color + "}</style>"
                         + "<table><tr>"
                         + "<td>" + count + ".</td>"
@@ -1003,7 +1158,7 @@ public class TagEditHelper {
                                 // add tags on Shift-Click
                                 performTagAdding();
                                 refreshRecentTags();
-                                selectKeysComboBox();
+                                keys.requestFocus();
                             } else if (e.getClickCount() > 1) {
                                 // add tags and close window on double-click
                                 buttonAction(0, null); // emulate OK click and close the dialog
@@ -1019,7 +1174,7 @@ public class TagEditHelper {
                 // Finally add label to the resulting panel
                 JPanel tagPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
                 tagPanel.add(tagLabel);
-                recentTagsPanel.add(tagPanel, GBC.eol().fill(GBC.HORIZONTAL));
+                recentTagsPanel.add(tagPanel, GBC.eol().fill(GridBagConstraints.HORIZONTAL));
             }
             // Clear label if no tags were added
             if (count == 0) {
@@ -1033,6 +1188,7 @@ public class TagEditHelper {
                 add(new IgnoreTagAction(tr("Ignore key ''{0}''", t.getKey()), new Tag(t.getKey(), "")));
                 add(new IgnoreTagAction(tr("Ignore tag ''{0}''", t), t));
                 add(new EditIgnoreTagsAction());
+                add(new EditExcludeAutocompleteValues(t));
             }
         }
 
@@ -1060,12 +1216,12 @@ public class TagEditHelper {
         class EditIgnoreTagsAction extends AbstractAction {
 
             EditIgnoreTagsAction() {
-                super(tr("Edit ignore list"));
+                super(tr("Edit ignore filter"));
             }
 
             @Override
             public void actionPerformed(ActionEvent e) {
-                final SearchSetting newTagsToIngore = SearchAction.showSearchDialog(tagsToIgnore);
+                final SearchSetting newTagsToIngore = SearchAction.showSearchDialog(new Filter(tagsToIgnore));
                 if (newTagsToIngore == null) {
                     return;
                 }
@@ -1075,6 +1231,29 @@ public class TagEditHelper {
                     PROPERTY_TAGS_TO_IGNORE.put(tagsToIgnore.writeToString());
                 } catch (SearchParseError parseError) {
                     warnAboutParseError(parseError);
+                }
+            }
+        }
+
+        class EditExcludeAutocompleteValues extends AbstractAction {
+            final transient Tag tag;
+
+            EditExcludeAutocompleteValues(Tag tag) {
+                super(tr("Edit tag filter to stop autocompletion of values"));
+                this.tag = tag;
+                setEnabled(AUTOCOMPLETE_VALUES.get());
+            }
+
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                SearchSetting initFilter = SearchSetting.fromString('"' + tag.getKey() + '"');
+
+                if (noAutocomplete != null && !Utils.isEmpty(noAutocomplete.text))
+                    initFilter = noAutocomplete;
+                final SearchSetting newNoAutocomplete = SearchAction.showSearchDialog(new Filter(initFilter));
+                if (newNoAutocomplete != null) {
+                    noAutocomplete = newNoAutocomplete;
+                    NO_AUTOCOMPLETE_KEYS.put(noAutocomplete.writeToString());
                 }
             }
         }
@@ -1093,15 +1272,27 @@ public class TagEditHelper {
          * Read tags from comboboxes and add it to all selected objects
          */
         public final void performTagAdding() {
-            String key = keys.getEditItem();
-            String value = values.getEditItem();
+            Collection<OsmPrimitive> selection = sel;
+            if (!Utils.isEmpty(selection)) {
+                performTagAdding(selection);
+            }
+        }
+
+        /**
+         * Read tags from comboboxes and add it to all selected objects
+         * @param selection The selection to perform tag adding on
+         * @since 18842
+         */
+        private void performTagAdding(Collection<OsmPrimitive> selection) {
+            String key = getEditItem(keys);
+            String value = getEditItem(values);
             if (key.isEmpty() || value.isEmpty())
                 return;
-            for (OsmPrimitive osm : sel) {
+            for (Tagged osm : selection) {
                 String val = osm.get(key);
                 if (val != null && !val.equals(value)) {
                     String valueHtmlString = Utils.joinAsHtmlUnorderedList(Arrays.asList("<strike>" + val + "</strike>", value));
-                    if (!warnOverwriteKey("<html>"
+                    if (!warnOverwriteKey(HTML
                             + tr("You changed the value of ''{0}'': {1}", key, valueHtmlString)
                             + tr("Overwrite?"), "overwriteAddKey"))
                         return;
@@ -1109,10 +1300,10 @@ public class TagEditHelper {
                 }
             }
             recentTags.add(new Tag(key, value));
-            valueCount.put(key, new TreeMap<String, Integer>());
+            valueCount.put(key, new TreeMap<>());
             AutoCompletionManager.rememberUserInput(key, value, false);
             commandCount++;
-            UndoRedoHandler.getInstance().add(new ChangePropertyCommand(sel, key, value));
+            UndoRedoHandler.getInstance().add(new ChangePropertyCommand(selection, key, value));
             changedKey = key;
             clearEntries();
         }
@@ -1122,6 +1313,9 @@ public class TagEditHelper {
             values.getEditor().setItem("");
         }
 
+        /**
+         * Undo all tag add commands that this dialog has created
+         */
         public void undoAllTagsAdding() {
             UndoRedoHandler.getInstance().undo(commandCount);
         }

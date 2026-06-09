@@ -9,6 +9,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.net.HttpURLConnection;
 import java.net.SocketException;
 import java.net.UnknownHostException;
+import java.nio.file.FileSystemException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -29,7 +30,6 @@ import org.openstreetmap.josm.tools.bugreport.BugReportExceptionHandler;
 
 /**
  * This utility class provides static methods which explain various exceptions to the user.
- *
  */
 public final class ExceptionDialogUtil {
 
@@ -142,6 +142,19 @@ public final class ExceptionDialogUtil {
                 tr("IO Exception"),
                 ht("/ErrorMessages#NestedIOException")
         );
+    }
+
+    /**
+     * Explains a {@link IOException}
+     *
+     * @param e the exception
+     */
+    private static void explainIOException(Exception e) {
+        if (e instanceof FileSystemException && e.getMessage().contains("The device is not ready")) {
+            showErrorDialog(ExceptionUtil.explainException(e), tr("File System Exception"), null);
+        } else {
+            explainGeneric(e);
+        }
     }
 
     /**
@@ -331,10 +344,11 @@ public final class ExceptionDialogUtil {
      * @param e the exception
      */
     public static void explainGenericHttpException(OsmApiException e) {
-        String body = e.getErrorBody();
-        Object msg = null;
+        final String body = e.getErrorBody();
+        final String msg;
         if (e.isHtml() && body != null && body.startsWith("<") && body.contains("<html>")) {
             // use html string as is
+            msg = body;
         } else {
             msg = ExceptionUtil.explainGeneric(e);
         }
@@ -368,7 +382,7 @@ public final class ExceptionDialogUtil {
      *
      * @param e the exception
      */
-    public static void explainNestedUnkonwnHostException(OsmTransferException e) {
+    public static void explainNestedUnknownHostException(OsmTransferException e) {
         showErrorDialog(
                 ExceptionUtil.explainNestedUnknownHostException(e),
                 tr("Unknown host"),
@@ -391,7 +405,7 @@ public final class ExceptionDialogUtil {
             return;
         }
         if (ExceptionUtil.getNestedException(e, UnknownHostException.class) != null) {
-            explainNestedUnkonwnHostException(e);
+            explainNestedUnknownHostException(e);
             return;
         }
         if (ExceptionUtil.getNestedException(e, IOException.class) != null) {
@@ -423,40 +437,41 @@ public final class ExceptionDialogUtil {
 
         if (e instanceof OsmApiException) {
             OsmApiException oae = (OsmApiException) e;
-            switch(oae.getResponseCode()) {
-            case HttpURLConnection.HTTP_PRECON_FAILED:
-                explainPreconditionFailed(oae);
-                return;
-            case HttpURLConnection.HTTP_GONE:
-                explainGoneForUnknownPrimitive(oae);
-                return;
-            case HttpURLConnection.HTTP_INTERNAL_ERROR:
-                explainInternalServerError(oae);
-                return;
-            case HttpURLConnection.HTTP_BAD_REQUEST:
-                explainBadRequest(oae);
-                return;
-            case HttpURLConnection.HTTP_NOT_FOUND:
-                explainNotFound(oae);
-                return;
-            case HttpURLConnection.HTTP_CONFLICT:
-                explainConflict(oae);
-                return;
-            case HttpURLConnection.HTTP_UNAUTHORIZED:
-                explainAuthenticationFailed(oae);
-                return;
-            case HttpURLConnection.HTTP_FORBIDDEN:
-                explainAuthorizationFailed(oae);
-                return;
-            case HttpURLConnection.HTTP_CLIENT_TIMEOUT:
-                explainClientTimeout(oae);
-                return;
-            case 509: case 429:
-                explainBandwidthLimitExceeded(oae);
-                return;
-            default:
-                explainGenericHttpException(oae);
-                return;
+            switch (oae.getResponseCode()) {
+                case HttpURLConnection.HTTP_PRECON_FAILED:
+                    explainPreconditionFailed(oae);
+                    return;
+                case HttpURLConnection.HTTP_GONE:
+                    explainGoneForUnknownPrimitive(oae);
+                    return;
+                case HttpURLConnection.HTTP_INTERNAL_ERROR:
+                    explainInternalServerError(oae);
+                    return;
+                case HttpURLConnection.HTTP_BAD_REQUEST:
+                    explainBadRequest(oae);
+                    return;
+                case HttpURLConnection.HTTP_NOT_FOUND:
+                    explainNotFound(oae);
+                    return;
+                case HttpURLConnection.HTTP_CONFLICT:
+                    explainConflict(oae);
+                    return;
+                case HttpURLConnection.HTTP_UNAUTHORIZED:
+                    explainAuthenticationFailed(oae);
+                    return;
+                case HttpURLConnection.HTTP_FORBIDDEN:
+                    explainAuthorizationFailed(oae);
+                    return;
+                case HttpURLConnection.HTTP_CLIENT_TIMEOUT:
+                    explainClientTimeout(oae);
+                    return;
+                case 509:
+                case 429:
+                    explainBandwidthLimitExceeded(oae);
+                    return;
+                default:
+                    explainGenericHttpException(oae);
+                    return;
             }
         }
         explainGeneric(e);
@@ -489,6 +504,11 @@ public final class ExceptionDialogUtil {
         }
         if (e instanceof OsmTransferException) {
             explainOsmTransferException((OsmTransferException) e);
+            return;
+        }
+        FileSystemException fileSystemException = ExceptionUtil.getNestedException(e, FileSystemException.class);
+        if (fileSystemException != null) {
+            explainIOException(fileSystemException);
             return;
         }
         explainGeneric(e);

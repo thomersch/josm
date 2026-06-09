@@ -1,45 +1,33 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.osm;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
-import java.util.Date;
+import java.time.Instant;
 import java.util.Iterator;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.ChangesetDataSet.ChangesetDataSetEntry;
 import org.openstreetmap.josm.data.osm.ChangesetDataSet.ChangesetModificationType;
 import org.openstreetmap.josm.data.osm.history.HistoryNode;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
 import org.openstreetmap.josm.tools.Logging;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
  * Unit tests for class {@link ChangesetDataSet}.
  */
-public class ChangesetDataSetTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+class ChangesetDataSetTest {
     /**
      * Unit test of method {@link ChangesetDataSet#iterator}.
      */
     @Test
-    public void testIterator() {
+    void testIterator() {
         final ChangesetDataSet cds = new ChangesetDataSet();
-        HistoryNode prim1 = new HistoryNode(1, 1, true, User.getAnonymous(), 1, new Date(), LatLon.ZERO);
+        HistoryNode prim1 = new HistoryNode(1, 1, true, User.getAnonymous(), 1, Instant.now(), LatLon.ZERO);
         cds.put(prim1, ChangesetModificationType.CREATED);
         Iterator<ChangesetDataSetEntry> it = cds.iterator();
         assertTrue(it.hasNext());
@@ -59,16 +47,16 @@ public class ChangesetDataSetTest {
      * Unit test of method {@link ChangesetDataSet#getFirstEntry(PrimitiveId)} and {@link ChangesetDataSet#getLastEntry(PrimitiveId)}.
      */
     @Test
-    public void testGetEntry() {
+    void testGetEntry() {
         final ChangesetDataSet cds = new ChangesetDataSet();
-        HistoryNode prim1 = new HistoryNode(1, 1, true, User.getAnonymous(), 1, new Date(), LatLon.ZERO);
+        HistoryNode prim1 = new HistoryNode(1, 1, true, User.getAnonymous(), 1, Instant.now(), LatLon.ZERO);
         cds.put(prim1, ChangesetModificationType.CREATED);
-        HistoryNode prim2 = new HistoryNode(1, 2, true, User.getAnonymous(), 1, new Date(), LatLon.ZERO);
+        HistoryNode prim2 = new HistoryNode(1, 2, true, User.getAnonymous(), 1, Instant.now(), LatLon.ZERO);
         prim2.put("highway", "stop");
         cds.put(prim2, ChangesetModificationType.UPDATED);
         assertEquals(prim1, cds.getFirstEntry(prim1.getPrimitiveId()).getPrimitive());
         assertEquals(prim2, cds.getLastEntry(prim1.getPrimitiveId()).getPrimitive());
-        HistoryNode prim3 = new HistoryNode(1, 3, false, User.getAnonymous(), 1, new Date(), null);
+        HistoryNode prim3 = new HistoryNode(1, 3, false, User.getAnonymous(), 1, Instant.now(), null);
 
         cds.put(prim3, ChangesetModificationType.DELETED);
         assertEquals(prim1, cds.getFirstEntry(prim1.getPrimitiveId()).getPrimitive());
@@ -79,7 +67,7 @@ public class ChangesetDataSetTest {
      * Unit test of {@link ChangesetModificationType} enum.
      */
     @Test
-    public void testEnumChangesetModificationType() {
+    void testEnumChangesetModificationType() {
         TestUtils.superficialEnumCodeCoverage(ChangesetModificationType.class);
     }
 }

@@ -15,22 +15,41 @@
          xmlns:jacoco="antlib:org.jacoco.ant"
          xmlns:unless="ant:unless"
 >
-    <target name="init-ivy">
-        <property name="ivy.version" value="2.5.0"/>
+    <target name="init-javaversions" description="Initialize Java version properties">
+        <!-- For Java specific stuff by version -->
+        <!-- <condition property="isJava12"><matches string="${ant.java.version}" pattern="1[2-9]|[2-9][0-9]" /></condition> -->
+        <condition property="isJava13"><matches string="${ant.java.version}" pattern="1[3-9]|[2-9][0-9]" /></condition>
+        <!-- <condition property="isJava14"><matches string="${ant.java.version}" pattern="1[4-9]|[2-9][0-9]" /></condition> -->
+        <!-- <condition property="isJava15"><matches string="${ant.java.version}" pattern="1[5-9]|[2-9][0-9]" /></condition> -->
+        <condition property="isJava16"><matches string="${ant.java.version}" pattern="1[6-9]|[2-9][0-9]" /></condition>
+        <condition property="isJava17"><matches string="${ant.java.version}" pattern="1[7-9]|[2-9][0-9]" /></condition>
+        <!-- <condition property="isJava18"><matches string="${ant.java.version}" pattern="1[8-9]|[2-9][0-9]" /></condition> -->
+        <condition property="isJava19"><matches string="${ant.java.version}" pattern="19|[2-9][0-9]" /></condition>
+        <!-- <condition property="isJava20"><matches string="${ant.java.version}" pattern="[2-9][0-9]" /></condition> -->
+        <condition property="isJava21"><matches string="${ant.java.version}" pattern="2[1-9]|[3-9][0-9]" /></condition>
+        <!-- <condition property="isJava22"><matches string="${ant.java.version}" pattern="2[2-9]|[3-9][0-9]" /></condition> -->
+        <!-- <condition property="isJava23"><matches string="${ant.java.version}" pattern="2[3-9]|[3-9][0-9]" /></condition> -->
+        <condition property="isJava24"><matches string="${ant.java.version}" pattern="2[4-9]|[3-9][0-9]" /></condition>
+        <!-- <condition property="isJava25"><matches string="${ant.java.version}" pattern="2[5-9]|[3-9][0-9]" /></condition> -->
+        <!-- <condition property="isJava26"><matches string="${ant.java.version}" pattern="2[6-9]|[3-9][0-9]" /></condition> -->
+    </target>
+    <target name="init-ivy" depends="init-javaversions" description="Initialize dependency management system Apache Ivy">
+        <property name="ivy.version" value="2.5.3"/>
         <dirname property="base.dir" file="${ant.file.josm}"/>
         <property name="lib.dir"   location="${base.dir}/lib"/>
         <property name="tools.dir" location="${base.dir}/tools"/>
         <property name="tools.ivy" location="${tools.dir}/ivy.xml"/>
         <property name="ivy.jar.dir" location="${tools.dir}/ivy"/>
         <property name="ivy.jar.file" location="${ivy.jar.dir}/ivy-${ivy.version}.jar"/>
+        
         <mkdir dir="${ivy.jar.dir}"/>
-        <get src="https://josm.openstreetmap.de/nexus/content/repositories/public/org/apache/ivy/ivy/${ivy.version}/ivy-${ivy.version}.jar"
+        <get src="https://josm.openstreetmap.de/repository/public/org/apache/ivy/ivy/${ivy.version}/ivy-${ivy.version}.jar"
              dest="${ivy.jar.file}"
              skipexisting="true"
         />
         <taskdef resource="org/apache/ivy/ant/antlib.xml" uri="antlib:org.apache.ivy.ant" classpath="${ivy.jar.file}"/>
     </target>
-    <target name="init-properties">
+    <target name="init-properties" depends="init-javaversions" description="Initialize properties for the build">
         <property environment="env"/>
         <!-- Load properties in a target and not at top level, so this build file can be
         imported from an IDE ant file (Netbeans) without messing up IDE properties.
@@ -40,6 +59,15 @@
         <dirname property="base.dir" file="${ant.file.josm}"/>
         <property name="test.dir" location="${base.dir}/test"/>
         <property name="src.dir" location="${base.dir}/src"/>
+        <condition property="sign.jar">
+            <and>
+                <isset property="env.SIGN_ALIAS"/>
+                <isset property="env.SIGN_KEYSTORE"/>
+                <isset property="env.SIGN_KEYPASS"/>
+                <isset property="env.SIGN_STOREPASS"/>
+                <isset property="env.SIGN_TSA"/>
+            </and>
+        </condition>
         <condition property="noJavaFX">
             <or>
                 <isset property="env.JOSM_NOJAVAFX"/>
@@ -62,14 +90,16 @@
         <property name="mapcss.dir" location="${src.dir}/org/openstreetmap/josm/gui/mappaint/mapcss"/>
         <property name="proj-build.dir" location="${base.dir}/build2"/>
         <property name="script-build.dir" location="${base.dir}/build2"/>
-        <property name="checkstyle-build.dir" location="${base.dir}/build2"/>
         <property name="epsg.output" location="${resources.dir}/data/projection/custom-epsg"/>
         <property name="commons-lang3.jar" location="${tools.dir}/commons-lang3.jar"/>
         <property name="dist.jar" location="${dist.dir}/josm-custom.jar"/>
         <property name="dist-optimized.jar" location="${dist.dir}/josm-custom-optimized.jar"/>
         <property name="dist-sources.jar" location="${dist.dir}/josm-custom-sources.jar"/>
-        <property name="java.lang.version" value="1.8" />
+        <!-- When incrementing the minimum Java version, don't forget to update the Java versions users will update to
+             (PlatformHook#getJavaUrl, PlatformHook#startupSanityChecks and PlatformHook#warnSoonToBeUnsupportedJava) -->
+        <property name="java.lang.version" value="11" />
         <property name="test.headless" value="true" />
+        <property name="noErrorProne" value="false"/>
         <property name="jacoco.includes" value="org.openstreetmap.josm.*" />
         <property name="jacoco.inclbootstrapclasses" value="false" />
         <property name="jacoco.inclnolocationclasses" value="false" />
@@ -82,27 +112,16 @@
         <condition property="clevel" value="${clevel}" else="9">
             <isset property="clevel"/>
         </condition>
-        <!-- For Java specific stuff by version -->
-        <condition property="isJava9"><matches string="${ant.java.version}" pattern="(1.)?(9|1[0-9])" /></condition>
-        <condition property="isJava10"><matches string="${ant.java.version}" pattern="1[0-9]" /></condition>
-        <condition property="isJava11"><matches string="${ant.java.version}" pattern="1[1-9]" /></condition>
-        <condition property="isJava12"><matches string="${ant.java.version}" pattern="1[2-9]" /></condition>
-        <condition property="isJava13"><matches string="${ant.java.version}" pattern="1[3-9]" /></condition>
-        <condition property="isJava16"><matches string="${ant.java.version}" pattern="1[6-9]" /></condition>
-        <!-- Disable jacoco on Java 16+, see https://github.com/jacoco/jacoco/pull/992 -->
+        <!-- Disable jacoco on Java 19+, see https://github.com/jacoco/jacoco/pull/1282 -->
         <condition property="coverageByDefault">
             <not>
-                <isset property="isJava16"/>
+                <isset property="isJava19"/>
             </not>
         </condition>
-        <condition property="java.library.dir" value="jmods" else="lib">
-            <isset property="isJava9"/>
-        </condition>
+        <property name="java.library.dir" value="jmods" />
     </target>
-    <!--
-      ** Initializes the REVISION.XML file from SVN information
-    -->
-    <target name="init-svn-revision-xml" if="svn.present" depends="init-properties">
+    <target name="init-svn-revision-xml" if="svn.present" depends="init-properties"
+            description="Initialize the REVISION.XML file from SVN information">
         <exec append="false" output="${base.dir}/REVISION.XML" executable="svn" dir="${base.dir}" resultproperty="svn.info.result">
             <env key="LANG" value="C"/>
             <arg value="info"/>
@@ -110,10 +129,8 @@
             <arg value="."/>
         </exec>
     </target>
-    <!--
-      ** Initializes the REVISION.XML file from git information
-    -->
-    <target name="init-git-revision-xml" if="git.present" depends="init-properties">
+    <target name="init-git-revision-xml" if="git.present" depends="init-properties"
+            description="Initialize the REVISION.XML file from git information">
         <exec append="false" output="${base.dir}/REVISION.XML" executable="git" dir="${base.dir}">
             <arg value="log"/>
             <arg value="-1"/>
@@ -130,10 +147,8 @@
                        match=".*git-svn-id: [^@]*@([0-9]+).*(\d{4}-\d{2}-\d{2}.\d{2}\:\d{2}\:\d{2}\s*[+-]\d{2}:?\d{2})\s*$"
                        replace="&lt;info&gt;&lt;entry&gt;&lt;commit revision=&quot;\1&quot;&gt;&lt;date&gt;\2&lt;/date&gt;&lt;/commit&gt;&lt;/entry&gt;&lt;/info&gt;"/>
     </target>
-    <!--
-      ** Creates the REVISION file to be included in the distribution
-    -->
-    <target name="create-revision" depends="init-properties,init-svn-revision-xml,init-git-revision-xml">
+    <target name="create-revision" depends="init-properties,init-svn-revision-xml,init-git-revision-xml"
+            description="Create the REVISION file to be included in the distribution based on the latest SVN/Git commit">
         <xmlproperty file="${base.dir}/REVISION.XML" prefix="version" keepRoot="false" collapseAttributes="true"/>
         <delete file="${base.dir}/REVISION.XML"/>
         <tstamp>
@@ -145,26 +160,26 @@
         <echo file="${resources.dir}/REVISION">
 # automatically generated by JOSM build.xml - do not edit
 Revision: ${version.entry.commit.revision}
-Is-Local-Build: true
 Build-Date: ${build.tstamp}
 </echo>
+        <echo unless:set="releasebuild" file="${resources.dir}/REVISION" append="true">
+        Is-Local-Build: true
+</echo>
     </target>
-    <!--
-      ** Check internal XML files against their XSD
-    -->
-    <target name="check-schemas" unless="check-schemas.notRequired" depends="init-properties">
+    <target name="check-schemas" unless="check-schemas.notRequired" depends="init-properties"
+            description="Check internal XML files against their XSD">
         <schemavalidate file="${resources.dir}/data/defaultpresets.xml" >
             <schema namespace="http://josm.openstreetmap.de/tagging-preset-1.0" file="${resources.dir}/data/tagging-preset.xsd" />
         </schemavalidate>
     </target>
-    <!--
-      ** Main target that builds JOSM and checks XML against schemas
-    -->
-    <target name="dist" depends="compile,extract-libraries,epsg,copy-resources,check-schemas">
+    <target name="dist" depends="compile,extract-libraries,epsg,copy-resources,check-schemas"
+            description="Main target that builds JOSM and checks XML against schemas">
         <echo>Revision ${version.entry.commit.revision}</echo>
         <copy file="CONTRIBUTION" todir="${build.dir}"/>
         <copy file="README" todir="${build.dir}"/>
         <copy file="LICENSE" todir="${build.dir}"/>
+        <copy file="gpl-2.0.txt" todir="${build.dir}"/>
+        <copy file="gpl-3.0.txt" todir="${build.dir}"/>
         <!-- create josm-custom.jar -->
         <delete file="${dist.jar}"/>
         <jar destfile="${dist.jar}" basedir="${build.dir}" level="${clevel}">
@@ -177,127 +192,128 @@ Build-Date: ${build.tstamp}
                 <attribute name="Codebase" value="josm.openstreetmap.de"/>
                 <attribute name="Application-Name" value="JOSM - Java OpenStreetMap Editor"/>
                 <!-- Java 9 stuff. Entries are safely ignored by Java 8 -->
-                <attribute name="Add-Exports" value="java.desktop/com.apple.eawt java.desktop/com.sun.imageio.spi java.desktop/com.sun.imageio.plugins.jpeg javafx.graphics/com.sun.javafx.application jdk.deploy/com.sun.deploy.config" />
+                <attribute name="Add-Exports" value="java.base/sun.security.action java.desktop/com.apple.eawt java.desktop/com.sun.imageio.spi java.desktop/com.sun.imageio.plugins.jpeg javafx.graphics/com.sun.javafx.application jdk.deploy/com.sun.deploy.config" />
                 <attribute name="Add-Opens" value="java.base/java.lang java.base/java.nio java.base/jdk.internal.loader java.base/jdk.internal.ref java.desktop/javax.imageio.spi java.desktop/javax.swing.text.html java.prefs/java.util.prefs" />
+                <!-- Indicate that this jar may have version specific classes. Only used in Java9+. -->
+                <attribute name="Multi-Release" value="true"/>
             </manifest>
         </jar>
+        <!-- Sign jar if all environment variables are set -->
+        <signjar jar="${dist.jar}" alias="${env.SIGN_ALIAS}" tsaurl="${env.SIGN_TSA}"
+            keystore="${env.SIGN_KEYSTORE}" storepass="${env.SIGN_STOREPASS}" keypass="${env.SIGN_KEYPASS}" if:set="sign.jar" />
     </target>
-    <!-- Mac OS X target -->
-    <target name="mac" depends="init">
-        <!-- Using https://bitbucket.org/infinitekind/appbundler to create mac application bundle -->
-        <taskdef name="bundleapp" classname="com.oracle.appbundler.AppBundlerTask" classpath="${tools.dir}/appbundler.jar"/>
-        <!-- create MacOS X application bundle -->
-        <bundleapp outputdirectory="${bundle.outdir}" name="JOSM" displayname="JOSM" executablename="JOSM" identifier="org.openstreetmap.josm"
-                   mainclassname="org.openstreetmap.josm.gui.MainApplication"
-                   copyright="JOSM, and all its integral parts, are released under the GNU General Public License v2 or later"
-                   applicationCategory="public.app-category.utilities"
-                   shortversion="${version.entry.commit.revision} SVN"
-                   version="${version.entry.commit.revision} SVN"
-                   icon="native/macosx/JOSM.icns"
-                   highResolutionCapable="true">
-
-            <arch name="x86_64"/>
-            <arch name="i386"/>
-
-            <classpath file="${bundle.jar}"/>
-
-            <option value="-Xmx2048m"/>
-
-            <option value="-Xdock:icon=Contents/Resources/JOSM.icns"/>
-            <option value="-Xdock:name=JOSM"/>
-
-            <!-- OSX specific options, optional -->
-            <option value="-Dapple.laf.useScreenMenuBar=true"/>
-            <option value="-Dcom.apple.macos.use-file-dialog-packages=true"/>
-            <option value="-Dcom.apple.macos.useScreenMenuBar=true"/>
-            <option value="-Dcom.apple.mrj.application.apple.menu.about.name=JOSM"/>
-            <option value="-Dcom.apple.smallTabs=true"/>
-        </bundleapp>
-
-        <!-- appbundler lacks the possibility of defining our own keys or using a template, so update the .plist manually -->
-        <taskdef name="xmltask" classname="com.oopsconsultancy.xmltask.ant.XmlTask" classpath="${tools.dir}/xmltask.jar"/>
-
-        <xmltask source="${bundle.outdir}/JOSM.app/Contents/Info.plist" dest="${bundle.outdir}/JOSM.app/Contents/Info.plist" indent="false">
-            <!-- remove empty CFBundleDocumentTypes definition -->
-            <remove path="/plist/dict/key[text()='CFBundleDocumentTypes']|/plist/dict/key[text()='CFBundleDocumentTypes']/following-sibling::array[1]"/>
-            <!-- insert our own keys -->
-            <insert position="before" path="/plist/dict/key[1]" file="native/macosx/JOSM.app/Contents/Info.plist_template.xml" />
-        </xmltask>
-
-        <!-- create ZIP file with MacOS X application bundle -->
-        <zip destfile="${bundle.outdir}/josm-custom-macosx.zip" update="true">
-            <zipfileset dir="." includes="CONTRIBUTION README LICENSE"/>
-            <zipfileset dir="${bundle.outdir}" includes="JOSM.app/**/*" filemode="755" />
-        </zip>
-    </target>
-    <target name="distmac" depends="dist">
-        <antcall target="mac">
-            <param name="bundle.outdir" value="${dist.dir}"/>
-            <param name="bundle.jar" value="${dist.jar}"/>
-        </antcall>
-    </target>
-    <!-- Windows target -->
-    <target name="distwin" depends="dist">
-        <exec dir="native/windows" executable="./josm-setup-unix.sh">
-            <arg value="${version.entry.commit.revision}"/>
-            <arg value="${dist.jar}"/>
-        </exec>
-    </target>
-    <target name="javacc" depends="init" unless="javacc.notRequired">
+    <target name="javacc" depends="init" unless="javacc.notRequired" description="Compile the MapCSS compiler">
         <ivy:cachepath log="download-only" file="${tools.ivy}" pathid="javacc.classpath" conf="javacc"/>
         <mkdir dir="${mapcss.dir}/parsergen"/>
-        <java classname="javacc" fork="true" failonerror="true">
+        <java classname="javacc" fork="true" dir="${mapcss.dir}" failonerror="true">
             <classpath path="${tools.dir}/javacc"/>
             <classpath refid="javacc.classpath"/>
             <arg value="-DEBUG_PARSER=false"/>
             <arg value="-DEBUG_TOKEN_MANAGER=false"/>
-            <arg value="-JDK_VERSION=${java.lang.version}"/>
+            <arg value="-JDK_VERSION=1.${java.lang.version}"/>
             <arg value="-GRAMMAR_ENCODING=UTF-8"/>
-            <arg value="-OUTPUT_DIRECTORY=${mapcss.dir}/parsergen"/>
+            <arg value="-UNICODE_INPUT=true"/>
             <arg value="${mapcss.dir}/MapCSSParser.jj"/>
         </java>
     </target>
-    <target name="compile-cots" depends="init" description="Compiles third-party dependencies not retrieved with Ivy">
-        <!-- COTS -->
-        <javac srcdir="${src.dir}" includes="com/kitfox/**" excludes="**/package-info.java" nowarn="on" encoding="iso-8859-1"
-            destdir="${build.dir}" target="${java.lang.version}" source="${java.lang.version}" debug="on" includeAntRuntime="false">
-            <!-- get rid of "internal proprietary API" warning -->
-            <compilerarg value="-XDignore.symbol.file"/>
-            <classpath>
-                <path refid="runtime.path"/>
-            </classpath>
-        </javac>
-    </target>
-    <target name="compile" depends="init,javacc,compile-cots" unless="compile.notRequired" description="Compiles JOSM">
+    <macrodef name="call-javac-compile">
+        <attribute name="sourcepath" default=""/>
+        <attribute name="srcdir" default="${src.dir}"/>
+        <attribute name="fork" default="yes"/>
+        <attribute name="excludes" default=""/>
+        <attribute name="includes" default="**/*.java"/>
+        <attribute name="destdir" default="${build.dir}"/>
+        <attribute name="debug" default="on"/>
+        <attribute name="includeantruntime" default="false"/>
+        <attribute name="encoding" default="UTF-8"/>
+        <attribute name="release" default="${java.lang.version}"/>
+        <element name="cp-elements" optional="true"/>
+        <sequential>
+          <javac sourcepath="@{sourcepath}" srcdir="@{srcdir}" fork="@{fork}"
+            includes="@{includes}" excludes="@{excludes}" destdir="@{destdir}" release="@{release}"
+            debug="@{debug}" includeantruntime="@{includeantruntime}" encoding="@{encoding}">
+              <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED" if:set="isJava16" unless:set="noErrorProne"/>
+              <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED" if:set="isJava16" unless:set="noErrorProne"/>
+              <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED" if:set="isJava16" unless:set="noErrorProne"/>
+              <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.model=ALL-UNNAMED" if:set="isJava16" unless:set="noErrorProne"/>
+              <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED" if:set="isJava16" unless:set="noErrorProne"/>
+              <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED" if:set="isJava16" unless:set="noErrorProne"/>
+              <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.processing=ALL-UNNAMED" if:set="isJava16" unless:set="noErrorProne"/>
+              <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED" if:set="isJava16" unless:set="noErrorProne"/>
+              <compilerarg value="-J--add-exports=jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED" if:set="isJava16" unless:set="noErrorProne"/>
+              <compilerarg value="-J--add-opens=jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED" if:set="isJava16" unless:set="noErrorProne"/>
+              <compilerarg line="-XDcompilePolicy=simple"/>
+              <compilerarg value="-processorpath"/>
+              <compilerarg value="${toString:errorprone.classpath}:${toString:semanticdb.classpath}"/>
+              <compilerarg value="-Xlint:cast"/>
+              <compilerarg value="-Xlint:deprecation"/>
+              <compilerarg value="-Xlint:dep-ann"/>
+              <compilerarg value="-Xlint:divzero"/>
+              <compilerarg value="-Xlint:empty"/>
+              <compilerarg value="-Xlint:finally"/>
+              <compilerarg value="-Xlint:overrides"/>
+              <!--<compilerarg value="-Xlint:rawtypes"/>-->
+              <compilerarg value="-Xlint:static"/>
+              <compilerarg value="-Xlint:try"/>
+              <compilerarg value="-Xlint:unchecked"/>
+              <!-- Undocumented argument to ignore "Sun internal proprietary API" warning, see http://stackoverflow.com/a/13862308/2257172 -->
+              <compilerarg value="-XDignore.symbol.file"/>
+              <!-- -XepExcludedPaths:.*/parsergen/.*: see #16860 - Resolve JavaCC using Apache Ivy -->
+              <!-- ReferenceEquality: see #12472, fix #13230, fix #13225, fix #13228 - disable ReferenceEquality warning + partial revert of r10656 + r10659, causes too much problems -->
+              <!-- FutureReturnValueIgnored: update to error_prone 2.0.18 (disabled on purpose?) -->
+              <!-- JdkObsolete: see #11924 - see #15560 - support jdk10+ in build.xml, update to proguard 6.0beta1 and error_prone 2.1.2 (disabled due to crashes) -->
+              <!-- EqualsGetClass, UndefinedEquals: see #16498 - update to error_prone 2.3.2-20180817.184126-35 to test JDK 12 compatibility. (disabled due to crashes?) -->
+              <!-- BadImport, AnnotateFormatMethod: see #17516 - update to error-prone 2.3.5-SNAPSHOT plus following patches for Java 13 compatibility (disabled due to crashes?) -->
+              <!-- JavaUtilDate, DoNotCallSuggester, BanSerializableRead: see #19724 - update to error-prone 2.5.1, checkstyle 8.36, spotbugs 4.2.1 (disabled due to crashes?) -->
+              <!-- InlineMeSuggester: See #20522 - Disable https://errorprone.info/bugpattern/InlineMeSuggester (maybe it crashed?) -->
+              <!-- LongDoubleConversion: Disable due to conflicting with Sonar settings -->
+              <compilerarg value="-Xplugin:ErrorProne -XepExcludedPaths:.*/parsergen/.* -Xep:ReferenceEquality:OFF -Xep:FutureReturnValueIgnored:OFF -Xep:JdkObsolete:OFF -Xep:EqualsGetClass:OFF -Xep:UndefinedEquals:OFF -Xep:BadImport:OFF -Xep:AnnotateFormatMethod:OFF -Xep:JavaUtilDate:OFF -Xep:DoNotCallSuggester:OFF -Xep:BanSerializableRead:OFF -Xep:InlineMeSuggester:OFF -Xep:LongDoubleConversion:OFF" unless:set="noErrorProne"/>
+              <compilerarg line="-Xmaxwarns 1000"/>
+              <compilerarg value="-Xplugin:semanticdb -sourceroot:@{srcdir} -targetroot:${build.dir}/semanticdb" if:set="lsif" />
+              <classpath>
+                  <path refid="runtime.path"/>
+                  <cp-elements/>
+              </classpath>
+          </javac>
+      </sequential>
+    </macrodef>
+    <macrodef name="call-javac-compile-mrjar">
+      <!--
+        See https://openjdk.java.net/jeps/238 for the specification
+        The big bits are that the version specific files should be in META-INF/versions/${javaVersion}/
+        using the same package scheme. And that the files in the version specific directories are *full*
+        implementations of the class they are replacing.
+      -->
+      <attribute name="release"/>
+      <sequential>
+        <condition property="java@{release}DirExists">
+          <and>
+            <isset property="isJava@{release}"/>
+            <resourceexists>
+              <file file="${src.dir}/main/java-@{release}"/>
+            </resourceexists>
+          </and>
+        </condition>
+        <echo message="Compiling Java @{release} files" if:true="${java@{release}DirExists}"/>
+        <mkdir dir="${build.dir}/META-INF/versions/@{release}" if:true="${java@{release}DirExists}"/>
+        <call-javac-compile srcdir="${src.dir}/main/java-@{release}" destdir="${build.dir}/META-INF/versions/@{release}" release="@{release}" if:true="${java@{release}DirExists}">
+            <cp-elements>
+              <pathelement path="${build.dir}"/>
+            </cp-elements>
+        </call-javac-compile>
+      </sequential>
+    </macrodef>
+    <target name="compile" depends="init,javacc" unless="compile.notRequired" description="Compile JOSM">
         <ivy:cachepath log="download-only" file="${tools.ivy}" pathid="errorprone.classpath" conf="errorprone"/>
         <ivy:cachepath log="download-only" file="${tools.ivy}" pathid="errorprone_javac.classpath" conf="errorprone_javac"/>
         <!-- JOSM -->
-        <javac sourcepath="" srcdir="${src.dir}" fork="yes"
-            excludes="com/**,org/apache/commons/**,**/package-info.java"
-            destdir="${build.dir}" target="${java.lang.version}" source="${java.lang.version}" debug="on" includeantruntime="false" encoding="UTF-8">
-            <compilerarg value="-J-Xbootclasspath/p:${toString:errorprone_javac.classpath}" unless:set="isJava9"/>
-            <compilerarg line="-XDcompilePolicy=simple"/>
-            <compilerarg value="-processorpath"/>
-            <compilerarg pathref="errorprone.classpath"/>
-            <compilerarg value="-Xlint:cast"/>
-            <compilerarg value="-Xlint:deprecation"/>
-            <compilerarg value="-Xlint:dep-ann"/>
-            <compilerarg value="-Xlint:divzero"/>
-            <compilerarg value="-Xlint:empty"/>
-            <compilerarg value="-Xlint:finally"/>
-            <compilerarg value="-Xlint:overrides"/>
-            <!--<compilerarg value="-Xlint:rawtypes"/>-->
-            <compilerarg value="-Xlint:static"/>
-            <compilerarg value="-Xlint:try"/>
-            <compilerarg value="-Xlint:unchecked"/>
-            <!-- Undocumented argument to ignore "Sun internal proprietary API" warning, see http://stackoverflow.com/a/13862308/2257172 -->
-            <compilerarg value="-XDignore.symbol.file"/>
-            <compilerarg value="-Xplugin:ErrorProne -XepExcludedPaths:.*/parsergen/.* -Xep:ReferenceEquality:OFF -Xep:FutureReturnValueIgnored:OFF -Xep:JdkObsolete:OFF -Xep:EqualsGetClass:OFF -Xep:UndefinedEquals:OFF -Xep:BadImport:OFF -Xep:AnnotateFormatMethod:OFF" unless:set="noErrorProne"/>
-            <compilerarg line="-Xmaxwarns 1000"/>
-            <classpath>
-                <path refid="runtime.path"/>
-            </classpath>
-        </javac>
+        <call-javac-compile excludes="**/package-info.java,**/module-info.java,main/**" release="${java.lang.version}"/>
+        <!-- Java 11 specific files (2018-09 LTS) -->
+        <call-javac-compile-mrjar release="11"/>
+        <!-- Java 17 specific files (2021-09 LTS) -->
+        <call-javac-compile-mrjar release="17"/>
+        <!-- Java 21 specific files (2023-09 LTS) -->
+        <call-javac-compile-mrjar release="21"/>
     </target>
     <target name="create-resources" depends="create-revision" description="Create generated resource files">
         <copy todir="${resources.dir}">
@@ -311,7 +327,7 @@ Build-Date: ${build.tstamp}
             <fileset dir="${resources.dir}"/>
         </copy>
     </target>
-    <target name="init" depends="init-properties,resolve">
+    <target name="init" depends="init-properties,resolve" description="Initialize the build">
         <uptodate property="javacc.notRequired" targetfile="${mapcss.dir}/parsergen/MapCSSParser.java" >
             <srcfiles dir="${mapcss.dir}" includes="MapCSSParser.jj"/>
         </uptodate>
@@ -322,7 +338,7 @@ Build-Date: ${build.tstamp}
         <mkdir dir="${build.dir}"/>
         <mkdir dir="${dist.dir}"/>
     </target>
-    <target name="javadoc" depends="init">
+    <target name="javadoc" depends="init" description="Generate API documentation from JOSM source files">
         <javadoc destdir="javadoc"
                 sourcepath="${src.dir}"
                 classpathref="compile.path"
@@ -334,8 +350,7 @@ Build-Date: ${build.tstamp}
                 private="true"
                 linksource="true"
                 author="false">
-            <link href="https://docs.oracle.com/javase/8/docs/api" unless:set="isJava11" />
-            <link href="https://docs.oracle.com/en/java/javase/11/docs/api" if:set="isJava11" />
+            <link href="https://docs.oracle.com/en/java/javase/11/docs/api" />
             <doctitle><![CDATA[<h2>
                 <img src="https://josm.openstreetmap.de/svn/trunk/nodist/images/logo/header.png" style="vertical-align: middle;" alt="JOSM">
                 &mdash; Javadoc
@@ -343,16 +358,21 @@ Build-Date: ${build.tstamp}
             <bottom><![CDATA[<a href="https://josm.openstreetmap.de/">JOSM</a>]]></bottom>
             <!-- Disable HTML checking until we switch to Java13+, see https://bugs.openjdk.java.net/browse/JDK-8223552 -->
             <arg value="-Xdoclint:-html" if:set="isJava13" />
-            <arg value="-html5" if:set="isJava9" />
-            <arg value="--add-exports" if:set="isJava9" unless:set="noJavaFX" />
-            <arg value="javafx.graphics/com.sun.javafx.application=ALL-UNNAMED" if:set="isJava9" unless:set="noJavaFX" />
+            <arg value="-html5" />
+            <arg value="--add-exports" unless:set="noJavaFX" />
+            <arg value="javafx.graphics/com.sun.javafx.application=ALL-UNNAMED" unless:set="noJavaFX" />
         </javadoc>
     </target>
-    <target name="clean" depends="init-properties">
+    <target name="cleanfull" depends="init-properties" description="Delete all generated files">
+        <exec executable="svn" dir="${basedir}">
+            <arg value="cleanup"/>
+            <arg value="--remove-ignored"/>
+        </exec>
+    </target>
+    <target name="clean" depends="init-properties" description="Delete all build files">
         <delete dir="${build.dir}"/>
         <delete dir="${proj-build.dir}"/>
         <delete dir="${script-build.dir}"/>
-        <delete dir="${checkstyle-build.dir}"/>
         <delete dir="${dist.dir}"/>
         <delete dir="${mapcss.dir}/parsergen"/>
         <delete file="${src.dir}/org/w3/_2001/xmlschema/Adapter1.java"/>
@@ -368,7 +388,7 @@ Build-Date: ${build.tstamp}
             <replace file="${test.dir}/config/@{testfamily}-josm.home/preferences.xml" encoding="UTF-8" token="@OSM_PASSWORD@" value="${osm.password}"/>
         </sequential>
     </macrodef>
-    <target name="test-init" depends="init">
+    <target name="test-init" depends="init" description="Initialize the tests">
         <mkdir dir="${test.dir}/build"/>
         <mkdir dir="${test.dir}/build/unit"/>
         <mkdir dir="${test.dir}/build/functional"/>
@@ -382,12 +402,13 @@ Build-Date: ${build.tstamp}
             <pathelement path="${build.dir}"/>
             <pathelement path="${resources.dir}"/>
         </path>
+        <ivy:retrieve log="download-only" pattern="${test.dir}/lib/[artifact].[ext]" conf="junit5-system-exit"/>
         <ivy:retrieve log="download-only" pattern="${test.dir}/lib/[artifact].[ext]" conf="jmockit"/>
         <ivy:retrieve log="download-only" pattern="${tools.dir}/[artifact].[ext]" conf="commonslang"/>
         <ivy:retrieve log="download-only" pattern="${tools.dir}/[conf].[ext]" conf="jacocoant"/>
         <taskdef uri="antlib:org.jacoco.ant" resource="org/jacoco/ant/antlib.xml" classpath="${tools.dir}/jacocoant.jar" />
     </target>
-    <target name="test-clean" depends="init-properties">
+    <target name="test-clean" depends="init-properties" description="Delete all built test files">
         <delete dir="${test.dir}/build"/>
         <delete dir="${test.dir}/report"/>
         <delete file="${test.dir}/jacoco.exec" />
@@ -401,7 +422,7 @@ Build-Date: ${build.tstamp}
         <element name="cp-elements"/>
         <sequential>
             <javac srcdir="${test.dir}/@{testfamily}" destdir="${test.dir}/build/@{testfamily}"
-                target="${java.lang.version}" source="${java.lang.version}" debug="on"
+                release="${java.lang.version}" debug="on"
                 includeantruntime="false" encoding="UTF-8">
                 <compilerarg value="-Xlint:all"/>
                 <compilerarg value="-Xlint:-path"/><!-- Suppress "bad path element .../xmpcore-6.0.6.jar: no such file or directory" warning, see https://github.com/drewnoakes/metadata-extractor/pull/483 -->
@@ -410,9 +431,12 @@ Build-Date: ${build.tstamp}
                     <cp-elements/>
                 </classpath>
             </javac>
+            <copy todir="${test.dir}/build/@{testfamily}/META-INF">
+              <fileset dir="${test.dir}/data/META-INF"/>
+            </copy>
         </sequential>
     </macrodef>
-    <target name="test-compile" depends="test-init,compile,extract-libraries,epsg,copy-resources" description="Compiles all tests">
+    <target name="test-compile" depends="test-init,compile,extract-libraries,epsg,copy-resources" description="Compile all tests">
         <call-javac testfamily="unit">
             <cp-elements>
                 <path refid="test.classpath"/>
@@ -440,7 +464,8 @@ Build-Date: ${build.tstamp}
         <sequential>
             <echo message="Running @{testfamily}@{testITsuffix} tests with JUnit"/>
             <jacoco:agent destfile="${test.dir}/jacoco@{testITsuffix}.exec" enabled="@{coverage}" includes="${jacoco.includes}" dumponexit="true"
-		    inclbootstrapclasses="${jacoco.inclbootstrapclasses}" inclnolocationclasses="${jacoco.inclnolocationclasses}" property="jacocoagent@{testfamily}@{testITsuffix}" if:true="@{coverage}"/>
+                          inclbootstrapclasses="${jacoco.inclbootstrapclasses}" inclnolocationclasses="${jacoco.inclnolocationclasses}"
+                          property="jacocoagent@{testfamily}@{testITsuffix}" if:true="@{coverage}"/>
             <junitlauncher printsummary="${junit.printsummary}" failureproperty="test.@{testfamily}@{testITsuffix}.failed">
                 <classpath>
                     <path refid="test.classpath"/>
@@ -449,39 +474,46 @@ Build-Date: ${build.tstamp}
                 </classpath>
                 <testclasses outputDir="${test.dir}/report">
                     <fileset dir="${test.dir}/build/@{testfamily}" includes="@{includes}" excludes="@{excludes}"/>
-	                <fork>
-	                    <jvmarg value="${jacocoagent@{testfamily}@{testITsuffix}}" if:set="jacocoagent@{testfamily}@{testITsuffix}" />
-	                    <jvmarg value="-Dfile.encoding=UTF-8"/>
-	                    <jvmarg value="-javaagent:${test.dir}/lib/jmockit.jar"/>
-	                    <jvmarg value="-Djunit.jupiter.extensions.autodetection.enabled=true"/>
-	                    <jvmarg value="--add-modules" if:set="isJava9" unless:set="isJava11" />
-	                    <jvmarg value="java.activation,java.se.ee" if:set="isJava9" unless:set="isJava11" />
-	                    <jvmarg value="--add-exports" if:set="isJava9" unless:set="noJavaFX" />
-	                    <jvmarg value="javafx.graphics/com.sun.javafx.application=ALL-UNNAMED" if:set="isJava9" unless:set="noJavaFX" />
-	                    <jvmarg value="--add-exports" if:set="isJava9" unless:set="isJava11" />
-	                    <jvmarg value="jdk.deploy/com.sun.deploy.config=ALL-UNNAMED" if:set="isJava9" unless:set="isJava11" />
-	                    <jvmarg value="--add-opens" if:set="isJava9" />
-	                    <jvmarg value="java.base/java.io=ALL-UNNAMED" if:set="isJava9" />
-	                    <jvmarg value="--add-opens" if:set="isJava9" />
-	                    <jvmarg value="java.base/java.lang=ALL-UNNAMED" if:set="isJava9" />
-	                    <jvmarg value="--add-opens" if:set="isJava9" />
-	                    <jvmarg value="java.base/java.nio=ALL-UNNAMED" if:set="isJava9" />
-	                    <jvmarg value="--add-opens" if:set="isJava9" />
-	                    <jvmarg value="java.base/java.text=ALL-UNNAMED" if:set="isJava9" />
-	                    <jvmarg value="--add-opens" if:set="isJava9" />
-	                    <jvmarg value="java.base/java.util=ALL-UNNAMED" if:set="isJava9" />
-	                    <jvmarg value="--add-opens" if:set="isJava9" />
-	                    <jvmarg value="java.base/jdk.internal.loader=ALL-UNNAMED" if:set="isJava9" />
-	                    <jvmarg value="--add-opens" if:set="isJava9" />
-	                    <jvmarg value="java.desktop/java.awt=ALL-UNNAMED" if:set="isJava9" />
-	                    <sysproperty key="josm.home" value="${test.dir}/config/@{testfamily}-josm.home"/>
-	                    <sysproperty key="josm.test.data" value="${test.dir}/data"/>
-	                    <sysproperty key="java.awt.headless" value="${test.headless}"/>
-	                    <sysproperty key="glass.platform" value="Monocle"/>
-	                    <sysproperty key="monocle.platform" value="Headless"/>
-	                    <sysproperty key="prism.order" value="sw"/>
-	                    <sysproperty key="suppressPermanentFailure" value="${suppressPermanentFailure}"/>
-	                </fork>
+                    <fork>
+                        <jvmarg value="${jacocoagent@{testfamily}@{testITsuffix}}" if:set="jacocoagent@{testfamily}@{testITsuffix}" />
+                        <jvmarg value="-Dfile.encoding=UTF-8"/>
+                        <jvmarg value="-Djava.locale.providers=SPI,CLDR" />
+                        <jvmarg value="-Djava.security.manager=allow" if:set="isJava17" unless:set="isJava24" />
+                        <jvmarg value="-javaagent:${test.dir}/lib/junit5-system-exit.jar" if:set="isJava17"/>
+                        <jvmarg value="-javaagent:${test.dir}/lib/jmockit.jar"/>
+                        <jvmarg value="-Djunit.jupiter.extensions.autodetection.enabled=true"/>
+                        <jvmarg value="-Djunit.jupiter.execution.parallel.enabled=true"/>
+                        <jvmarg value="--add-exports" unless:set="noJavaFX" />
+                        <jvmarg value="javafx.graphics/com.sun.javafx.application=ALL-UNNAMED" unless:set="noJavaFX" />
+                        <jvmarg value="--add-opens" />
+                        <jvmarg value="java.base/java.io=ALL-UNNAMED" />
+                        <jvmarg value="--add-opens" />
+                        <jvmarg value="java.base/java.lang=ALL-UNNAMED" />
+                        <jvmarg value="--add-opens" />
+                        <jvmarg value="java.base/java.nio=ALL-UNNAMED" />
+                        <jvmarg value="--add-opens" />
+                        <jvmarg value="java.base/java.text=ALL-UNNAMED" />
+                        <jvmarg value="--add-opens" />
+                        <jvmarg value="java.base/java.util=ALL-UNNAMED" />
+                        <jvmarg value="--add-opens" />
+                        <jvmarg value="java.base/jdk.internal.loader=ALL-UNNAMED" />
+                        <jvmarg value="--add-opens" />
+                        <jvmarg value="java.desktop/java.awt=ALL-UNNAMED" />
+                        <jvmarg value="--add-opens" />
+                        <jvmarg value="java.prefs/java.util.prefs=ALL-UNNAMED" />
+                        <sysproperty key="josm.home" value="${test.dir}/config/@{testfamily}-josm.home"/>
+                        <sysproperty key="josm.test.data" value="${test.dir}/data"/>
+                        <sysproperty key="java.awt.headless" value="${test.headless}"/>
+                        <sysproperty key="java.security.manager" value="allow" if:set="isJava17" unless:set="isJava24" />
+                        <sysproperty key="glass.platform" value="Monocle"/>
+                        <sysproperty key="monocle.platform" value="Headless"/>
+                        <sysproperty key="prism.order" value="sw"/>
+                        <sysproperty key="suppressPermanentFailure" value="${suppressPermanentFailure}"/>
+                        <sysproperty key="junit.jupiter.execution.parallel.enabled" value="${junit.jupiter.execution.parallel.enabled}" if:set="junit.jupiter.execution.parallel.enabled"/>
+                        <sysproperty key="junit.jupiter.execution.parallel.mode.default" value="${junit.jupiter.execution.parallel.mode.default}" if:set="junit.jupiter.execution.parallel.mode.default"/>
+                        <sysproperty key="junit.jupiter.execution.parallel.mode.classes.default" value="${junit.jupiter.execution.parallel.mode.classes.default}" if:set="junit.jupiter.execution.parallel.mode.classes.default"/>
+                    </fork>
+                    <listener type="legacy-brief" sendSysOut="true" sendSysErr="true"/>
                     <listener type="legacy-plain" />
                     <listener type="legacy-xml" />
                 </testclasses>
@@ -557,7 +589,7 @@ Build-Date: ${build.tstamp}
             <csv destfile="${test.dir}/report/jacoco.csv"/>
         </jacoco:report>
     </target>
-    <target name="dist-optimized" depends="dist" unless="isJava13">
+    <target name="dist-optimized" depends="dist" description="Build an optimized JOSM distribution file">
         <ivy:cachepath log="download-only" file="${tools.ivy}" pathid="proguard.classpath" conf="proguard"/>
         <taskdef resource="proguard/ant/task.properties" classpathref="proguard.classpath"/>
         <proguard>
@@ -623,12 +655,13 @@ Build-Date: ${build.tstamp}
             <arg value="${dist-optimized.jar}"/>
         </exec>
     </target>
-    <target name="check-plugins" depends="dist-optimized" description="Check of plugins binary compatibility" unless="isJava11">
+    <target name="check-plugins" depends="dist-optimized" description="Check of plugins binary compatibility">
         <local name="dir"/>
         <local name="plugins"/>
         <property name="dir" value="plugin-check"/>
+        <ivy:cachepath log="download-only" file="${tools.ivy}" pathid="animal.classpath" conf="animal"/>
         <typedef uri="antlib:org.codehaus.mojo.animal_sniffer">
-            <classpath path="${tools.dir}/animal-sniffer-ant-tasks.jar"/>
+            <classpath refid="animal.classpath"/>
         </typedef>
         <delete dir="${dir}" failonerror="false"/>
         <mkdir dir="${dir}"/>
@@ -649,21 +682,10 @@ Build-Date: ${build.tstamp}
         </loadfile>
         <!-- Download list of plugins -->
         <loadresource property="plugins">
-            <url url="https://josm.openstreetmap.de/plugin"/>
+            <url url="https://josm.openstreetmap.de/pluginicons?minjava=${java.lang.version}&amp;noparams=1"/>
             <filterchain>
                 <linecontainsregexp negate="true">
-                    <regexp pattern="^\t.*"/>
-                </linecontainsregexp>
-                <linecontainsregexp negate="true">
                     <regexp pattern="${deprecated-plugins}"/>
-                </linecontainsregexp>
-                <linecontainsregexp negate="true" unless:set="isJava10">
-                    <!-- Skip javafx on Java 8/9, built for Java 10+ only -->
-                    <regexp pattern="javafx.*"/>
-                </linecontainsregexp>
-                <linecontainsregexp negate="true" unless:set="isJava11">
-                    <!-- Skip http2 on Java 8/9/10, built for Java 11+ only -->
-                    <regexp pattern="http2.*"/>
                 </linecontainsregexp>
                 <tokenfilter>
                     <replaceregex pattern="^.*;" replace="" flags="gi"/>
@@ -701,11 +723,7 @@ Build-Date: ${build.tstamp}
         <as:build-signatures destfile="${dir}/api.sig">
             <path>
                 <fileset file="${dist-optimized.jar}"/>
-                <fileset file="${java.home}/lib/rt.jar" unless:set="isJava9"/>
-                <fileset file="${java.home}/lib/jce.jar" unless:set="isJava9"/>
-                <fileset file="${java.home}/lib/ext/jfxrt.jar" unless:set="isJava9"/>
-                <fileset dir="${java.home}/jmods" if:set="isJava9"/>
-                <fileset dir="/usr/share/openjfx/lib" unless:set="isJava9"/>
+                <fileset dir="${java.home}/${java.library.dir}"/>
             </path>
         </as:build-signatures>
         <as:check-signature signature="${dir}/api.sig" failonerror="false">
@@ -775,6 +793,8 @@ Build-Date: ${build.tstamp}
             <ignore classname="org.w3c.*"/>
             <ignore classname="org.zeromq.*"/>
             <ignore classname="waffle.*"/>
+            <!-- Our installers include javafx -->
+            <ignore classname="javafx.*"/>
             <!-- plugins used by another ones -->
             <ignore classname="org.openstreetmap.josm.plugins.geotools.*"/>
             <ignore classname="org.openstreetmap.josm.plugins.jaxb.*"/>
@@ -788,14 +808,13 @@ Build-Date: ${build.tstamp}
         </as:check-signature>
     </target>
 
-    <target name="script-compile" depends="test-compile" description="Compiles all scripts">
+    <target name="script-compile" depends="test-compile" description="Compile all scripts">
         <javac sourcepath="" srcdir="${base.dir}/scripts" failonerror="true" includes="*.java"
-               destdir="${script-build.dir}" target="${java.lang.version}" source="${java.lang.version}" debug="on"
+               destdir="${script-build.dir}" release="${java.lang.version}" debug="on"
                includeantruntime="false" encoding="UTF-8">
             <classpath>
                 <pathelement path="${build.dir}"/>
                 <pathelement path="${test.dir}/build/unit"/>
-                <pathelement path="${commons-lang3.jar}"/>
             </classpath>
         </javac>
     </target>
@@ -810,7 +829,6 @@ Build-Date: ${build.tstamp}
                 <classpath>
                     <pathelement path="${build.dir}"/>
                     <pathelement path="${script-build.dir}"/>
-                    <pathelement path="${commons-lang3.jar}"/>
                 </classpath>
                 <arg value="--type"/>
                 <arg value="@{type}"/>
@@ -823,19 +841,18 @@ Build-Date: ${build.tstamp}
         </sequential>
     </macrodef>
 
-    <target name="taginfo" depends="script-compile">
+    <target name="taginfo" depends="script-compile" description="Generate project files Taginfo">
         <_taginfo type="mappaint" output="taginfo_style.json"/>
         <_taginfo type="presets" output="taginfo_presets.json"/>
         <_taginfo type="external_presets" output="taginfo_external_presets.json"/>
     </target>
 
-    <target name="imageryindex" depends="script-compile">
+    <target name="imageryindex" depends="script-compile"  description="Check editor imagery difference">
         <echo message="Checking editor imagery difference"/>
         <java classname="SyncEditorLayerIndex" failonerror="true" fork="false">
             <classpath>
                 <pathelement path="${build.dir}"/>
                 <pathelement path="${script-build.dir}"/>
-                <pathelement path="${commons-lang3.jar}"/>
             </classpath>
             <arg value="--noeli"/>
             <arg value="-p"/>
@@ -845,7 +862,7 @@ Build-Date: ${build.tstamp}
         </java>
     </target>
 
-    <target name="imageryindexdownload">
+    <target name="imageryindexdownload" description="Download and check editor imagery">
         <exec append="false" executable="wget" failifexecutionfails="true">
             <arg value="https://josm.openstreetmap.de/maps"/>
             <arg value="-O"/>
@@ -864,32 +881,36 @@ Build-Date: ${build.tstamp}
             <arg value="imagery_eli.geojson"/>
             <arg value="--unlink"/>
         </exec>
+        <exec append="false" executable="wget" failifexecutionfails="true">
+            <arg value="https://raw.githubusercontent.com/openstreetmap/iD/develop/data/imagery.json"/>
+            <arg value="-O"/>
+            <arg value="imagery_id.geojson"/>
+            <arg value="--unlink"/>
+        </exec>
+        <exec append="false" executable="wget" failifexecutionfails="true">
+            <arg value="https://raw.githubusercontent.com/facebook/Rapid/main/data/imagery.json"/>
+            <arg value="-O"/>
+            <arg value="imagery_rapid.geojson"/>
+            <arg value="--unlink"/>
+        </exec>
         <antcall target="imageryindex"/>
     </target>
 
-    <target name="checkstyle-compile" depends="init">
+    <target name="checkstyle-changed" depends="init" description="Run Checkstyle on SVN/Git-changed source files">
         <ivy:cachepath log="download-only" file="${tools.ivy}" pathid="checkstyle.classpath" conf="checkstyle"/>
-        <mkdir dir="${checkstyle-build.dir}"/>
-        <javac sourcepath="" srcdir="${checkstyle.dir}/src" failonerror="true"
-            destdir="${checkstyle-build.dir}" target="${java.lang.version}" source="${java.lang.version}" debug="on"
-            includeantruntime="false"
-            encoding="UTF-8" classpathref="checkstyle.classpath">
-        </javac>
-    </target>
-    <target name="checkstyle-changed" depends="checkstyle-compile">
         <exec append="false" osfamily="unix" executable="bash" failifexecutionfails="true">
             <arg value="-c"/>
-            <arg value="(git ls-files src test --modified 2>/dev/null || svn status -q --ignore-externals src test) | grep -o '\(src\|test\)/.*' | xargs java -cp '${toString:checkstyle.classpath}:${checkstyle-build.dir}' com.puppycrawl.tools.checkstyle.Main -c ${checkstyle.dir}/josm_checks.xml | sed -e 's:\([^ ]*\) [^:]*/\([^:/]*.java\:[^:]*\):(\2)\1:'"/>
+            <arg value="(git ls-files src test --modified 2>/dev/null || svn status -q --ignore-externals src test) | grep -o '\(src\|test\)/.*' | xargs java -cp '${toString:checkstyle.classpath}' com.puppycrawl.tools.checkstyle.Main -c ${checkstyle.dir}/josm_checks.xml | sed -e 's:\([^ ]*\) [^:]*/\([^:/]*.java\:[^:]*\):(\2)\1:'"/>
         </exec>
         <exec append="false" osfamily="windows" executable="powershell" failifexecutionfails="true">
             <arg value="/c"/>
-            <arg value="svn status -q --ignore-externals src test | ForEach-Object {java -cp '${toString:checkstyle.classpath};${checkstyle-build.dir}' com.puppycrawl.tools.checkstyle.Main -c ${checkstyle.dir}/josm_checks.xml $_.split(' ')[7]}"/>
+            <arg value="svn status -q --ignore-externals src test | ForEach-Object {java -cp '${toString:checkstyle.classpath}' com.puppycrawl.tools.checkstyle.Main -c ${checkstyle.dir}/josm_checks.xml $_.split(' ')[7]}"/>
         </exec>
     </target>
-    <target name="checkstyle" depends="checkstyle-compile">
+    <target name="checkstyle" depends="init" description="Run Checkstyle on the source files">
+        <ivy:cachepath log="download-only" file="${tools.ivy}" pathid="checkstyle.classpath" conf="checkstyle"/>
         <taskdef resource="com/puppycrawl/tools/checkstyle/ant/checkstyle-ant-task.properties">
             <classpath refid="checkstyle.classpath"/>
-            <classpath path="${checkstyle-build.dir}"/>
         </taskdef>
         <checkstyle config="${checkstyle.dir}/josm_checks.xml">
             <fileset dir="${base.dir}/src/org/openstreetmap/josm" includes="**/*.java"
@@ -901,11 +922,12 @@ Build-Date: ${build.tstamp}
         </checkstyle>
     </target>
 
-    <target name="spotbugs" depends="dist">
+    <target name="spotbugs" depends="dist" description="Run SpotBugs on the source files">
         <ivy:cachepath log="download-only" file="${tools.ivy}" pathid="spotbugs.classpath" conf="spotbugs"/>
         <taskdef name="spotbugs" classname="edu.umd.cs.findbugs.anttask.FindBugsTask" classpathref="spotbugs.classpath"/>
         <spotbugs output="xml"
                 outputFile="spotbugs-josm.xml"
+                sourcePath="${src.dir}"
                 classpath="${toString:spotbugs.classpath}"
                 pluginList=""
                 excludeFilter="${spotbugs.dir}/josm-filter.xml"
@@ -917,10 +939,10 @@ Build-Date: ${build.tstamp}
         </spotbugs>
     </target>
 
-    <target name="pmd" depends="init">
+    <target name="pmd" depends="init" description="Run PMD on the source files">
         <ivy:cachepath log="download-only" file="${tools.ivy}" pathid="pmd.classpath" conf="pmd"/>
         <taskdef name="pmd" classname="net.sourceforge.pmd.ant.PMDTask" classpathref="pmd.classpath"/>
-        <pmd shortFilenames="true" cacheLocation="${pmd.dir}/cache" encoding="UTF-8">
+        <pmd cacheLocation="${pmd.dir}/cache" encoding="UTF-8">
             <sourceLanguage name="java" version="${java.lang.version}" />
             <ruleset>${pmd.dir}/josm-ruleset.xml</ruleset>
             <formatter type="text" toConsole="true" />
@@ -932,32 +954,29 @@ Build-Date: ${build.tstamp}
                 <exclude name="org/openstreetmap/josm/gui/mappaint/mapcss/parsergen/*.java" />
             </fileset>
             <fileset dir="${base.dir}/scripts" includes="**/*.java"/>
+            <relativizePathsWith><path path="${base.dir}"/></relativizePathsWith>
         </pmd>
     </target>
 
-    <target name="run" depends="dist">
+    <target name="run" depends="dist" description="Run JOSM">
         <java jar="${dist.jar}" fork="true">
             <arg value="--set=expert=true"/>
             <arg value="--set=iso.dates=true"/>
             <jvmarg value="-Djosm.home=/tmp/.josm/"/>
         </java>
     </target>
-    <!--
-      ** Compile build script for generating projection list.
-    -->
-    <target name="epsg-compile" depends="init">
+    <target name="epsg-compile" depends="init"
+            description="Compile build script for generating projection list">
         <property name="proj-classpath" location="${build.dir}"/>
         <mkdir dir="${proj-build.dir}"/>
         <javac sourcepath="" srcdir="${base.dir}/scripts" failonerror="true" includes="BuildProjectionDefinitions.java"
-            destdir="${proj-build.dir}" target="${java.lang.version}" source="${java.lang.version}" debug="on"
+            destdir="${proj-build.dir}" release="${java.lang.version}" debug="on"
             includeantruntime="false"
             encoding="UTF-8" classpath="${proj-classpath}">
         </javac>
     </target>
-    <!--
-      ** generate projection list.
-    -->
-    <target name="epsg" unless="epsg.notRequired" depends="epsg-compile">
+    <target name="epsg" unless="epsg.notRequired" depends="epsg-compile"
+            description="Generate projection list">
         <touch file="${epsg.output}" mkdirs="true"/>
         <java classname="BuildProjectionDefinitions" failonerror="true" fork="true">
             <sysproperty key="java.awt.headless" value="true"/>
@@ -969,10 +988,8 @@ Build-Date: ${build.tstamp}
             <arg value="${base.dir}"/>
         </java>
     </target>
-    <!--
-      ** update projection test files after an update of projection definitions
-    -->
-    <target name="update-proj-files" depends="test-compile">
+    <target name="update-proj-files" depends="test-compile"
+            description="Update projection test files after an update of projection definitions">
         <java classname="org.openstreetmap.josm.data.projection.ProjectionRefTest" failonerror="true" fork="true">
             <classpath>
                 <path refid="test.classpath"/>
@@ -986,10 +1003,7 @@ Build-Date: ${build.tstamp}
             </classpath>
         </java>
     </target>
-    <!--
-      ** generate jdeps dependency graph
-    -->
-    <target name="jdeps" depends="compile">
+    <target name="jdeps" depends="compile" description="Generate jdeps dependency graph">
         <delete dir="${modules.dir}"/>
         <mkdir dir="${modules.dir}"/>
         <!-- JOSM only -->
@@ -1002,25 +1016,33 @@ Build-Date: ${build.tstamp}
         <jar basedir="${build.dir}" level="${clevel}" destfile="${modules.dir}/josm-plugins.jar" includes="org/openstreetmap/josm/plugins/**/*.class"/>
         <jar basedir="${build.dir}" level="${clevel}" destfile="${modules.dir}/josm-spi.jar" includes="org/openstreetmap/josm/spi/**/*.class"/>
         <jar basedir="${build.dir}" level="${clevel}" destfile="${modules.dir}/josm-tools.jar" includes="org/openstreetmap/josm/tools/**/*.class"/>
+        <path id="jar.files">
+            <fileset dir="${modules.dir}" includes="*.jar"/>
+        </path>
+        <pathconvert property="jar.files.string" refid="jar.files" pathsep=" "/>
         <exec executable="jdeps" dir="${modules.dir}">
             <arg line="-f 'java.*|org.xml.*|org.w3c.*|sun.*|com.*|oauth.*|org.apache.*|org.glassfish.*|org.openstreetmap.gui.*'"/>
-            <arg line="-dotoutput dots *.jar"/>
+            <arg line="-dotoutput dots" />
+            <arg line="${jar.files.string}" />
         </exec>
         <exec executable="dot" dir="${modules.dir}/dots">
             <arg line="-O -Tpng summary.dot"/>
         </exec>
         <move file="${modules.dir}/dots/summary.dot.png" tofile="${modules.dir}/josm-without-dependencies.png"/>
+
         <!-- Direct dependencies -->
         <copy todir="${modules.dir}" flatten="true">
             <fileset refid="runtime.fileset" />
         </copy>
-        <jar basedir="${build.dir}" level="${clevel}" destfile="${modules.dir}/svgSalamander.jar" includes="com/kitfox/**/*.class"/>
-        <jar basedir="${build.dir}" level="${clevel}" destfile="${modules.dir}/oauth-signpost.jar" includes="oauth/**/*.class"/>
-        <jar basedir="${build.dir}" level="${clevel}" destfile="${modules.dir}/commons-jcs.jar" includes="org/apache/commons/jcs3/**/*.class"/>
-        <jar basedir="${build.dir}" level="${clevel}" destfile="${modules.dir}/jmapviewer.jar" includes="org/openstreetmap/gui/**/*.class"/>
+        <path id="jar-direct.files">
+            <fileset dir="${modules.dir}" includes="*.jar"/>
+        </path>
+        <pathconvert property="jar-direct.files.string" refid="jar-direct.files" pathsep=" "/>
         <exec executable="jdeps" dir="${modules.dir}">
             <arg line="-f 'java.*|org.xml.*|org.w3c.*|sun.*|com.sun.*|com.google.*|org.tukaani.*'"/>
-            <arg line="-dotoutput dots *.jar"/>
+            <arg line="-dotoutput dots"/>
+            <arg line="--multi-release 11"/>
+            <arg line="${jar-direct.files.string}" />
         </exec>
         <exec executable="dot" dir="${modules.dir}/dots">
             <arg line="-O -Tpng summary.dot"/>
@@ -1028,8 +1050,14 @@ Build-Date: ${build.tstamp}
         <move file="${modules.dir}/dots/summary.dot.png" tofile="${modules.dir}/josm-with-direct-dependencies.png"/>
         <!-- All dependencies -->
         <jar basedir="${build.dir}" level="${clevel}" destfile="${modules.dir}/google-gdata.jar" includes="com/google/**/*.class"/>
+        <path id="jar-all.files">
+            <fileset dir="${modules.dir}" includes="*.jar"/>
+        </path>
+        <pathconvert property="jar-all.files.string" refid="jar-direct.files" pathsep=" "/>
         <exec executable="jdeps" dir="${modules.dir}">
-            <arg line="-dotoutput dots *.jar"/>
+            <arg line="-dotoutput dots"/>
+            <arg line="--multi-release 11"/>
+            <arg line="${jar-all.files.string}" />
         </exec>
         <exec executable="dot" dir="${modules.dir}/dots">
             <arg line="-O -Tpng summary.dot"/>
@@ -1044,12 +1072,19 @@ Build-Date: ${build.tstamp}
         <ivy:cachefileset log="download-only" setid="runtime.fileset" conf="runtime"/>
         <ivy:cachepath log="download-only" pathid="test.path" conf="test"/>
     </target>
-    <target name="extract-libraries" depends="resolve" description="extract libraries to build dir">
+    <target name="extract-libraries" depends="resolve" description="Extract libraries to build dir">
         <unzip dest="${build.dir}">
             <fileset refid="runtime.fileset"/>
             <patternset>
                 <exclude name="META-INF/*"/>
                 <exclude name="META-INF/maven/**"/>
+                <exclude name="META-INF/resources/webjars/tag2link/*/LICENSE"/>
+                <exclude name="META-INF/resources/webjars/tag2link/*/README.md"/>
+                <exclude name="META-INF/resources/webjars/tag2link/*/build.js"/>
+                <exclude name="META-INF/resources/webjars/tag2link/*/package.json"/>
+                <exclude name="META-INF/resources/webjars/tag2link/*/schema.json"/>
+                <exclude name="META-INF/resources/webjars/tag2link/*/tag2link.sophox.sparql"/>
+                <exclude name="META-INF/resources/webjars/tag2link/*/tag2link.wikidata.sparql"/>
                 <exclude name="META-INF/versions/**"/>
                 <exclude name="*"/>
                 <exclude name="org/openstreetmap/gui/jmapviewer/Demo*"/>
@@ -1064,7 +1099,6 @@ Build-Date: ${build.tstamp}
                 <exclude name="com/drew/imaging/mp3/**"/>
                 <exclude name="com/drew/imaging/mp4/**"/>
                 <exclude name="com/drew/imaging/pcx/**"/>
-                <exclude name="com/drew/imaging/png/**"/>
                 <exclude name="com/drew/imaging/psd/**"/>
                 <exclude name="com/drew/imaging/quicktime/**"/>
                 <exclude name="com/drew/imaging/raf/**"/>
@@ -1081,10 +1115,14 @@ Build-Date: ${build.tstamp}
                 <exclude name="com/drew/metadata/mp3/**"/>
                 <exclude name="com/drew/metadata/mp4/**"/>
                 <exclude name="com/drew/metadata/pcx/**"/>
-                <exclude name="com/drew/metadata/png/**"/>
                 <exclude name="com/drew/metadata/wav/**"/>
                 <exclude name="com/drew/metadata/webp/**"/>
                 <exclude name="com/drew/tools/**"/>
+                <exclude name="com/kitfox/svg/app/ant/**"/>
+                <exclude name="com/kitfox/svg/app/*Dialog*"/>
+                <exclude name="com/kitfox/svg/app/*Frame*"/>
+                <exclude name="com/kitfox/svg/app/*Player*"/>
+                <exclude name="com/kitfox/svg/app/*Viewer*"/>
                 <exclude name="org/apache/commons/compress/PasswordRequiredException*"/>
                 <exclude name="org/apache/commons/compress/archivers/**"/>
                 <exclude name="org/apache/commons/compress/changes/**"/>
@@ -1104,6 +1142,9 @@ Build-Date: ${build.tstamp}
                 <exclude name="org/apache/commons/compress/compressors/xz/XZUtils*"/>
                 <exclude name="org/apache/commons/compress/compressors/z/**"/>
                 <exclude name="org/apache/commons/compress/compressors/zstandard/**"/>
+                <exclude name="org/apache/commons/compress/java/util/jar/Pack200*"/>
+                <exclude name="org/apache/commons/compress/harmony/pack200/**"/>
+                <exclude name="org/apache/commons/compress/harmony/unpack200/**"/>
                 <exclude name="org/apache/commons/compress/parallel/**"/>
                 <exclude name="org/apache/commons/compress/utils/ArchiveUtils*"/>
                 <exclude name="org/apache/commons/jcs3/auxiliary/disk/jdbc/**"/>
@@ -1116,7 +1157,7 @@ Build-Date: ${build.tstamp}
             </patternset>
         </unzip>
     </target>
-    <target name="sources" description="Generates jar file of JOSM source files and its dependencies" depends="init,epsg,resolve">
+    <target name="sources" description="Generate jar file of JOSM source files and its dependencies" depends="init,epsg,resolve">
         <ivy:cachefileset log="download-only" setid="sources.fileset" conf="sources"/>
         <jar destfile="${dist-sources.jar}" level="${clevel}">
             <zipgroupfileset refid="sources.fileset"/>
@@ -1129,10 +1170,14 @@ Build-Date: ${build.tstamp}
         <ivy:retrieve pattern="${lib.dir}/[conf]/[artifact]-[type].[ext]" conf="compile,runtime,sources,test"/>
         <ivy:retrieve pattern="${lib.dir}/tools/[artifact]-[type].[ext]" conf="javacc,checkstyle,pmd,spotbugs,errorprone" file="${tools.ivy}"/>
     </target>
-    <target name="ivy-report" description="Generates Ivy reports of dependency resolving" depends="resolve">
+    <target name="ivy-report" description="Generate Ivy reports of dependency resolving" depends="resolve">
         <ivy:report todir="${tools.dir}/ivy-report" graph="false"/>
     </target>
     <target name="ivy-checkdepsupdate" description="Display dependency updates on the console" depends="resolve">
+        <ivy:resolve log="quiet" file="${tools.ivy}" keep="true" conf="*"/>
+        <ivy:checkdepsupdate/>
+        <echo message="${line.separator}"/>
+        <ivy:resolve log="quiet" file="${base.dir}/ivy.xml" keep="true" conf="*"/>
         <ivy:checkdepsupdate/>
     </target>
     <target name="api-dependency-tree" description="Displays Ivy dependency tree for JOSM API" depends="resolve">

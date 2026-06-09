@@ -1,30 +1,21 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.download;
 
-import org.junit.Rule;
-import org.junit.Test;
 import org.openstreetmap.josm.data.Bounds;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests of {@link BookmarkSelection} class.
  */
-public class BookmarkSelectionTest {
-
-    /**
-     * Setup tests
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences();
-
+@BasicPreferences
+class BookmarkSelectionTest {
     /**
      * Test for {@link BookmarkSelection#BookmarkSelection}.
      */
     @Test
-    public void testBookmarkSelection() {
+    void testBookmarkSelection() {
         BookmarkSelection sel = new BookmarkSelection();
         sel.addGui(null);
         sel.setDownloadArea(null);

@@ -58,6 +58,8 @@ import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
+import jakarta.annotation.Nullable;
+
 /**
  * Class to process configuration changes stored in XML
  * can be used to modify preferences, store/delete files in .josm folders etc
@@ -130,11 +132,10 @@ public final class CustomConfigurator {
      * @param unzip - if true file wil be unzipped and deleted after download
      */
     public static void processDownloadOperation(String address, String path, String parentDir, boolean mkdir, boolean unzip) {
-        String dir = parentDir;
         if (path.contains("..") || path.startsWith("/") || path.contains(":")) {
             return; // some basic protection
         }
-        File fOut = new File(dir, path);
+        File fOut = new File(parentDir, path);
         DownloadFileTask downloadFileTask = new DownloadFileTask(MainApplication.getMainFrame(), address, fOut, mkdir, unzip);
 
         MainApplication.worker.submit(downloadFileTask);
@@ -148,7 +149,7 @@ public final class CustomConfigurator {
      * @param text - message to display, HTML allowed
      */
     public static void messageBox(String type, String text) {
-        char c = (type == null || type.isEmpty() ? "plain" : type).charAt(0);
+        char c = (Utils.isEmpty(type) ? "plain" : type).charAt(0);
         MainFrame parent = MainApplication.getMainFrame();
         switch (c) {
             case 'i': JOptionPane.showMessageDialog(parent, text, tr("Information"), JOptionPane.INFORMATION_MESSAGE); break;
@@ -176,6 +177,12 @@ public final class CustomConfigurator {
         }
     }
 
+    /**
+     * Ask the user for text
+     * @param text The message for the user
+     * @return The text the user entered
+     */
+    @Nullable
     public static String askForText(String text) {
         String s = JOptionPane.showInputDialog(MainApplication.getMainFrame(), text, tr("Enter text"), JOptionPane.QUESTION_MESSAGE);
         return s != null ? s.trim() : null;
@@ -185,7 +192,7 @@ public final class CustomConfigurator {
      * This function exports part of user preferences to specified file.
      * Default values are not saved.
      * @param filename - where to export
-     * @param append - if true, resulting file cause appending to exuisting preferences
+     * @param append - if true, resulting file cause appending to existing preferences
      * @param keys - which preferences keys you need to export ("imagery.entries", for example)
      */
     public static void exportPreferencesKeysToFile(String filename, boolean append, String... keys) {
@@ -199,8 +206,8 @@ public final class CustomConfigurator {
      * Default values are not saved.
      * Preference keys matching specified pattern are saved
      * @param fileName - where to export
-     * @param append - if true, resulting file cause appending to exuisting preferences
-     * @param pattern - Regexp pattern forh preferences keys you need to export (".*imagery.*", for example)
+     * @param append - if true, resulting file cause appending to existing preferences
+     * @param pattern - Regexp pattern for preferences keys you need to export (".*imagery.*", for example)
      */
     public static void exportPreferencesKeysByPatternToFile(String fileName, boolean append, String pattern) {
         Map<String, Setting<?>> allSettings = Preferences.main().getAllSettings();
@@ -261,6 +268,11 @@ public final class CustomConfigurator {
         }
     }
 
+    /**
+     * Delete a file
+     * @param path The path to delete inside the base directory
+     * @param base The base directory for the path
+     */
     public static void deleteFile(String path, String base) {
         String dir = getDirectoryByAbbr(base);
         if (dir == null) {
@@ -277,6 +289,10 @@ public final class CustomConfigurator {
         }
     }
 
+    /**
+     * Delete a file or a directory
+     * @param f The file or directory to delete
+     */
     public static void deleteFileOrDirectory(File f) {
         if (f.isDirectory()) {
             File[] files = f.listFiles();
@@ -293,6 +309,12 @@ public final class CustomConfigurator {
 
     private static boolean busy;
 
+    /**
+     * Perform install, uninstall, and deletion operations on plugins
+     * @param install The {@code ;} delimited list of plugins to install
+     * @param uninstall The {@code ;} delimited list of plugins to uninstall
+     * @param delete The {@code ;} delimited list of plugins to delete
+     */
     public static void pluginOperation(String install, String uninstall, String delete) {
         final List<String> installList = new ArrayList<>();
         final List<String> removeList = new ArrayList<>();
@@ -376,6 +398,9 @@ public final class CustomConfigurator {
         return dir;
     }
 
+    /**
+     * Read preferences from xml files
+     */
     public static class XMLCommandProcessor {
 
         private final Preferences mainPrefs;
@@ -384,6 +409,10 @@ public final class CustomConfigurator {
 
         private boolean lastV; // last If condition result
 
+        /**
+         * Read preferences from an XML file
+         * @param file The file to read custom preferences from
+         */
         public void openAndReadXML(File file) {
             PreferencesUtils.log("-- Reading custom preferences from " + file.getAbsolutePath() + " --");
             try {
@@ -397,6 +426,10 @@ public final class CustomConfigurator {
             }
         }
 
+        /**
+         * Read custom preferences from an XML {@link InputStream}
+         * @param is The {@link InputStream} to read from
+         */
         public void openAndReadXML(InputStream is) {
             try {
                 Document document = XmlUtils.parseSafeDOM(is);
@@ -409,6 +442,10 @@ public final class CustomConfigurator {
             PreferencesUtils.log("-- Reading complete --");
         }
 
+        /**
+         * Create a new {@link XMLCommandProcessor}
+         * @param mainPrefs The preferences to modify with custom preferences
+         */
         public XMLCommandProcessor(Preferences mainPrefs) {
             this.mainPrefs = mainPrefs;
             PreferencesUtils.resetLog();
@@ -429,7 +466,7 @@ public final class CustomConfigurator {
                 String elementName = item.getNodeName();
                 Element elem = (Element) item;
 
-                switch(elementName) {
+                switch (elementName) {
                 case "var":
                     setVar(elem.getAttribute("name"), evalVars(elem.getAttribute("value")));
                     break;
@@ -548,20 +585,25 @@ public final class CustomConfigurator {
             String text = evalVars(elem.getAttribute("text"));
             String locText = evalVars(elem.getAttribute(LanguageInfo.getJOSMLocaleCode()+".text"));
             if (!locText.isEmpty()) text = locText;
-            String var = elem.getAttribute("var");
-            if (var.isEmpty()) var = "result";
+            String varAttribute = elem.getAttribute("var");
+            if (varAttribute.isEmpty()) varAttribute = "result";
 
             String input = evalVars(elem.getAttribute("input"));
             if ("true".equals(input)) {
-                setVar(var, askForText(text));
+                setVar(varAttribute, askForText(text));
             } else {
                 String opts = evalVars(elem.getAttribute("options"));
                 String locOpts = evalVars(elem.getAttribute(LanguageInfo.getJOSMLocaleCode()+".options"));
                 if (!locOpts.isEmpty()) opts = locOpts;
-                setVar(var, String.valueOf(askForOption(text, opts)));
+                setVar(varAttribute, String.valueOf(askForOption(text, opts)));
             }
         }
 
+        /**
+         * Set a variable in the environment
+         * @param name The name of the environment variable
+         * @param value The value for the environment variable
+         */
         public void setVar(String name, String value) {
             environment.put(name, value);
         }
@@ -604,7 +646,7 @@ public final class CustomConfigurator {
          * @return evaluation result
          */
         private String evalVars(String s) {
-            Matcher mr = Pattern.compile("\\$\\{(?<identifier>[^\\}]*)\\}").matcher(s);
+            Matcher mr = Pattern.compile("\\$\\{(?<identifier>[^}]*)}").matcher(s);
             StringBuffer sb = new StringBuffer();
             while (mr.find()) {
                 String identifier = mr.group("identifier");

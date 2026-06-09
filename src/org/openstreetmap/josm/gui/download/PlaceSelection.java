@@ -6,6 +6,7 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Dimension;
+import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.MouseAdapter;
@@ -82,10 +83,10 @@ public class PlaceSelection implements DownloadSelection {
     private final JosmComboBox<Server> serverComboBox = new JosmComboBox<>(SERVERS);
 
     private static class Server {
-        public final String name;
-        public final BiFunction<String, Collection<SearchResult>, URL> urlFunction;
-        public final String thirdcol;
-        public final String fourthcol;
+        final String name;
+        final BiFunction<String, Collection<SearchResult>, URL> urlFunction;
+        final String thirdcol;
+        final String fourthcol;
 
         Server(String n, BiFunction<String, Collection<SearchResult>, URL> u, String t, String f) {
             name = n;
@@ -105,7 +106,7 @@ public class PlaceSelection implements DownloadSelection {
         JPanel panel = new JPanel(new GridBagLayout());
 
         lpanel.add(new JLabel(tr("Choose the server for searching:")), GBC.std(0, 0).weight(0, 0).insets(0, 0, 5, 0));
-        lpanel.add(serverComboBox, GBC.std(1, 0).fill(GBC.HORIZONTAL));
+        lpanel.add(serverComboBox, GBC.std(1, 0).fill(GridBagConstraints.HORIZONTAL));
         String s = Config.getPref().get("namefinder.server", SERVERS[0].name);
         for (int i = 0; i < SERVERS.length; ++i) {
             if (SERVERS[i].name.equals(s)) {
@@ -116,10 +117,10 @@ public class PlaceSelection implements DownloadSelection {
 
         cbSearchExpression = new HistoryComboBox();
         cbSearchExpression.setToolTipText(tr("Enter a place name to search for"));
-        cbSearchExpression.setPossibleItemsTopDown(Config.getPref().getList(HISTORY_KEY, Collections.emptyList()));
-        lpanel.add(cbSearchExpression, GBC.std(1, 1).fill(GBC.HORIZONTAL));
+        cbSearchExpression.getModel().prefs().load(HISTORY_KEY);
+        lpanel.add(cbSearchExpression, GBC.std(1, 1).fill(GridBagConstraints.HORIZONTAL));
 
-        panel.add(lpanel, GBC.std().fill(GBC.HORIZONTAL).insets(5, 5, 0, 5));
+        panel.add(lpanel, GBC.std().fill(GridBagConstraints.HORIZONTAL).insets(5, 5, 0, 5));
         SearchAction searchAction = new SearchAction();
         JButton btnSearch = new JButton(searchAction);
         cbSearchExpression.getEditorComponent().getDocument().addDocumentListener(searchAction);
@@ -132,7 +133,7 @@ public class PlaceSelection implements DownloadSelection {
 
     /**
      * Adds a new tab to the download dialog in JOSM.
-     *
+     * <p>
      * This method is, for all intents and purposes, the constructor for this class.
      */
     @Override
@@ -191,10 +192,10 @@ public class PlaceSelection implements DownloadSelection {
         @Override
         public void actionPerformed(ActionEvent e) {
             String searchExpression = cbSearchExpression.getText();
-            if (!isEnabled() || searchExpression.trim().isEmpty())
+            if (!isEnabled() || searchExpression.trim().isEmpty() || serverComboBox.getSelectedItem() == null)
                 return;
             cbSearchExpression.addCurrentItemToHistory();
-            Config.getPref().putList(HISTORY_KEY, cbSearchExpression.getHistory());
+            cbSearchExpression.getModel().prefs().save(HISTORY_KEY);
             Server server = (Server) serverComboBox.getSelectedItem();
             URL url = server.urlFunction.apply(searchExpression, isSearchMore ? model.getData() : Collections.emptyList());
             NameQueryTask task = new NameQueryTask(url, data -> {
@@ -297,13 +298,23 @@ public class PlaceSelection implements DownloadSelection {
                             tr("Bad response"),
                             JOptionPane.WARNING_MESSAGE, null
                     ));
+                    generateLastException(e);
                 }
             } catch (IOException | ParserConfigurationException e) {
-                if (!canceled) {
-                    OsmTransferException ex = new OsmTransferException(e);
-                    ex.setUrl(url.toString());
-                    lastException = ex;
-                }
+                generateLastException(e);
+            }
+        }
+
+        /**
+         * Generate an {@link OsmTransferException} that will be stored in {@link #lastException} if the operation is
+         * not cancelled.
+         * @param throwable The throwable to store as an {@link OsmTransferException}
+         */
+        private void generateLastException(Throwable throwable) {
+            if (!canceled) {
+                OsmTransferException ex = new OsmTransferException(throwable);
+                ex.setUrl(url.toString());
+                lastException = ex;
             }
         }
     }
@@ -336,6 +347,10 @@ public class PlaceSelection implements DownloadSelection {
             fireTableDataChanged();
         }
 
+        /**
+         * Add data to the table
+         * @param data The data to add
+         */
         public void addData(List<SearchResult> data) {
             this.data.addAll(data);
             fireTableDataChanged();
@@ -402,6 +417,11 @@ public class PlaceSelection implements DownloadSelection {
             addColumn(col4);
         }
 
+        /**
+         * Set the header column values for the third and fourth columns
+         * @param third The new header for the third column
+         * @param fourth The new header for the fourth column
+         */
         public void setHeadlines(String third, String fourth) {
             col3.setHeaderValue(third);
             col4.setHeaderValue(fourth);
@@ -475,7 +495,7 @@ public class PlaceSelection implements DownloadSelection {
             if (value == null)
                 return this;
             SearchResult sr = (SearchResult) value;
-            switch(column) {
+            switch (column) {
             case 0:
                 setText(sr.getName());
                 break;

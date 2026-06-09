@@ -1,25 +1,28 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.osm.search;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Set;
 
-import org.junit.Assert;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.DataSet;
@@ -41,26 +44,18 @@ import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetMenu;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetType;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPresets;
 import org.openstreetmap.josm.gui.tagging.presets.items.Key;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-import org.openstreetmap.josm.tools.Logging;
-import org.openstreetmap.josm.tools.date.DateUtils;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import nl.jqno.equalsverifier.EqualsVerifier;
 import nl.jqno.equalsverifier.Warning;
 
 /**
  * Unit tests for class {@link SearchCompiler}.
  */
-public class SearchCompilerTest {
-
-    /**
-     * We need prefs for this. We access preferences when creating OSM primitives.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences().timeout(30000);
-
+// We need prefs for this. We access preferences when creating OSM primitives
+@BasicPreferences
+@Timeout(30)
+class SearchCompilerTest {
     private static final class SearchContext {
         final DataSet ds = new DataSet();
         final Node n1 = new Node(LatLon.ZERO);
@@ -94,11 +89,11 @@ public class SearchCompilerTest {
 
         private void match(OsmPrimitive p, boolean cond) {
             if (cond) {
-                assertTrue(p.toString(), m.match(p));
-                assertFalse(p.toString(), n.match(p));
+                assertTrue(m.match(p), p::toString);
+                assertFalse(n.match(p), p::toString);
             } else {
-                assertFalse(p.toString(), m.match(p));
-                assertTrue(p.toString(), n.match(p));
+                assertFalse(m.match(p), p::toString);
+                assertTrue(n.match(p), p::toString);
             }
         }
     }
@@ -108,7 +103,7 @@ public class SearchCompilerTest {
      * @throws SearchParseError if an error has been encountered while compiling
      */
     @Test
-    public void testAny() throws SearchParseError {
+    void testAny() throws SearchParseError {
         final SearchCompiler.Match c = SearchCompiler.compile("foo");
         assertTrue(c.match(OsmUtils.createPrimitive("node foobar=true")));
         assertTrue(c.match(OsmUtils.createPrimitive("node name=hello-foo-xy")));
@@ -121,7 +116,7 @@ public class SearchCompilerTest {
      * @throws SearchParseError if an error has been encountered while compiling
      */
     @Test
-    public void testEquals() throws SearchParseError {
+    void testEquals() throws SearchParseError {
         final SearchCompiler.Match c = SearchCompiler.compile("foo=bar");
         assertFalse(c.match(OsmUtils.createPrimitive("node foobar=true")));
         assertTrue(c.match(OsmUtils.createPrimitive("node foo=bar")));
@@ -135,7 +130,7 @@ public class SearchCompilerTest {
      * @throws SearchParseError if an error has been encountered while compiling
      */
     @Test
-    public void testRegexp() throws SearchParseError {
+    void testRegexp() throws SearchParseError {
         final SearchCompiler.Match c = SearchCompiler.compile("foo~[Bb]a[rz]");
         assertFalse(c.match(OsmUtils.createPrimitive("node foobar=true")));
         assertFalse(c.match(OsmUtils.createPrimitive("node foo=foo")));
@@ -146,11 +141,27 @@ public class SearchCompilerTest {
     }
 
     /**
+     * Search by case-sensitive regular expression.
+     * @throws SearchParseError if an error has been encountered while compiling
+     */
+    @Test
+    void testRegexpCaseSensitive() throws SearchParseError {
+        SearchSetting searchSetting = new SearchSetting();
+        searchSetting.regexSearch = true;
+        searchSetting.text = "foo=\"^bar$\"";
+        assertTrue(SearchCompiler.compile(searchSetting).match(OsmUtils.createPrimitive("node foo=bar")));
+        assertTrue(SearchCompiler.compile(searchSetting).match(OsmUtils.createPrimitive("node foo=BAR")));
+        searchSetting.caseSensitive = true;
+        assertTrue(SearchCompiler.compile(searchSetting).match(OsmUtils.createPrimitive("node foo=bar")));
+        assertFalse(SearchCompiler.compile(searchSetting).match(OsmUtils.createPrimitive("node foo=BAR")));
+    }
+
+    /**
      * Search by comparison.
      * @throws SearchParseError if an error has been encountered while compiling
      */
     @Test
-    public void testCompare() throws SearchParseError {
+    void testCompare() throws SearchParseError {
         final SearchCompiler.Match c1 = SearchCompiler.compile("start_date>1950");
         assertTrue(c1.match(OsmUtils.createPrimitive("node start_date=1950-01-01")));
         assertTrue(c1.match(OsmUtils.createPrimitive("node start_date=1960")));
@@ -190,7 +201,7 @@ public class SearchCompilerTest {
      * @throws SearchParseError if an error has been encountered while compiling
      */
     @Test
-    public void testNth() throws SearchParseError {
+    void testNth() throws SearchParseError {
         final DataSet dataSet = new DataSet();
         final Way way = new Way();
         final Node node0 = new Node(new LatLon(1, 1));
@@ -218,7 +229,7 @@ public class SearchCompilerTest {
      * @throws SearchParseError if an error has been encountered while compiling
      */
     @Test
-    public void testNthParseNegative() throws SearchParseError {
+    void testNthParseNegative() throws SearchParseError {
         assertEquals("Nth{nth=-1, modulo=false}", SearchCompiler.compile("nth:-1").toString());
     }
 
@@ -227,33 +238,33 @@ public class SearchCompilerTest {
      * @throws SearchParseError if an error has been encountered while compiling
      */
     @Test
-    public void testModified() throws SearchParseError {
+    void testModified() throws SearchParseError {
         SearchContext sc = new SearchContext("modified");
         // Not modified but new
         for (OsmPrimitive p : new OsmPrimitive[]{sc.n1, sc.w1, sc.r1}) {
-            assertFalse(p.toString(), p.isModified());
-            assertTrue(p.toString(), p.isNewOrUndeleted());
+            assertFalse(p.isModified(), p::toString);
+            assertTrue(p.isNewOrUndeleted(), p::toString);
             sc.match(p, true);
         }
         // Modified and new
         for (OsmPrimitive p : new OsmPrimitive[]{sc.n1, sc.w1, sc.r1}) {
             p.setModified(true);
-            assertTrue(p.toString(), p.isModified());
-            assertTrue(p.toString(), p.isNewOrUndeleted());
+            assertTrue(p.isModified(), p::toString);
+            assertTrue(p.isNewOrUndeleted(), p::toString);
             sc.match(p, true);
         }
         // Modified but not new
         for (OsmPrimitive p : new OsmPrimitive[]{sc.n1, sc.w1, sc.r1}) {
             p.setOsmId(1, 1);
-            assertTrue(p.toString(), p.isModified());
-            assertFalse(p.toString(), p.isNewOrUndeleted());
+            assertTrue(p.isModified(), p::toString);
+            assertFalse(p.isNewOrUndeleted(), p::toString);
             sc.match(p, true);
         }
         // Not modified nor new
         for (OsmPrimitive p : new OsmPrimitive[]{sc.n2, sc.w2, sc.r2}) {
             p.setOsmId(2, 2);
-            assertFalse(p.toString(), p.isModified());
-            assertFalse(p.toString(), p.isNewOrUndeleted());
+            assertFalse(p.isModified(), p::toString);
+            assertFalse(p.isNewOrUndeleted(), p::toString);
             sc.match(p, false);
         }
     }
@@ -263,17 +274,17 @@ public class SearchCompilerTest {
      * @throws SearchParseError if an error has been encountered while compiling
      */
     @Test
-    public void testSelected() throws SearchParseError {
+    void testSelected() throws SearchParseError {
         SearchContext sc = new SearchContext("selected");
         // Not selected
         for (OsmPrimitive p : new OsmPrimitive[]{sc.n1, sc.w1, sc.r1}) {
-            assertFalse(p.toString(), p.isSelected());
+            assertFalse(p.isSelected(), p::toString);
             sc.match(p, false);
         }
         // Selected
         for (OsmPrimitive p : new OsmPrimitive[]{sc.n2, sc.w2, sc.r2}) {
             sc.ds.addSelected(p);
-            assertTrue(p.toString(), p.isSelected());
+            assertTrue(p.isSelected(), p::toString);
             sc.match(p, true);
         }
     }
@@ -283,11 +294,11 @@ public class SearchCompilerTest {
      * @throws SearchParseError if an error has been encountered while compiling
      */
     @Test
-    public void testIncomplete() throws SearchParseError {
+    void testIncomplete() throws SearchParseError {
         SearchContext sc = new SearchContext("incomplete");
         // Not incomplete
         for (OsmPrimitive p : new OsmPrimitive[]{sc.n1, sc.w1, sc.r1}) {
-            assertFalse(p.toString(), p.isIncomplete());
+            assertFalse(p.isIncomplete(), p::toString);
             sc.match(p, false);
         }
         // Incomplete
@@ -299,7 +310,7 @@ public class SearchCompilerTest {
         rd.setIncomplete(true);
         sc.r2.load(rd);
         for (OsmPrimitive p : new OsmPrimitive[]{sc.n2, sc.w2, sc.r2}) {
-            assertTrue(p.toString(), p.isIncomplete());
+            assertTrue(p.isIncomplete(), p::toString);
             sc.match(p, true);
         }
     }
@@ -309,17 +320,17 @@ public class SearchCompilerTest {
      * @throws SearchParseError if an error has been encountered while compiling
      */
     @Test
-    public void testUntagged() throws SearchParseError {
+    void testUntagged() throws SearchParseError {
         SearchContext sc = new SearchContext("untagged");
         // Untagged
         for (OsmPrimitive p : new OsmPrimitive[]{sc.n1, sc.w1, sc.r1}) {
-            assertFalse(p.toString(), p.isTagged());
+            assertFalse(p.isTagged(), p::toString);
             sc.match(p, true);
         }
         // Tagged
         for (OsmPrimitive p : new OsmPrimitive[]{sc.n2, sc.w2, sc.r2}) {
             p.put("foo", "bar");
-            assertTrue(p.toString(), p.isTagged());
+            assertTrue(p.isTagged(), p::toString);
             sc.match(p, false);
         }
     }
@@ -329,12 +340,12 @@ public class SearchCompilerTest {
      * @throws SearchParseError if an error has been encountered while compiling
      */
     @Test
-    public void testClosed() throws SearchParseError {
+    void testClosed() throws SearchParseError {
         SearchContext sc = new SearchContext("closed");
         // Closed
         sc.w1.addNode(sc.n1);
         for (Way w : new Way[]{sc.w1}) {
-            assertTrue(w.toString(), w.isClosed());
+            assertTrue(w.isClosed(), w::toString);
             sc.match(w, true);
         }
         // Unclosed
@@ -348,17 +359,17 @@ public class SearchCompilerTest {
      * @throws SearchParseError if an error has been encountered while compiling
      */
     @Test
-    public void testNew() throws SearchParseError {
+    void testNew() throws SearchParseError {
         SearchContext sc = new SearchContext("new");
         // New
         for (OsmPrimitive p : new OsmPrimitive[]{sc.n1, sc.w1, sc.r1}) {
-            assertTrue(p.toString(), p.isNew());
+            assertTrue(p.isNew(), p::toString);
             sc.match(p, true);
         }
         // Not new
         for (OsmPrimitive p : new OsmPrimitive[]{sc.n2, sc.w2, sc.r2}) {
             p.setOsmId(2, 2);
-            assertFalse(p.toString(), p.isNew());
+            assertFalse(p.isNew(), p::toString);
             sc.match(p, false);
         }
     }
@@ -368,7 +379,7 @@ public class SearchCompilerTest {
      * @throws SearchParseError if an error has been encountered while compiling
      */
     @Test
-    public void testTypeNode() throws SearchParseError {
+    void testTypeNode() throws SearchParseError {
         final SearchContext sc = new SearchContext("type:node");
         for (OsmPrimitive p : new OsmPrimitive[]{sc.n1, sc.n2, sc.w1, sc.w2, sc.r1, sc.r2}) {
             sc.match(p, OsmPrimitiveType.NODE.equals(p.getType()));
@@ -380,7 +391,7 @@ public class SearchCompilerTest {
      * @throws SearchParseError if an error has been encountered while compiling
      */
     @Test
-    public void testTypeWay() throws SearchParseError {
+    void testTypeWay() throws SearchParseError {
         final SearchContext sc = new SearchContext("type:way");
         for (OsmPrimitive p : new OsmPrimitive[]{sc.n1, sc.n2, sc.w1, sc.w2, sc.r1, sc.r2}) {
             sc.match(p, OsmPrimitiveType.WAY.equals(p.getType()));
@@ -392,7 +403,7 @@ public class SearchCompilerTest {
      * @throws SearchParseError if an error has been encountered while compiling
      */
     @Test
-    public void testTypeRelation() throws SearchParseError {
+    void testTypeRelation() throws SearchParseError {
         final SearchContext sc = new SearchContext("type:relation");
         for (OsmPrimitive p : new OsmPrimitive[]{sc.n1, sc.n2, sc.w1, sc.w2, sc.r1, sc.r2}) {
             sc.match(p, OsmPrimitiveType.RELATION.equals(p.getType()));
@@ -404,7 +415,7 @@ public class SearchCompilerTest {
      * @throws SearchParseError if an error has been encountered while compiling
      */
     @Test
-    public void testUser() throws SearchParseError {
+    void testUser() throws SearchParseError {
         final SearchContext foobar = new SearchContext("user:foobar");
         foobar.n1.setUser(User.createLocalUser("foobar"));
         foobar.match(foobar.n1, true);
@@ -417,10 +428,9 @@ public class SearchCompilerTest {
 
     /**
      * Compiles "foo type bar" and tests the parse error message
-     * @throws SearchParseError always
      */
     @Test
-    public void testFooTypeBar() throws SearchParseError {
+    void testFooTypeBar() {
         Exception e = assertThrows(SearchParseError.class, () -> SearchCompiler.compile("foo type bar"));
         assertEquals("<html>Expecting <code>:</code> after <i>type</i></html>", e.getMessage());
     }
@@ -430,15 +440,15 @@ public class SearchCompilerTest {
      * @throws SearchParseError if an error has been encountered while compiling
      */
     @Test
-    public void testTimestamp() throws SearchParseError {
+    void testTimestamp() throws SearchParseError {
         final Node n1 = new Node();
-        n1.setTimestamp(DateUtils.fromString("2010-01-22"));
+        n1.setInstant(Instant.parse("2010-01-22T00:00:00Z"));
         assertTrue(SearchCompiler.compile("timestamp:2010/2011").match(n1));
         assertTrue(SearchCompiler.compile("timestamp:2010-01/2011").match(n1));
         assertTrue(SearchCompiler.compile("timestamp:2010-01-22/2011").match(n1));
         assertFalse(SearchCompiler.compile("timestamp:2010-01-23/2011").match(n1));
         assertFalse(SearchCompiler.compile("timestamp:2010/2010-01-21").match(n1));
-        n1.setTimestamp(DateUtils.fromString("2016-01-22"));
+        n1.setInstant(Instant.parse("2016-01-22T00:00:00Z"));
         assertFalse(SearchCompiler.compile("timestamp:2010/2011").match(n1));
     }
 
@@ -447,7 +457,7 @@ public class SearchCompilerTest {
      * @throws SearchParseError if an error has been encountered while compiling
      */
     @Test
-    public void testBooleanLogic() throws SearchParseError {
+    void testBooleanLogic() throws SearchParseError {
         final SearchCompiler.Match c1 = SearchCompiler.compile("foo AND bar AND baz");
         assertTrue(c1.match(OsmUtils.createPrimitive("node foobar=baz")));
         assertEquals("foo && bar && baz", c1.toString());
@@ -470,7 +480,7 @@ public class SearchCompilerTest {
      * @throws SearchParseError if an error has been encountered while compiling
      */
     @Test
-    public void testBuildSearchStringForTag() throws SearchParseError {
+    void testBuildSearchStringForTag() throws SearchParseError {
         final Tag tag1 = new Tag("foo=", "bar\"");
         final Tag tag2 = new Tag("foo=", "=bar");
         final String search1 = SearchCompiler.buildSearchStringForTag(tag1.getKey(), tag1.getValue());
@@ -485,15 +495,14 @@ public class SearchCompilerTest {
 
     /**
      * Non-regression test for <a href="https://josm.openstreetmap.de/ticket/13870">Bug #13870</a>.
-     * @throws SearchParseError always
      */
-    @Test(expected = SearchParseError.class)
-    public void testPattern13870() throws SearchParseError {
+    @Test
+    void testPattern13870() {
         // https://bugs.openjdk.java.net/browse/JI-9044959
         SearchSetting setting = new SearchSetting();
         setting.regexSearch = true;
         setting.text = "[";
-        SearchCompiler.compile(setting);
+        assertThrows(SearchParseError.class, () -> SearchCompiler.compile(setting));
     }
 
     /**
@@ -501,21 +510,20 @@ public class SearchCompilerTest {
      * @throws Exception never
      */
     @Test
-    public void testTicket14217() throws Exception {
+    void testTicket14217() throws Exception {
         assertNotNull(SearchCompiler.compile(new String(Files.readAllBytes(
                 Paths.get(TestUtils.getRegressionDataFile(14217, "filter.txt"))), StandardCharsets.UTF_8)));
     }
 
     /**
      * Non-regression test for <a href="https://josm.openstreetmap.de/ticket/17112">Bug #17112</a>.
-     * @throws SearchParseError always
      */
-    @Test(expected = SearchParseError.class)
-    public void testTicket17112() throws SearchParseError {
+    @Test
+    void testTicket17112() {
         SearchSetting setting = new SearchSetting();
         setting.mapCSSSearch = true;
         setting.text = "w"; // partial input
-        SearchCompiler.compile(setting);
+        assertThrows(SearchParseError.class, () -> SearchCompiler.compile(setting));
     }
 
     /**
@@ -523,7 +531,7 @@ public class SearchCompilerTest {
      * @throws SearchParseError never
      */
     @Test
-    public void testEmptyValues15943() throws SearchParseError {
+    void testEmptyValues15943() throws SearchParseError {
         Match matcher = SearchCompiler.compile("access=");
         assertTrue(matcher.match(new Tag("access", null)));
         assertTrue(matcher.match(new Tag("access", "")));
@@ -535,7 +543,7 @@ public class SearchCompilerTest {
      * @throws SearchParseError never
      */
     @Test
-    public void testKeyExists15943() throws SearchParseError {
+    void testKeyExists15943() throws SearchParseError {
         Match matcher = SearchCompiler.compile("surface:");
         assertTrue(matcher.match(new Tag("surface", "")));
         assertTrue(matcher.match(new Tag("surface", "wood")));
@@ -548,34 +556,32 @@ public class SearchCompilerTest {
      * Unit test of {@link SearchCompiler.ExactKeyValue.Mode} enum.
      */
     @Test
-    public void testEnumExactKeyValueMode() {
+    void testEnumExactKeyValueMode() {
         assertDoesNotThrow(() -> TestUtils.superficialEnumCodeCoverage(ExactKeyValue.Mode.class));
     }
 
     /**
      * Robustness test for preset searching. Ensures that the query 'preset:' is not accepted.
-     * @throws SearchParseError always
      * @since 12464
      */
-    @Test(expected = SearchParseError.class)
-    public void testPresetSearchMissingValue() throws SearchParseError {
+    @Test
+    void testPresetSearchMissingValue() {
         SearchSetting settings = new SearchSetting();
         settings.text = "preset:";
         settings.mapCSSSearch = false;
 
         TaggingPresets.readFromPreferences();
 
-        SearchCompiler.compile(settings);
+        assertThrows(SearchParseError.class, () -> SearchCompiler.compile(settings));
     }
 
     /**
      * Robustness test for preset searching. Validates that it is not possible to search for
      * non existing presets.
-     * @throws SearchParseError always
      * @since 12464
      */
-    @Test(expected = SearchParseError.class)
-    public void testPresetNotExist() throws SearchParseError {
+    @Test
+    void testPresetNotExist() {
         String testPresetName = "groupnamethatshouldnotexist/namethatshouldnotexist";
         SearchSetting settings = new SearchSetting();
         settings.text = "preset:" + testPresetName;
@@ -584,17 +590,16 @@ public class SearchCompilerTest {
         // load presets
         TaggingPresets.readFromPreferences();
 
-        SearchCompiler.compile(settings);
+        assertThrows(SearchParseError.class, () -> SearchCompiler.compile(settings));
     }
 
     /**
      * Robustness tests for preset searching. Ensures that combined preset names (having more than
      * 1 word) must be enclosed with " .
-     * @throws SearchParseError always
      * @since 12464
      */
-    @Test(expected = SearchParseError.class)
-    public void testPresetMultipleWords() throws SearchParseError {
+    @Test
+    void testPresetMultipleWords() {
         TaggingPreset testPreset = new TaggingPreset();
         testPreset.name = "Test Combined Preset Name";
         testPreset.group = new TaggingPresetMenu();
@@ -608,7 +613,7 @@ public class SearchCompilerTest {
         // load presets
         TaggingPresets.readFromPreferences();
 
-        SearchCompiler.compile(settings);
+        assertThrows(SearchParseError.class, () -> SearchCompiler.compile(settings));
     }
 
     /**
@@ -620,7 +625,7 @@ public class SearchCompilerTest {
      * @since 12464
      */
     @Test
-    public void testPresetLookup() throws SearchParseError, NoSuchFieldException, IllegalAccessException {
+    void testPresetLookup() throws SearchParseError, NoSuchFieldException, IllegalAccessException {
         TaggingPreset testPreset = new TaggingPreset();
         testPreset.name = "Test Preset Name";
         testPreset.group = new TaggingPresetMenu();
@@ -659,7 +664,7 @@ public class SearchCompilerTest {
      * @since 12464
      */
     @Test
-    public void testPresetLookupWildcard() throws SearchParseError, NoSuchFieldException, IllegalAccessException {
+    void testPresetLookupWildcard() throws SearchParseError, NoSuchFieldException, IllegalAccessException {
         TaggingPresetMenu group = new TaggingPresetMenu();
         group.name = "TestPresetGroup";
 
@@ -704,7 +709,7 @@ public class SearchCompilerTest {
      * @since 12464
      */
     @Test
-    public void testPreset() throws SearchParseError {
+    void testPreset() throws SearchParseError {
         final String presetName = "Test Preset Name";
         final String presetGroupName = "Test Preset Group";
         final String key = "test_key1";
@@ -739,21 +744,24 @@ public class SearchCompilerTest {
         }
     }
 
+    static Set<Class<? extends Match>> testEqualsContract() {
+        TestUtils.assumeWorkingEqualsVerifier();
+        final Set<Class<? extends Match>> matchers = TestUtils.getJosmSubtypes(Match.class);
+        assertTrue(matchers.size() >= 10, "There should be at least 10 matchers from JOSM core");
+        return matchers;
+    }
+
     /**
      * Unit test of methods {@link Match#equals} and {@link Match#hashCode}, including all subclasses.
+     * @param clazz The class to test
      */
-    @Test
-    public void testEqualsContract() {
-        TestUtils.assumeWorkingEqualsVerifier();
-        Set<Class<? extends Match>> matchers = TestUtils.getJosmSubtypes(Match.class);
-        Assert.assertTrue(matchers.size() >= 10); // if it finds less than 10 classes, something is broken
-        for (Class<?> c : matchers) {
-            Logging.debug(c.toString());
-            EqualsVerifier.forClass(c).usingGetClass()
-                .suppress(Warning.NONFINAL_FIELDS, Warning.INHERITED_DIRECTLY_FROM_OBJECT)
-                .withPrefabValues(TaggingPreset.class, newTaggingPreset("foo"), newTaggingPreset("bar"))
-                .verify();
-        }
+    @ParameterizedTest
+    @MethodSource
+    void testEqualsContract(Class<? extends Match> clazz) {
+        EqualsVerifier.forClass(clazz).usingGetClass()
+            .suppress(Warning.NONFINAL_FIELDS, Warning.INHERITED_DIRECTLY_FROM_OBJECT)
+            .withPrefabValues(TaggingPreset.class, newTaggingPreset("foo"), newTaggingPreset("bar"))
+            .verify();
     }
 
     private static TaggingPreset newTaggingPreset(String name) {
@@ -767,7 +775,7 @@ public class SearchCompilerTest {
      * @throws SearchParseError if an error has been encountered while compiling
      */
     @Test
-    public void testNodeCount() throws SearchParseError {
+    void testNodeCount() throws SearchParseError {
         final SearchContext sc = new SearchContext("nodes:2");
         sc.match(sc.n1, false);
         sc.match(sc.w1, true);
@@ -783,7 +791,7 @@ public class SearchCompilerTest {
      * @throws SearchParseError if an error has been encountered while compiling
      */
     @Test
-    public void testWayCount() throws SearchParseError {
+    void testWayCount() throws SearchParseError {
         final SearchContext sc = new SearchContext("ways:2");
         sc.match(sc.n1, true);
         sc.ds.addPrimitive(new Way(sc.w2, true));
@@ -799,7 +807,7 @@ public class SearchCompilerTest {
      * @throws SearchParseError if an error has been encountered while compiling
      */
     @Test
-    public void testMemberCount() throws SearchParseError {
+    void testMemberCount() throws SearchParseError {
         final SearchContext sc = new SearchContext("members:2");
         sc.match(sc.n1, false);
         sc.match(sc.w1, false);
@@ -813,7 +821,7 @@ public class SearchCompilerTest {
      * @throws SearchParseError if an error has been encountered while compiling
      */
     @Test
-    public void testRole() throws SearchParseError {
+    void testRole() throws SearchParseError {
         final SearchContext sc = new SearchContext("role:foo");
         sc.match(sc.r1, false);
         sc.match(sc.w1, false);
@@ -822,5 +830,34 @@ public class SearchCompilerTest {
         sc.r1.addMember(new RelationMember("foo", sc.n1));
         sc.match(sc.n1, true);
         sc.match(sc.n2, false);
+    }
+
+    /**
+     * Non-regression test for JOSM #21300
+     * @param searchString search string to test
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"maxweight<" /* #21300 */, "maxweight>"})
+    void testNonRegression21300(final String searchString) {
+        assertThrows(SearchParseError.class, () -> SearchCompiler.compile(searchString));
+    }
+
+    /**
+     * Non-regression test for JOSM #21463
+     */
+    @Test
+    void testNonRegression21463() throws SearchParseError {
+        final SearchCompiler.Match c = SearchCompiler.compile("foo () () () bar");
+        assertTrue(c.match(OsmUtils.createPrimitive("node foo=bar")));
+        assertFalse(c.match(OsmUtils.createPrimitive("node name=bar")));
+    }
+
+    /**
+     * Non-regression test for JOSM #22156
+     * x % 0 throws an ArithmeticException
+     */
+    @Test
+    void testNonRegression22156() {
+        assertThrows(SearchParseError.class, () -> SearchCompiler.compile("nth%: 0"));
     }
 }

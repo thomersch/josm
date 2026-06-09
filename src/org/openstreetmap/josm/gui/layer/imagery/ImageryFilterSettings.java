@@ -1,6 +1,7 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.layer.imagery;
 
+import java.awt.image.BufferedImage;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -8,11 +9,11 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import org.openstreetmap.josm.tools.ImageProcessor;
 
 /**
- * This class holds the filter settings for an imagery layer.
+ * This class holds the filter settings for an imagery.
  * @author Michael Zangl
  * @since 10547
  */
-public class ImageryFilterSettings {
+public class ImageryFilterSettings implements ImageProcessor {
 
     protected GammaImageProcessor gammaImageProcessor = new GammaImageProcessor();
     protected SharpenImageProcessor sharpenImageProcessor = new SharpenImageProcessor();
@@ -45,7 +46,7 @@ public class ImageryFilterSettings {
     }
 
     /**
-     * Sets the sharpen level for the layer.
+     * Sets the sharpen level for the imagery.
      * <code>1</code> means no change in sharpness.
      * Values in range 0..1 blur the image.
      * Values above 1 are used to sharpen the image.
@@ -82,6 +83,14 @@ public class ImageryFilterSettings {
      */
     public List<ImageProcessor> getProcessors() {
         return Arrays.asList(colorfulnessImageProcessor, gammaImageProcessor, sharpenImageProcessor);
+    }
+
+    @Override
+    public BufferedImage process(BufferedImage image) {
+        for (ImageProcessor processor : getProcessors()) {
+            image = processor.process(image);
+        }
+        return image;
     }
 
     /**

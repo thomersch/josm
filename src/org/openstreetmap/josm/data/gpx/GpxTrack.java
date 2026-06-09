@@ -14,6 +14,7 @@ import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.tools.ListenerList;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.StreamUtils;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * GPX track.
@@ -37,7 +38,7 @@ public class GpxTrack extends WithAttributes implements IGpxTrack {
      */
     public GpxTrack(Collection<Collection<WayPoint>> trackSegs, Map<String, Object> attributes) {
         this.segments = trackSegs.stream()
-                .filter(trackSeg -> trackSeg != null && !trackSeg.isEmpty())
+                .filter(trackSeg -> !Utils.isEmpty(trackSeg))
                 .map(GpxTrackSegment::new)
                 .collect(StreamUtils.toUnmodifiableList());
         this.length = calculateLength();
@@ -81,18 +82,21 @@ public class GpxTrack extends WithAttributes implements IGpxTrack {
 
     @Override
     public void setColor(Color color) {
-        setColorExtension(color);
+        setColorExtensionGPXD(color, true);
         colorCache = color;
     }
 
-    private void setColorExtension(Color color) {
+    private void setColorExtensionGPXD(Color color, boolean invalidate) {
         getExtensions().findAndRemove("gpxx", "DisplayColor");
         if (color == null) {
             getExtensions().findAndRemove("gpxd", "color");
         } else {
             getExtensions().addOrUpdate("gpxd", "color", String.format("#%02X%02X%02X", color.getRed(), color.getGreen(), color.getBlue()));
         }
-        fireInvalidate();
+        colorFormat = ColorFormat.GPXD;
+        if (invalidate) {
+            fireInvalidate();
+        }
     }
 
     @Override
@@ -104,6 +108,9 @@ public class GpxTrack extends WithAttributes implements IGpxTrack {
     }
 
     private Color getColorFromExtension() {
+        if (!hasExtensions()) {
+            return null;
+        }
         GpxExtension gpxd = getExtensions().find("gpxd", "color");
         if (gpxd != null) {
             colorFormat = ColorFormat.GPXD;
@@ -163,7 +170,7 @@ public class GpxTrack extends WithAttributes implements IGpxTrack {
                 closestGarminColorCache.put(c, colorString);
                 getExtensions().addIfNotPresent("gpxx", "TrackExtension").getExtensions().addOrUpdate("gpxx", "DisplayColor", colorString);
             } else if (cFormat == ColorFormat.GPXD) {
-                setColor(c);
+                setColorExtensionGPXD(c, false);
             }
             colorFormat = cFormat;
         }
@@ -203,7 +210,8 @@ public class GpxTrack extends WithAttributes implements IGpxTrack {
 
     @Override
     public int hashCode() {
-        return 31 * super.hashCode() + ((segments == null) ? 0 : segments.hashCode());
+        return 31 * super.hashCode() + ((segments == null) ? 0 : segments.hashCode())
+            + ((attr == null) ? 0 : attr.hashCode());
     }
 
     @Override
@@ -221,6 +229,11 @@ public class GpxTrack extends WithAttributes implements IGpxTrack {
             if (other.segments != null)
                 return false;
         } else if (!segments.equals(other.segments))
+            return false;
+        if (attr == null) {
+            if (other.attr != null)
+                return false;
+        } else if (!attr.equals(other.attr))
             return false;
         return true;
     }
@@ -241,26 +254,4 @@ public class GpxTrack extends WithAttributes implements IGpxTrack {
     public void invalidate() {
         colorCache = null;
     }
-
-    /**
-     * A listener that listens to GPX track changes.
-     * @deprecated use {@link IGpxTrack.GpxTrackChangeListener} instead
-     */
-    @Deprecated
-    @FunctionalInterface
-    interface GpxTrackChangeListener {
-        void gpxDataChanged(GpxTrackChangeEvent e);
-    }
-
-    /**
-     * A track change event for the current track.
-     * @deprecated use {@link IGpxTrack.GpxTrackChangeEvent} instead
-     */
-    @Deprecated
-    static class GpxTrackChangeEvent extends IGpxTrack.GpxTrackChangeEvent {
-        GpxTrackChangeEvent(IGpxTrack source) {
-            super(source);
-        }
-    }
-
 }

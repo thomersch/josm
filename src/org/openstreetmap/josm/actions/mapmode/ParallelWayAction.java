@@ -12,11 +12,13 @@ import java.awt.Graphics2D;
 import java.awt.Point;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseEvent;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -27,6 +29,7 @@ import javax.swing.JOptionPane;
 import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.data.SystemOfMeasurement;
 import org.openstreetmap.josm.data.coor.EastNorth;
+import org.openstreetmap.josm.data.coor.ILatLon;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Way;
@@ -54,35 +57,30 @@ import org.openstreetmap.josm.tools.Shortcut;
 
 /**
  * MapMode for making parallel ways.
- *
+ * <p>
  * All calculations are done in projected coordinates.
- *
+ * <p>
  * TODO:
+ * <p>
  * == Functionality ==
- *
- * 1. Use selected nodes as split points for the selected ways.
- *
+ * <ol>
+ * <li>Use selected nodes as split points for the selected ways.
+ * <p>
  * The ways containing the selected nodes will be split and only the "inner"
- * parts will be copied
- *
- * 2. Enter exact offset
- *
- * 3. Improve snapping
- *
- * 4. Visual cues could be better
- *
- * 5. (long term) Parallelize and adjust offsets of existing ways
- *
+ * parts will be copied</li>
+ * <li>Enter exact offset</li>
+ * <li>Improve snapping</li>
+ * <li>Visual cues could be better</li>
+ * <li>(long term) Parallelize and adjust offsets of existing ways</li>
+ * </ol>
  * == Code quality ==
- *
- * a) The mode, flags, and modifiers might be updated more than necessary.
- *
- * Not a performance problem, but better if they where more centralized
- *
- * b) Extract generic MapMode services into a super class and/or utility class
- *
- * c) Maybe better to simply draw our own source way highlighting?
- *
+ * <ol type="a">
+ * <li>The mode, flags, and modifiers might be updated more than necessary.
+ * <p>
+ * Not a performance problem, but better if they where more centralized</li>
+ * <li>Extract generic MapMode services into a super class and/or utility class</li>
+ * <li>Maybe better to simply draw our own source way highlighting?</li>
+ * </ol>
  * Current code doesn't not take into account that ways might been highlighted
  * by other than us. Don't think that situation should ever happen though.
  *
@@ -199,15 +197,13 @@ public class ParallelWayAction extends MapMode implements ModifierExListener {
     public String getModeHelpText() {
         // TODO: add more detailed feedback based on modifier state.
         // TODO: dynamic messages based on preferences. (Could be problematic translation wise)
-        switch (mode) {
-        case NORMAL:
+        if (mode == Mode.NORMAL) {
             // CHECKSTYLE.OFF: LineLength
             return tr("Select ways as in Select mode. Drag selected ways or a single way to create a parallel copy (Alt toggles tag preservation)");
             // CHECKSTYLE.ON: LineLength
-        case DRAGGING:
+        } else { // mode == DRAGGING
             return tr("Hold Ctrl to toggle snapping");
         }
-        return ""; // impossible ..
     }
 
     @Override
@@ -228,7 +224,9 @@ public class ParallelWayAction extends MapMode implements ModifierExListener {
     }
 
     private boolean updateModifiersState(int modifiers) {
-        boolean oldAlt = alt, oldShift = shift, oldCtrl = ctrl;
+        boolean oldAlt = alt;
+        boolean oldShift = shift;
+        boolean oldCtrl = ctrl;
         updateKeyModifiersEx(modifiers);
         return oldAlt != alt || oldShift != shift || oldCtrl != ctrl;
     }
@@ -248,7 +246,6 @@ public class ParallelWayAction extends MapMode implements ModifierExListener {
         case DRAGGING:
             newCursor = Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR);
             break;
-        default: throw new AssertionError();
         }
         if (newCursor != null) {
             mv.setNewCursor(newCursor, this);
@@ -288,7 +285,9 @@ public class ParallelWayAction extends MapMode implements ModifierExListener {
 
         // Since the created way is left selected, we need to unselect again here
         if (pWays != null && pWays.getWays() != null) {
-            getLayerManager().getEditDataSet().clearSelection(pWays.getWays());
+            final List<Way> ways = new ArrayList<>(pWays.getWays());
+            ways.removeIf(w -> w.getDataSet() == null);
+            getLayerManager().getEditDataSet().clearSelection(ways);
             pWays = null;
         }
 
@@ -350,7 +349,7 @@ public class ParallelWayAction extends MapMode implements ModifierExListener {
 
     @Override
     public void mouseDragged(MouseEvent e) {
-        // WTF.. the event passed here doesn't have button info?
+        // WTF... the event passed here doesn't have button info?
         // Since we get this event from other buttons too, we must check that
         // _BUTTON1_ is down.
         if (!mouseIsDown)
@@ -391,7 +390,8 @@ public class ParallelWayAction extends MapMode implements ModifierExListener {
 
         // Note: d is the distance in _projected units_
         double d = enp.distance(nearestPointOnRefLine);
-        double realD = mv.getProjection().eastNorth2latlon(enp).greatCircleDistance(mv.getProjection().eastNorth2latlon(nearestPointOnRefLine));
+        double realD = mv.getProjection().eastNorth2latlon(enp).greatCircleDistance(
+                (ILatLon) mv.getProjection().eastNorth2latlon(nearestPointOnRefLine));
         double snappedRealD = realD;
 
         boolean toTheRight = Geometry.angleIsClockwise(
@@ -453,7 +453,7 @@ public class ParallelWayAction extends MapMode implements ModifierExListener {
         if (shift) {
             modifiers.add(Modifier.SHIFT);
         }
-        return spec.entrySet().stream().allMatch(entry -> modifiers.contains(entry.getKey()) == entry.getValue().booleanValue());
+        return spec.entrySet().stream().allMatch(entry -> modifiers.contains(entry.getKey()) == entry.getValue());
     }
 
     private boolean isModifiersValidForDragMode() {
@@ -462,11 +462,11 @@ public class ParallelWayAction extends MapMode implements ModifierExListener {
     }
 
     private void updateFlagsOnlyChangeableOnPress() {
-        copyTags = COPY_TAGS_DEFAULT.get().booleanValue() != matchesCurrentModifiers(COPY_TAGS_MODIFIER_COMBO);
+        copyTags = COPY_TAGS_DEFAULT.get() != matchesCurrentModifiers(COPY_TAGS_MODIFIER_COMBO);
     }
 
     private void updateFlagsChangeableAlways() {
-        snap = SNAP_DEFAULT.get().booleanValue() != matchesCurrentModifiers(SNAP_MODIFIER_COMBO);
+        snap = SNAP_DEFAULT.get() != matchesCurrentModifiers(SNAP_MODIFIER_COMBO);
     }
 
     // We keep the source ways and the selection in sync so the user can see the source way's tags
@@ -507,16 +507,16 @@ public class ParallelWayAction extends MapMode implements ModifierExListener {
 
         sourceWays.removeIf(w -> w.isIncomplete() || w.isEmpty());
 
-        if (!sourceWays.contains(referenceSegment.way)) {
+        if (!sourceWays.contains(referenceSegment.getWay())) {
             clearSourceWays();
-            addSourceWay(referenceSegment.way);
+            addSourceWay(referenceSegment.getWay());
         }
 
         try {
             int referenceWayIndex = -1;
             int i = 0;
             for (Way w : sourceWays) {
-                if (w == referenceSegment.way) {
+                if (w == referenceSegment.getWay()) {
                     referenceWayIndex = i;
                     break;
                 }
@@ -551,7 +551,7 @@ public class ParallelWayAction extends MapMode implements ModifierExListener {
     private static class KeyboardModifiersProperty extends AbstractToStringProperty<Map<Modifier, Boolean>> {
 
         KeyboardModifiersProperty(String key, String defaultValue) {
-            super(key, createFromString(defaultValue));
+            this(key, createFromString(defaultValue));
         }
 
         KeyboardModifiersProperty(String key, Map<Modifier, Boolean> defaultValue) {
@@ -581,7 +581,8 @@ public class ParallelWayAction extends MapMode implements ModifierExListener {
 
         private static Map<Modifier, Boolean> createFromString(String string) {
             Map<Modifier, Boolean> ret = new EnumMap<>(Modifier.class);
-            for (char c : string.toCharArray()) {
+            for (int i = 0; i < string.length(); i++) {
+                char c = string.charAt(i);
                 if (c == '?') {
                     continue;
                 }
@@ -617,7 +618,7 @@ public class ParallelWayAction extends MapMode implements ModifierExListener {
         }
     }
 
-    private class ParallelWayLayer extends AbstractMapViewPaintable {
+    private final class ParallelWayLayer extends AbstractMapViewPaintable {
         @Override
         public void paint(Graphics2D g, MapView mv, Bounds bbox) {
             if (mode == Mode.DRAGGING) {

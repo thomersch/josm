@@ -18,6 +18,7 @@ import org.openstreetmap.josm.command.AddCommand;
 import org.openstreetmap.josm.command.Command;
 import org.openstreetmap.josm.command.SequenceCommand;
 import org.openstreetmap.josm.data.UndoRedoHandler;
+import org.openstreetmap.josm.data.coor.ILatLon;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Node;
@@ -42,8 +43,6 @@ public class AddWayHandler extends RequestHandler {
     public static final String command = "add_way";
 
     private final List<LatLon> allCoordinates = new ArrayList<>();
-
-    private Way way;
 
     /**
      * The place to remember already added nodes (they are reused if needed @since 5845
@@ -77,9 +76,7 @@ public class AddWayHandler extends RequestHandler {
 
     @Override
     protected void handleRequest() throws RequestHandlerErrorException, RequestHandlerBadRequestException {
-        GuiHelper.runInEDTAndWait(() -> way = addWay());
-        // parse parameter addtags=tag1=value1|tag2=value2
-        AddTagsDialog.addTags(args, sender, Collections.singleton(way));
+        GuiHelper.runInEDT(this::addWay);
     }
 
     @Override
@@ -132,14 +129,14 @@ public class AddWayHandler extends RequestHandler {
         if (MainApplication.isDisplayingMapView()) {
             MapView mapView = MainApplication.getMap().mapView;
             nd = mapView.getNearestNode(mapView.getPoint(ll), OsmPrimitive::isUsable);
-            if (nd != null && nd.getCoor().greatCircleDistance(ll) > Config.getPref().getDouble("remote.tolerance", 0.1)) {
+            if (nd != null && nd.greatCircleDistance(ll) > Config.getPref().getDouble("remote.tolerance", 0.1)) {
                 nd = null; // node is too far
             }
         }
 
         Node prev = null;
         for (Entry<LatLon, Node> entry : addedNodes.entrySet()) {
-            LatLon lOld = entry.getKey();
+            ILatLon lOld = entry.getKey();
             if (lOld.greatCircleDistance(ll) < Config.getPref().getDouble("remotecontrol.tolerance", 0.1)) {
                 prev = entry.getValue();
                 break;
@@ -157,10 +154,10 @@ public class AddWayHandler extends RequestHandler {
         return nd;
     }
 
-    /*
+    /**
      * This function creates the way with given coordinates of nodes
      */
-    private Way addWay() {
+    private void addWay() {
         addedNodes = new HashMap<>();
         Way way = new Way();
         List<Command> commands = new LinkedList<>();
@@ -178,6 +175,7 @@ public class AddWayHandler extends RequestHandler {
         } else {
             MainApplication.getMap().mapView.repaint();
         }
-        return way;
+        // parse parameter addtags=tag1=value1|tag2=value2
+        AddTagsDialog.addTags(args, sender, Collections.singleton(way));
     }
 }

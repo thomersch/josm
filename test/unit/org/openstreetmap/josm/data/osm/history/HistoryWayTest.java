@@ -1,38 +1,25 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.osm.history;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.util.Date;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.osm.DefaultNameFormatter;
 import org.openstreetmap.josm.data.osm.OsmPrimitiveType;
 import org.openstreetmap.josm.data.osm.User;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-import org.openstreetmap.josm.tools.Logging;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
  * Unit tests for class {@link HistoryWay}.
  */
-public class HistoryWayTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
-    private static HistoryWay create(Date d) {
+class HistoryWayTest {
+    private static HistoryWay create(Instant d) {
         return new HistoryWay(
                 1,    // id
                 2,    // version
@@ -47,8 +34,8 @@ public class HistoryWayTest {
      * Unit test for {@link HistoryWay#HistoryWay}.
      */
     @Test
-    public void testHistoryWay() {
-        Date d = new Date();
+    void testHistoryWay() {
+        Instant d = Instant.now();
         HistoryWay way = create(d);
 
         assertEquals(1, way.getId());
@@ -57,7 +44,7 @@ public class HistoryWayTest {
         assertEquals("testuser", way.getUser().getName());
         assertEquals(3, way.getUser().getId());
         assertEquals(4, way.getChangesetId());
-        assertEquals(d, way.getTimestamp());
+        assertEquals(d, way.getInstant());
 
         assertEquals(0, way.getNumNodes());
     }
@@ -66,24 +53,18 @@ public class HistoryWayTest {
      * Unit test for {@link HistoryWay#getType}.
      */
     @Test
-    public void testGetType() {
-        assertEquals(OsmPrimitiveType.WAY, create(new Date()).getType());
+    void testGetType() {
+        assertEquals(OsmPrimitiveType.WAY, create(Instant.now()).getType());
     }
 
     @Test
-    public void testNodeManipulation() {
-        HistoryWay way = create(new Date());
+    void testNodeManipulation() {
+        HistoryWay way = create(Instant.now());
 
         way.addNode(1);
         assertEquals(1, way.getNumNodes());
         assertEquals(1, way.getNodeId(0));
-        try {
-            way.getNodeId(1);
-            fail("expected expection of type " + IndexOutOfBoundsException.class.toString());
-        } catch (IndexOutOfBoundsException e) {
-            // OK
-            Logging.trace(e);
-        }
+        assertThrows(IndexOutOfBoundsException.class, () -> way.getNodeId(1));
 
         way.addNode(5);
         assertEquals(2, way.getNumNodes());
@@ -91,8 +72,8 @@ public class HistoryWayTest {
     }
 
     @Test
-    public void testIterating() {
-        HistoryWay way = create(new Date());
+    void testIterating() {
+        HistoryWay way = create(Instant.now());
 
         way.addNode(1);
         way.addNode(2);
@@ -107,11 +88,11 @@ public class HistoryWayTest {
      * Unit test for {@link HistoryWay#getDisplayName}.
      */
     @Test
-    public void testGetDisplayName() {
+    void testGetDisplayName() {
         HistoryNameFormatter hnf = DefaultNameFormatter.getInstance();
-        HistoryWay way0 = create(new Date()); // no node
-        HistoryWay way1 = create(new Date()); // 1 node
-        HistoryWay way2 = create(new Date()); // 2 nodes
+        HistoryWay way0 = create(Instant.now()); // no node
+        HistoryWay way1 = create(Instant.now()); // 1 node
+        HistoryWay way2 = create(Instant.now()); // 2 nodes
 
         way1.addNode(1);
         way2.addNode(1);

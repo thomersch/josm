@@ -18,6 +18,7 @@ import java.util.Objects;
 
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
+import javax.swing.event.ChangeEvent;
 
 import org.openstreetmap.josm.data.osm.PrimitiveId;
 import org.openstreetmap.josm.data.osm.history.History;
@@ -119,6 +120,9 @@ public final class HistoryBrowserDialogManager implements LayerChangeListener {
         if (!dialogs.isEmpty()) {
             // see #17270: set focus to last dialog
             new LinkedList<>(dialogs.values()).getLast().toFront();
+        } else {
+            // we always reload the history, so there is no need to keep it in the cache.
+            HistoryDataSet.getInstance().clear();
         }
     }
 
@@ -144,6 +148,7 @@ public final class HistoryBrowserDialogManager implements LayerChangeListener {
             HistoryBrowserDialog dialog = new HistoryBrowserDialog(h);
             placeOnScreen(dialog);
             dialog.setVisible(true);
+            dialog.getHistoryBrowser().stateChanged(new ChangeEvent(this));
             dialogs.put(h.getId(), dialog);
         }
     }

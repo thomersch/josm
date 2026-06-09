@@ -1,11 +1,11 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.command;
 
-import static org.junit.Assert.assertArrayEquals;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -13,9 +13,6 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.command.CommandTest.CommandTestData;
 import org.openstreetmap.josm.data.osm.DataSet;
@@ -26,29 +23,28 @@ import org.openstreetmap.josm.data.osm.TagMap;
 import org.openstreetmap.josm.data.osm.User;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.gui.mappaint.ElemStyles;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
+import org.openstreetmap.josm.testutils.annotations.I18n;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import nl.jqno.equalsverifier.EqualsVerifier;
 import nl.jqno.equalsverifier.Warning;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests of {@link ChangePropertyCommand} class.
  */
-public class ChangePropertyCommandTest {
-
-    /**
-     * We need prefs for nodes.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences().i18n();
+@I18n
+// We need prefs for nodes.
+@BasicPreferences
+class ChangePropertyCommandTest {
     private CommandTestData testData;
 
     /**
      * Set up the test data.
      */
-    @Before
+    @BeforeEach
     public void createTestData() {
         testData = new CommandTestData();
     }
@@ -57,7 +53,7 @@ public class ChangePropertyCommandTest {
      * Checks that the short constructors create the right {@link ChangePropertyCommand}
      */
     @Test
-    public void testShortConstructor() {
+    void testShortConstructor() {
         ChangePropertyCommand command = new ChangePropertyCommand(Arrays.asList(testData.existingNode), "a", "b");
         assertEquals("b", command.getTags().get("a"));
         assertEquals(1, command.getTags().size());
@@ -73,7 +69,7 @@ public class ChangePropertyCommandTest {
      * Checks that {@link ChangePropertyCommand} adds/updates a property
      */
     @Test
-    public void testUpdateSingleProperty() {
+    void testUpdateSingleProperty() {
         Node node1 = testData.createNode(14);
         Node node2 = testData.createNode(15);
         node2.removeAll();
@@ -92,7 +88,7 @@ public class ChangePropertyCommandTest {
      * Checks that {@link ChangePropertyCommand} removes a property
      */
     @Test
-    public void testRemoveProperty() {
+    void testRemoveProperty() {
         Node node1 = testData.createNode(14);
         Node node2 = testData.createNode(15);
         node2.removeAll();
@@ -111,7 +107,7 @@ public class ChangePropertyCommandTest {
      * Checks that {@link ChangePropertyCommand} adds/updates multiple properties
      */
     @Test
-    public void testUpdateMultipleProperties() {
+    void testUpdateMultipleProperties() {
         Node node1 = testData.createNode(14);
         Node node2 = testData.createNode(15);
         node2.removeAll();
@@ -138,7 +134,7 @@ public class ChangePropertyCommandTest {
      * Checks that {@link ChangePropertyCommand} adds/updates a property
      */
     @Test
-    public void testUpdateIgnoresExistingProperty() {
+    void testUpdateIgnoresExistingProperty() {
         Node node1 = testData.createNode(14);
         Node node2 = testData.createNode(15);
         node2.removeAll();
@@ -158,7 +154,7 @@ public class ChangePropertyCommandTest {
      * and {@link ChangePropertyCommand#getObjectsNumber()}
      */
     @Test
-    public void testFillModifiedData() {
+    void testFillModifiedData() {
         Node node1 = testData.createNode(14);
         Node node2 = testData.createNode(15);
         node2.put("existing", "new");
@@ -187,7 +183,7 @@ public class ChangePropertyCommandTest {
      * Test {@link ChangePropertyCommand#getDescriptionText()}
      */
     @Test
-    public void testDescription() {
+    void testDescription() {
         Node node1 = testData.createNode(14);
         Node node2 = testData.createNode(15);
         Node node3 = testData.createNode(16);
@@ -251,7 +247,7 @@ public class ChangePropertyCommandTest {
      * Test {@link ChangePropertyCommand#getChildren()}
      */
     @Test
-    public void testChildren() {
+    void testChildren() {
         Node node1 = testData.createNode(15);
         Node node2 = testData.createNode(16);
         node1.put("name", "node1");
@@ -277,7 +273,7 @@ public class ChangePropertyCommandTest {
      * Unit test of methods {@link ChangePropertyCommand#equals} and {@link ChangePropertyCommand#hashCode}.
      */
     @Test
-    public void testEqualsContract() {
+    void testEqualsContract() {
         TestUtils.assumeWorkingEqualsVerifier();
         EqualsVerifier.forClass(ChangePropertyCommand.class).usingGetClass()
             .withPrefabValues(DataSet.class,
@@ -286,6 +282,8 @@ public class ChangePropertyCommandTest {
                     User.createOsmUser(1, "foo"), User.createOsmUser(2, "bar"))
             .withPrefabValues(OsmDataLayer.class,
                 new OsmDataLayer(new DataSet(), "1", null), new OsmDataLayer(new DataSet(), "2", null))
+            .withPrefabValues(ElemStyles.class,
+                new ElemStyles(), new ElemStyles())
             .suppress(Warning.NONFINAL_FIELDS)
             .verify();
     }

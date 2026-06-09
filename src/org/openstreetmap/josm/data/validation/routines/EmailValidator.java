@@ -125,9 +125,9 @@ public class EmailValidator extends AbstractValidator {
     }
 
     /**
-     * <p>Checks if a field has a valid e-mail address.</p>
+     * Checks if a field has a valid e-mail address.
      *
-     * @param email The value validation is being performed on.  A <code>null</code>
+     * @param email The value validation is being performed on. A <code>null</code>
      *              value is considered invalid.
      * @return true if the email address is valid.
      */
@@ -137,7 +137,7 @@ public class EmailValidator extends AbstractValidator {
             return false;
         }
 
-        if (email.endsWith(".")) { // check this first - it's cheap!
+        if (email.endsWith(".")) { // check this first - it is cheap!
             setErrorMessage(tr("E-mail address is invalid"));
             return false;
         }

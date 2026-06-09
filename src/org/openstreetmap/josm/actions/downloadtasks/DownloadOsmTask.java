@@ -1,6 +1,7 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.actions.downloadtasks;
 
+import static java.util.function.Predicate.not;
 import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.io.IOException;
@@ -44,6 +45,7 @@ import org.openstreetmap.josm.io.OsmTransferCanceledException;
 import org.openstreetmap.josm.io.OsmTransferException;
 import org.openstreetmap.josm.io.OverpassDownloadReader;
 import org.openstreetmap.josm.io.UrlPatterns.OsmUrlPattern;
+import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.Utils;
 import org.xml.sax.SAXException;
@@ -104,7 +106,7 @@ public class DownloadOsmTask extends AbstractDownloadTask<DataSet> {
      * <pre>
      *    Future&lt;?&gt; future = task.download(...);
      *    // DON'T run this on the Swing EDT or JOSM will freeze
-     *    future.get(); // waits for the dowload task to complete
+     *    future.get(); // waits for the download task to complete
      * </pre>
      *
      * The following example uses a pattern which is better suited if a task is launched from
@@ -186,7 +188,7 @@ public class DownloadOsmTask extends AbstractDownloadTask<DataSet> {
 
     protected final void extractOsmFilename(DownloadParams settings, String pattern, String url) {
         newLayerName = settings.getLayerName();
-        if (newLayerName == null || newLayerName.isEmpty()) {
+        if (Utils.isEmpty(newLayerName)) {
             Matcher matcher = Pattern.compile(pattern).matcher(url);
             newLayerName = matcher.matches() && matcher.groupCount() > 0 ? Utils.decodeUrl(matcher.group(1)) : null;
         }
@@ -211,6 +213,12 @@ public class DownloadOsmTask extends AbstractDownloadTask<DataSet> {
 
     protected Collection<OsmPrimitive> searchPotentiallyDeletedPrimitives(DataSet ds) {
         return downloadTask.searchPrimitivesToUpdate(currentBounds, ds);
+    }
+
+    protected final void rememberDownloadedBounds(Bounds bounds) {
+        if (bounds != null) {
+            Config.getPref().put("osm-download.bounds", bounds.encodeAsString(";"));
+        }
     }
 
     /**
@@ -291,7 +299,7 @@ public class DownloadOsmTask extends AbstractDownloadTask<DataSet> {
          */
         protected String generateLayerName() {
             return Optional.ofNullable(settings.getLayerName())
-                .filter(layerName -> !Utils.isStripEmpty(layerName))
+                .filter(not(Utils::isStripEmpty))
                 .orElse(OsmDataLayer.createNewName());
         }
 
@@ -352,7 +360,7 @@ public class DownloadOsmTask extends AbstractDownloadTask<DataSet> {
             if (settings.isNewLayer() || numDataLayers == 0 || (numDataLayers > 1 && getEditLayer() == null)) {
                 // the user explicitly wants a new layer, we don't have any layer at all
                 // or it is not clear which layer to merge to
-                final OsmDataLayer layer = createNewLayer(Optional.ofNullable(newLayerName).filter(it -> !Utils.isStripEmpty(it)));
+                final OsmDataLayer layer = createNewLayer(Optional.ofNullable(newLayerName).filter(not(Utils::isStripEmpty)));
                 MainApplication.getLayerManager().addLayer(layer, zoomAfterDownload);
                 return layer;
             }
@@ -375,8 +383,8 @@ public class DownloadOsmTask extends AbstractDownloadTask<DataSet> {
                 if (!primitivesToUpdate.isEmpty()) {
                     MainApplication.worker.submit(new UpdatePrimitivesTask(layer, primitivesToUpdate));
                 }
-                layer.onPostDownloadFromServer();
             }
+            layer.onPostDownloadFromServer(); // for existing and newly added layer, see #19816
         }
 
         /**
@@ -494,7 +502,7 @@ public class DownloadOsmTask extends AbstractDownloadTask<DataSet> {
                     rememberErrorMessage(NO_DATA_FOUND);
                 }
                 String remark = dataSet.getRemark();
-                if (remark != null && !remark.isEmpty()) {
+                if (!Utils.isEmpty(remark)) {
                     rememberErrorMessage(remark);
                 }
                 if (!(reader instanceof BoundingBoxDownloader)
@@ -505,6 +513,7 @@ public class DownloadOsmTask extends AbstractDownloadTask<DataSet> {
                 }
             }
 
+            rememberDownloadedBounds(currentBounds);
             rememberDownloadedData(dataSet);
             loadData(newLayerName, currentBounds);
         }

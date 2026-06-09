@@ -10,26 +10,33 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.concurrent.TimeUnit;
 
 import javax.imageio.ImageIO;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.Timeout;
-import org.openstreetmap.josm.JOSMFixture;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.openstreetmap.josm.PerformanceTestUtils;
 import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.gui.NavigatableComponent;
 import org.openstreetmap.josm.gui.progress.NullProgressMonitor;
 import org.openstreetmap.josm.io.Compression;
 import org.openstreetmap.josm.io.OsmReader;
+import org.openstreetmap.josm.testutils.annotations.PerformanceTest;
+import org.openstreetmap.josm.testutils.annotations.Projection;
+import org.openstreetmap.josm.testutils.annotations.Territories;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
  * Abstract superclass of {@code StyledMapRendererPerformanceTest} and {@code WireframeMapRendererPerformanceTest}.
  */
-public abstract class AbstractMapRendererPerformanceTestParent {
+@PerformanceTest
+@Projection
+@Territories
+@Timeout(value = 15, unit = TimeUnit.MINUTES)
+abstract class AbstractMapRendererPerformanceTestParent {
 
     private static final int IMG_WIDTH = 1400;
     private static final int IMG_HEIGHT = 1050;
@@ -45,15 +52,7 @@ public abstract class AbstractMapRendererPerformanceTestParent {
     private static DataSet dsOverpass;
     private static DataSet dsCity;
 
-    /**
-     * Global timeout applied to all test methods.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public Timeout globalTimeout = Timeout.seconds(15*60);
-
     protected static void load() throws Exception {
-        JOSMFixture.createPerformanceTestFixture().init(true);
         img = new BufferedImage(IMG_WIDTH, IMG_HEIGHT, BufferedImage.TYPE_INT_ARGB);
         g = (Graphics2D) img.getGraphics();
         g.setClip(0, 0, IMG_WIDTH, IMG_HEIGHT);
@@ -80,13 +79,12 @@ public abstract class AbstractMapRendererPerformanceTestParent {
         StyledMapRenderer.PREFERENCE_ANTIALIASING_USE.put(true);
         StyledMapRenderer.PREFERENCE_TEXT_ANTIALIASING.put("gasp");
 
+        dsCity = PerformanceTestUtils.getNeubrandenburgDataSet();
         try (InputStream fisR = Files.newInputStream(Paths.get("nodist/data/restriction.osm"));
              InputStream fisM = Files.newInputStream(Paths.get("nodist/data/multipolygon.osm"));
-             InputStream fisC = Compression.getUncompressedFileInputStream(new File("nodist/data/neubrandenburg.osm.bz2"));
-             InputStream fisO = Compression.getUncompressedFileInputStream(new File("nodist/data/overpass-download.osm.bz2"));) {
+             InputStream fisO = Compression.getUncompressedFileInputStream(new File("nodist/data/overpass-download.osm.bz2"))) {
             dsRestriction = OsmReader.parseDataSet(fisR, NullProgressMonitor.INSTANCE);
             dsMultipolygon = OsmReader.parseDataSet(fisM, NullProgressMonitor.INSTANCE);
-            dsCity = OsmReader.parseDataSet(fisC, NullProgressMonitor.INSTANCE);
             dsOverpass = OsmReader.parseDataSet(fisO, NullProgressMonitor.INSTANCE);
         }
     }
@@ -111,55 +109,55 @@ public abstract class AbstractMapRendererPerformanceTestParent {
     }
 
     @Test
-    public void testRestriction() throws Exception {
+    void testRestriction() throws Exception {
         test(700, dsRestriction, new Bounds(51.12, 14.147472381591795, 51.128, 14.162492752075195));
     }
 
     @Test
-    public void testRestrictionSmall() throws Exception {
+    void testRestrictionSmall() throws Exception {
         test(1500, dsRestriction, new Bounds(51.125, 14.147, 51.128, 14.152));
     }
 
     @Test
-    public void testMultipolygon() throws Exception {
+    void testMultipolygon() throws Exception {
         test(400, dsMultipolygon, new Bounds(60, -180, 85, -122));
     }
 
     @Test
-    public void testMultipolygonSmall() throws Exception {
+    void testMultipolygonSmall() throws Exception {
         test(850, dsMultipolygon, new Bounds(-90, -180, 90, 180));
     }
 
-    @Test
     /**
      * Complex polygon (Lake Ontario) with small download area.
      */
-    public void testOverpassDownload() throws Exception {
+    @Test
+    void testOverpassDownload() throws Exception {
         test(20, dsOverpass, new Bounds(43.4510496, -76.536684, 43.4643202, -76.4954853));
     }
 
     @Test
-    public void testCity() throws Exception {
+    void testCity() throws Exception {
         test(50, dsCity, new Bounds(53.51, 13.20, 53.59, 13.34));
     }
 
     @Test
-    public void testCitySmall() throws Exception {
+    void testCitySmall() throws Exception {
         test(70, dsCity, new Bounds(52, 11, 55, 14));
     }
 
     @Test
-    public void testCityPart1() throws Exception {
+    void testCityPart1() throws Exception {
         test(250, dsCity, new Bounds(53.56, 13.25, 53.57, 13.26));
     }
 
     @Test
-    public void testCityPart2() throws Exception {
+    void testCityPart2() throws Exception {
         test(200, dsCity, new Bounds(53.55, 13.29, 53.57, 13.30));
     }
 
     @Test
-    public void testCitySmallPart2() throws Exception {
+    void testCitySmallPart2() throws Exception {
         test(200, dsCity, new Bounds(53.56, 13.295, 53.57, 13.30));
     }
 

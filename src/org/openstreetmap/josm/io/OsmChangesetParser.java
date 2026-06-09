@@ -8,7 +8,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.text.MessageFormat;
-import java.util.Date;
+import java.time.Instant;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -58,7 +58,7 @@ public final class OsmChangesetParser {
         return changesets;
     }
 
-    private class Parser extends DefaultHandler {
+    private final class Parser extends DefaultHandler {
         private Locator locator;
 
         @Override
@@ -66,7 +66,7 @@ public final class OsmChangesetParser {
             this.locator = locator;
         }
 
-        protected void throwException(String msg) throws XmlParsingException {
+        void throwException(String msg) throws XmlParsingException {
             throw new XmlParsingException(msg).rememberLocation(locator);
         }
 
@@ -79,7 +79,7 @@ public final class OsmChangesetParser {
         /** The current comment text */
         private StringBuilder text;
 
-        protected void parseChangesetAttributes(Attributes atts) throws XmlParsingException {
+        void parseChangesetAttributes(Attributes atts) throws XmlParsingException {
             // -- id
             String value = atts.getValue("id");
             if (value == null) {
@@ -95,7 +95,7 @@ public final class OsmChangesetParser {
             if (value == null) {
                 current.setCreatedAt(null);
             } else {
-                current.setCreatedAt(DateUtils.fromString(value));
+                current.setCreatedAt(DateUtils.parseInstant(value));
             }
 
             // -- closed_at
@@ -103,7 +103,7 @@ public final class OsmChangesetParser {
             if (value == null) {
                 current.setClosedAt(null);
             } else {
-                current.setClosedAt(DateUtils.fromString(value));
+                current.setClosedAt(DateUtils.parseInstant(value));
             }
 
             //  -- open
@@ -171,11 +171,7 @@ public final class OsmChangesetParser {
         private void parseCommentAttributes(Attributes atts) throws XmlParsingException {
             // -- date
             String value = atts.getValue("date");
-            Date date = null;
-            if (value != null) {
-                date = DateUtils.fromString(value);
-            }
-
+            Instant date = value != null ? DateUtils.parseInstant(value) : null;
             comment = new ChangesetDiscussionComment(date, createUser(atts));
         }
 
@@ -251,7 +247,7 @@ public final class OsmChangesetParser {
             }
         }
 
-        protected User createUser(Attributes atts) throws XmlParsingException {
+        User createUser(Attributes atts) throws XmlParsingException {
             String name = atts.getValue("user");
             String uid = atts.getValue("uid");
             if (uid == null) {

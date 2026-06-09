@@ -12,7 +12,6 @@ import java.awt.event.KeyEvent;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import javax.swing.AbstractCellEditor;
-import javax.swing.DefaultComboBoxModel;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JTable;
@@ -21,17 +20,18 @@ import javax.swing.UIManager;
 import javax.swing.table.TableCellEditor;
 
 import org.openstreetmap.josm.gui.widgets.JosmComboBox;
+import org.openstreetmap.josm.gui.widgets.JosmComboBoxModel;
 import org.openstreetmap.josm.tools.Logging;
 
 /**
  * This is a table cell editor for selecting a possible tag value from a list of
  * proposed tag values. The editor also allows to select all proposed valued or
  * to remove the tag.
- *
+ * <p>
  * The editor responds intercepts some keys and interprets them as navigation keys. It
- * forwards navigation events to {@link NavigationListener}s registred with this editor.
+ * forwards navigation events to {@link NavigationListener}s registered with this editor.
  * You should register the parent table using this editor as {@link NavigationListener}.
- *
+ * <p>
  * {@link KeyEvent#VK_ENTER} and {@link KeyEvent#VK_TAB} trigger a {@link NavigationListener#gotoNextDecision()}.
  */
 public class MultiValueCellEditor extends AbstractCellEditor implements TableCellEditor {
@@ -49,7 +49,7 @@ public class MultiValueCellEditor extends AbstractCellEditor implements TableCel
 
     /** the combo box used as editor */
     private final JosmComboBox<Object> editor;
-    private final DefaultComboBoxModel<Object> editorModel;
+    private final JosmComboBoxModel<Object> editorModel;
     private final CopyOnWriteArrayList<NavigationListener> listeners;
 
     /**
@@ -86,8 +86,8 @@ public class MultiValueCellEditor extends AbstractCellEditor implements TableCel
      * Construct a new {@link MultiValueCellEditor}
      */
     public MultiValueCellEditor() {
-        editorModel = new DefaultComboBoxModel<>();
-        editor = new JosmComboBox<Object>(editorModel) {
+        editorModel = new JosmComboBoxModel<>();
+        editor = new JosmComboBox<>(editorModel) {
             @Override
             public void processKeyEvent(KeyEvent e) {
                 if (e.getID() == KeyEvent.KEY_PRESSED) {
@@ -149,7 +149,7 @@ public class MultiValueCellEditor extends AbstractCellEditor implements TableCel
         if (decision.canKeepAll()) {
             editorModel.addElement(MultiValueDecisionType.KEEP_ALL);
         }
-        switch(decision.getDecisionType()) {
+        switch (decision.getDecisionType()) {
         case UNDECIDED:
             editor.setSelectedItem(MultiValueDecisionType.UNDECIDED);
             break;
@@ -215,26 +215,27 @@ public class MultiValueCellEditor extends AbstractCellEditor implements TableCel
          * @param value {@link String} or {@link MultiValueDecisionType}
          */
         protected void renderValue(Object value) {
-            setFont(UIManager.getFont("ComboBox.font"));
-            if (String.class.isInstance(value)) {
-                setText(String.class.cast(value));
-            } else if (MultiValueDecisionType.class.isInstance(value)) {
-                switch(MultiValueDecisionType.class.cast(value)) {
+            final String comboBoxFont = "ComboBox.font";
+            setFont(UIManager.getFont(comboBoxFont));
+            if (value instanceof String) {
+                setText((String) value);
+            } else if (value instanceof MultiValueDecisionType) {
+                switch ((MultiValueDecisionType) value) {
                 case UNDECIDED:
                     setText(tr("Choose a value"));
-                    setFont(UIManager.getFont("ComboBox.font").deriveFont(Font.ITALIC + Font.BOLD));
+                    setFont(UIManager.getFont(comboBoxFont).deriveFont(Font.ITALIC + Font.BOLD));
                     break;
                 case KEEP_NONE:
                     setText(tr("none"));
-                    setFont(UIManager.getFont("ComboBox.font").deriveFont(Font.ITALIC + Font.BOLD));
+                    setFont(UIManager.getFont(comboBoxFont).deriveFont(Font.ITALIC + Font.BOLD));
                     break;
                 case KEEP_ALL:
                     setText(tr("all"));
-                    setFont(UIManager.getFont("ComboBox.font").deriveFont(Font.ITALIC + Font.BOLD));
+                    setFont(UIManager.getFont(comboBoxFont).deriveFont(Font.ITALIC + Font.BOLD));
                     break;
                 case SUM_ALL_NUMERIC:
                     setText(tr("sum"));
-                    setFont(UIManager.getFont("ComboBox.font").deriveFont(Font.ITALIC + Font.BOLD));
+                    setFont(UIManager.getFont(comboBoxFont).deriveFont(Font.ITALIC + Font.BOLD));
                     break;
                 default:
                     // don't display other values

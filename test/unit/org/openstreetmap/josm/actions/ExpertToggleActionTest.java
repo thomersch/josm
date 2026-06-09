@@ -1,39 +1,32 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.actions;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.swing.JPanel;
 
-import org.junit.Rule;
-import org.junit.Test;
 import org.openstreetmap.josm.actions.ExpertToggleAction.ExpertModeChangeListener;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
 
 /**
  * Test {@link ExpertToggleAction}
  * @author Michael Zangl
  * @since 11224
  */
-public class ExpertToggleActionTest {
-    /**
-     * We need prefs to store expert mode state.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences();
-
+// We need prefs to store expert mode state.
+@BasicPreferences
+class ExpertToggleActionTest {
     /**
      * Test {@link ExpertToggleAction#addVisibilitySwitcher(java.awt.Component)}
      * and {@link ExpertToggleAction#removeVisibilitySwitcher(java.awt.Component)}
      */
     @Test
-    public void testVisibilitySwitcher() {
+    void testVisibilitySwitcher() {
         ExpertToggleAction.getInstance().setExpert(false);
         JPanel c = new JPanel();
 
@@ -57,7 +50,7 @@ public class ExpertToggleActionTest {
      * and {@link ExpertToggleAction#removeExpertModeChangeListener(ExpertModeChangeListener)}
      */
     @Test
-    public void testExpertModeListener() {
+    void testExpertModeListener() {
         AtomicBoolean value = new AtomicBoolean(false);
         ExpertToggleAction.getInstance().setExpert(true);
         ExpertModeChangeListener listener = value::set;

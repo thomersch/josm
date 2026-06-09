@@ -38,8 +38,8 @@ import org.openstreetmap.josm.gui.dialogs.LayerListDialog;
 import org.openstreetmap.josm.gui.dialogs.ValidatorDialog.ValidatorBoundingXYVisitor;
 import org.openstreetmap.josm.gui.layer.Layer;
 import org.openstreetmap.josm.spi.preferences.Config;
-import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.Shortcut;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * Toggles the autoScale feature of the mapView
@@ -96,7 +96,7 @@ public class AutoScaleAction extends JosmAction {
          * Returns {@code AutoScaleMode} for a given English label
          * @param englishLabel English label
          * @return {@code AutoScaleMode} for given English label
-         * @throws IllegalArgumentException if Engligh label is unknown
+         * @throws IllegalArgumentException if English label is unknown
          */
         public static AutoScaleMode of(String englishLabel) {
             for (AutoScaleMode v : values()) {
@@ -115,7 +115,7 @@ public class AutoScaleAction extends JosmAction {
 
     /** Time of last zoom to bounds action */
     protected long lastZoomTime = -1;
-    /** Last zommed bounds */
+    /** Last zoomed bounds */
     protected int lastZoomArea = -1;
 
     /**
@@ -232,8 +232,6 @@ public class AutoScaleAction extends JosmAction {
         case NEXT:
             setHelpId(ht("/Action/ZoomToNext"));
             break;
-        default:
-            throw new IllegalArgumentException("Unknown mode: " + mode);
         }
         installAdapters();
     }
@@ -288,14 +286,8 @@ public class AutoScaleAction extends JosmAction {
         if (getLayerManager().getActiveLayer() == null) {
             return null;
         }
-        try {
-            List<Layer> layers = LayerListDialog.getInstance().getModel().getSelectedLayers();
-            if (!layers.isEmpty())
-                return layers.get(0);
-        } catch (IllegalStateException e) {
-            Logging.error(e);
-        }
-        return null;
+        List<Layer> layers = LayerListDialog.getInstance().getModel().getSelectedLayers();
+        return layers.isEmpty() ? null : layers.get(0);
     }
 
     private static void modeProblem(ValidatorBoundingXYVisitor v) {
@@ -402,7 +394,7 @@ public class AutoScaleAction extends JosmAction {
             setEnabled(ds != null && !ds.selectionEmpty());
             break;
         case LAYER:
-            setEnabled(getFirstSelectedLayer() != null);
+            setEnabled(map != null && getFirstSelectedLayer() != null);
             break;
         case CONFLICT:
             setEnabled(map != null && map.conflictDialog.getSelectedConflict() != null);
@@ -427,7 +419,7 @@ public class AutoScaleAction extends JosmAction {
     @Override
     protected void updateEnabledState(Collection<? extends OsmPrimitive> selection) {
         if (AutoScaleMode.SELECTION == mode) {
-            setEnabled(selection != null && !selection.isEmpty());
+            setEnabled(!Utils.isEmpty(selection));
         }
     }
 
@@ -444,7 +436,7 @@ public class AutoScaleAction extends JosmAction {
     /**
      * Adapter for zoom change events
      */
-    private class ZoomChangeAdapter implements ZoomChangeListener {
+    private final class ZoomChangeAdapter implements ZoomChangeListener {
         @Override
         public void zoomChanged() {
             updateEnabledState();

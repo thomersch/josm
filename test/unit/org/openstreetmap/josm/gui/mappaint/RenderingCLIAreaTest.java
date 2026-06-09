@@ -11,29 +11,20 @@ import org.CustomMatchers;
 import org.CustomMatchers.ErrorMode;
 import org.hamcrest.CoreMatchers;
 import org.hamcrest.Matcher;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.openstreetmap.josm.data.Bounds;
+import org.openstreetmap.josm.data.coor.ILatLon;
 import org.openstreetmap.josm.data.coor.LatLon;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.testutils.annotations.Projection;
+import org.openstreetmap.josm.testutils.annotations.Territories;
 
 /**
  * Tests the method {@link RenderingCLI#determineRenderingArea(org.openstreetmap.josm.data.osm.DataSet)}.
  */
-@RunWith(Parameterized.class)
-public class RenderingCLIAreaTest {
-    /**
-     * Setup rule
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().projection().territories();
-
-    @Parameterized.Parameters
+@Projection
+@Territories
+class RenderingCLIAreaTest {
     public static Collection<Object[]> runs() {
         Collection<Object[]> runs = new ArrayList<>();
 
@@ -53,7 +44,7 @@ public class RenderingCLIAreaTest {
 
         // 1
         runs.add(new Object[] {"--scale 4000 --bounds " + param(bFeldberg),
-                CoreMatchers.is(scaleFeldberg4000),
+                isFP(scaleFeldberg4000, ErrorMode.ABSOLUTE, 0.000000000001d),
                 CoreMatchers.is(bFeldberg)});
 
         // 2
@@ -66,9 +57,9 @@ public class RenderingCLIAreaTest {
                 isFP(scaleFeldberg4000, ErrorMode.RELATIVE, 1.5e-3),
                 CoreMatchers.is(bFeldberg)});
 
-        LatLon aFeldberg = bFeldberg.getMin();
-        LatLon aFeldberg200mRight = new LatLon(aFeldberg.lat(), 13.433008399004041);
-        LatLon aFeldberg150mUp = new LatLon(53.33134745249311, aFeldberg.lon());
+        ILatLon aFeldberg = bFeldberg.getMin();
+        ILatLon aFeldberg200mRight = new LatLon(aFeldberg.lat(), 13.433008399004041);
+        ILatLon aFeldberg150mUp = new LatLon(53.33134745249311, aFeldberg.lon());
         assertThat(aFeldberg.greatCircleDistance(aFeldberg200mRight), isFP(200.0, 0.01));
         assertThat(aFeldberg.greatCircleDistance(aFeldberg150mUp), isFP(150.0, 0.01));
 
@@ -144,24 +135,15 @@ public class RenderingCLIAreaTest {
         return b.getMinLon() + "," + b.getMinLat() + "," + b.getMaxLon() + "," + b.getMaxLat();
     }
 
-    private static String param(LatLon ll) {
+    private static String param(ILatLon ll) {
         return ll.lon() + "," + ll.lat();
     }
 
-    private final String[] args;
-    private final Matcher<Double> scaleMatcher;
-    private final Matcher<Bounds> boundsMatcher;
-
-    public RenderingCLIAreaTest(String args, Matcher<Double> scaleMatcher, Matcher<Bounds> boundsMatcher) {
-        this.args = args.split("\\s+", -1);
-        this.scaleMatcher = scaleMatcher;
-        this.boundsMatcher = boundsMatcher;
-    }
-
-    @Test
-    public void testDetermineRenderingArea() {
+    @ParameterizedTest
+    @MethodSource("runs")
+    void testDetermineRenderingArea(String args, Matcher<Double> scaleMatcher, Matcher<Bounds> boundsMatcher) {
         RenderingCLI cli = new RenderingCLI();
-        cli.parseArguments(args);
+        cli.parseArguments(args.split("\\s+", -1));
         RenderingCLI.RenderingArea ra = cli.determineRenderingArea(null);
         assertThat(ra.scale, scaleMatcher);
         assertThat(ra.bounds, boundsMatcher);

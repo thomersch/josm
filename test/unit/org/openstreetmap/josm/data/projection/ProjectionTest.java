@@ -1,7 +1,8 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.projection;
 
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.security.SecureRandom;
 import java.util.Arrays;
@@ -9,16 +10,17 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.Random;
 
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.data.coor.EastNorth;
+import org.openstreetmap.josm.data.coor.ILatLon;
 import org.openstreetmap.josm.data.coor.LatLon;
+import org.openstreetmap.josm.testutils.annotations.ProjectionNadGrids;
 
 /**
  * Unit tests for class {@link Projection}.
  */
-public class ProjectionTest {
+class ProjectionTest {
 
     private static final Random rand = new SecureRandom();
 
@@ -28,8 +30,9 @@ public class ProjectionTest {
     /**
      * Tests that projections are numerically stable in their definition bounds (round trip error &lt; 1e-5)
      */
+    @ProjectionNadGrids
     @Test
-    public void testProjections() {
+    void testProjections() {
         error = false;
         text = "";
 
@@ -38,18 +41,18 @@ public class ProjectionTest {
         testProjection(Projections.getProjectionByCode("EPSG:3301")); // Lambert EST
 
         for (int i = 0; i <= 3; ++i) {
-            testProjection(Projections.getProjectionByCode("EPSG:"+Integer.toString(27561+i))); // Lambert 4 Zones France
+            testProjection(Projections.getProjectionByCode("EPSG:"+ (27561 + i))); // Lambert 4 Zones France
         }
 
         for (int i = 0; i <= 4; ++i) {
-            testProjection(Projections.getProjectionByCode("EPSG:"+Integer.toString(2176+i))); // PUWG Poland
+            testProjection(Projections.getProjectionByCode("EPSG:"+ (2176 + i))); // PUWG Poland
         }
 
         testProjection(Projections.getProjectionByCode("EPSG:21781")); // Swiss grid
 
         for (int i = 0; i <= 60; ++i) {
-            testProjection(Projections.getProjectionByCode("EPSG:"+Integer.toString(32601+i))); // UTM North
-            testProjection(Projections.getProjectionByCode("EPSG:"+Integer.toString(32701+i))); // UTM South
+            testProjection(Projections.getProjectionByCode("EPSG:"+ (32601 + i))); // UTM North
+            testProjection(Projections.getProjectionByCode("EPSG:"+ (32701 + i))); // UTM South
         }
 
         for (String c : Arrays.asList("2969", "2970", "2972", "2973")) {
@@ -57,19 +60,18 @@ public class ProjectionTest {
         }
 
         for (int i = 0; i <= 8; ++i) {
-            testProjection(Projections.getProjectionByCode("EPSG:"+Integer.toString(3942+i))); // Lambert CC9 Zones France
+            testProjection(Projections.getProjectionByCode("EPSG:"+ (3942 + i))); // Lambert CC9 Zones France
         }
 
         for (int i = 0; i <= 17; ++i) {
-            testProjection(Projections.getProjectionByCode("EPSG:"+Integer.toString(102421+i))); // WGS_1984_ARC_System Zones
+            testProjection(Projections.getProjectionByCode("EPSG:"+ (102421 + i))); // WGS_1984_ARC_System Zones
         }
 
         testProjection(Projections.getProjectionByCode("EPSG:102016")); // North Pole
         testProjection(Projections.getProjectionByCode("EPSG:102019")); // South Pole
 
         if (error) {
-            System.err.println(text);
-            Assert.fail();
+            fail(text);
         }
     }
 
@@ -78,7 +80,7 @@ public class ProjectionTest {
             double maxErrLat = 0, maxErrLon = 0;
             Bounds b = p.getWorldBoundsLatLon();
 
-            text += String.format("*** %s %s%n", p.toString(), p.toCode());
+            text += String.format("*** %s %s%n", p, p.toCode());
             for (int num = 0; num < 1000; ++num) {
 
                 LatLon ll0 = random(b);
@@ -119,7 +121,7 @@ public class ProjectionTest {
      * Tests that projections are numerically stable in their definition bounds (round trip error &lt; epsilon)
      */
     @Test
-    public void testProjs() {
+    void testProjs() {
         error2 = false;
         text2 = "";
 
@@ -146,10 +148,9 @@ public class ProjectionTest {
         testProj("eqc", 1e-5, "");
 
         if (error2) {
-            System.err.println(text2);
-            Assert.fail();
+            fail(text2);
         }
-        assertTrue("missing test: "+projIds, projIds.isEmpty());
+        assertTrue(projIds.isEmpty(), "missing test: "+projIds);
     }
 
     private void testProj(String id, double eps, String prefAdd) {
@@ -169,8 +170,8 @@ public class ProjectionTest {
             LatLon ll1 = random(b);
             EastNorth en = p.latlon2eastNorth(ll1);
             LatLon ll2 = p.eastNorth2latlon(en);
-            assertTrue(p.toCode() + " at " + ll1 + " is " + ll2, ll2.isValid());
-            double dist = ll1.greatCircleDistance(ll2);
+            assertTrue(ll2.isValid(), p.toCode() + " at " + ll1 + " is " + ll2);
+            double dist = ll1.greatCircleDistance((ILatLon) ll2);
             if (dist > eps) {
                 error2 = true;
                 if (dist > maxDist) {
@@ -188,7 +189,7 @@ public class ProjectionTest {
      * Checks that Swedish projections have their axis defined correctly.
      */
     @Test
-    public void testSwedishProjections() {
+    void testSwedishProjections() {
         for (int code = 3006; code <= 3018; code++) {
             assertTrue(Projections.getProjectionByCode("EPSG:"+code).switchXY());
         }

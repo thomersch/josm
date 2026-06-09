@@ -1,26 +1,22 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.osm;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.openstreetmap.josm.data.osm.Changeset.MAX_CHANGESET_TAG_LENGTH;
 
-import java.util.Calendar;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Collection;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
-import org.junit.Assert;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.data.coor.LatLon;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
 import org.openstreetmap.josm.tools.Logging;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -28,26 +24,18 @@ import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 /**
  * Unit tests for class {@link Changeset}.
  */
-public class ChangesetTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+class ChangesetTest {
     /**
      * Unit test of method {@link Changeset#setKeys}.
      */
     @Test
     @SuppressFBWarnings(value = "NP_NULL_PARAM_DEREF_ALL_TARGETS_DANGEROUS")
-    public void testSetKeys() {
+    void testSetKeys() {
         final Changeset cs = new Changeset();
         // Cannot add null map => IllegalArgumentException
         try {
             cs.setKeys(null);
-            Assert.fail("Should have thrown an IllegalArgumentException as we gave a null argument.");
+            fail("Should have thrown an IllegalArgumentException as we gave a null argument.");
         } catch (IllegalArgumentException e) {
             Logging.trace(e);
             // Was expected
@@ -62,15 +50,14 @@ public class ChangesetTest {
         keys.put("empty", null);
         keys.put("test", "test");
         cs.setKeys(keys);
-        Assert.assertEquals("Both valid keys should have been put in the ChangeSet.", 2, cs.getKeys().size());
+        assertEquals(2, cs.getKeys().size(), "Both valid keys should have been put in the ChangeSet.");
 
         // Add a map with too long values => IllegalArgumentException
         keys = new HashMap<>();
-        // Java 11: use String.repeat
-        keys.put("test", IntStream.range(0, MAX_CHANGESET_TAG_LENGTH + 1).mapToObj(i -> "x").collect(Collectors.joining()));
+        keys.put("test", "x".repeat(MAX_CHANGESET_TAG_LENGTH + 1));
         try {
             cs.setKeys(keys);
-            Assert.fail("Should have thrown an IllegalArgumentException as we gave a too long value.");
+            fail("Should have thrown an IllegalArgumentException as we gave a too long value.");
         } catch (IllegalArgumentException e) {
             Logging.trace(e);
             // Was expected
@@ -81,7 +68,7 @@ public class ChangesetTest {
      * Unit test of method {@link Changeset#compareTo}.
      */
     @Test
-    public void testCompareTo() {
+    void testCompareTo() {
         Changeset cs1 = new Changeset(1);
         Changeset cs2 = new Changeset(2);
         assertEquals(0, cs1.compareTo(cs1));
@@ -93,7 +80,7 @@ public class ChangesetTest {
      * Unit test of method {@link Changeset#getBounds}.
      */
     @Test
-    public void testGetBounds() {
+    void testGetBounds() {
         Changeset cs = new Changeset();
         assertNull(cs.getBounds());
         cs.setMin(LatLon.NORTH_POLE);
@@ -111,7 +98,7 @@ public class ChangesetTest {
      * Unit test of methods {@link Changeset#getContent} / {@link Changeset#setContent} / {@link Changeset#hasContent}.
      */
     @Test
-    public void testGetSetHasContent() {
+    void testGetSetHasContent() {
         Changeset cs = new Changeset();
         assertNull(cs.getContent());
         assertFalse(cs.hasContent());
@@ -125,7 +112,7 @@ public class ChangesetTest {
      * Unit test of method {@link Changeset#getDisplayName}.
      */
     @Test
-    public void testGetDisplayName() {
+    void testGetDisplayName() {
         assertEquals("Changeset 0", new Changeset().getDisplayName(DefaultNameFormatter.getInstance()));
     }
 
@@ -133,22 +120,17 @@ public class ChangesetTest {
      * Unit test of method {@link Changeset#getName}.
      */
     @Test
-    public void testGetName() {
+    void testGetName() {
         assertEquals("changeset 0", new Changeset().getName());
-    }
-
-    private static Date yesterday() {
-        final Calendar cal = Calendar.getInstance();
-        cal.add(Calendar.DATE, -1);
-        return cal.getTime();
     }
 
     /**
      * Unit test of method {@link Changeset#hasEqualSemanticAttributes}.
      */
     @Test
-    public void testHasEqualSemanticAttributes() {
-        Date today = new Date();
+    void testHasEqualSemanticAttributes() {
+        Instant today = Instant.now();
+        Instant yesterday = today.minus(Duration.ofDays(1));
         Changeset cs1 = new Changeset();
         Changeset cs2 = new Changeset();
         assertTrue(cs1.hasEqualSemanticAttributes(cs2));
@@ -157,7 +139,7 @@ public class ChangesetTest {
         cs1.setClosedAt(null);
         cs2.setClosedAt(today);
         assertFalse(cs1.hasEqualSemanticAttributes(cs2));
-        cs1.setClosedAt(yesterday());
+        cs1.setClosedAt(yesterday);
         cs2.setClosedAt(today);
         assertFalse(cs1.hasEqualSemanticAttributes(cs2));
         cs1.setClosedAt(today);
@@ -167,7 +149,7 @@ public class ChangesetTest {
         cs1.setCreatedAt(null);
         cs2.setCreatedAt(today);
         assertFalse(cs1.hasEqualSemanticAttributes(cs2));
-        cs1.setCreatedAt(yesterday());
+        cs1.setCreatedAt(yesterday);
         cs2.setCreatedAt(today);
         assertFalse(cs1.hasEqualSemanticAttributes(cs2));
         cs1.setCreatedAt(today);
@@ -243,7 +225,7 @@ public class ChangesetTest {
      * Unit test of methods {@link Changeset#keySet} / {@link Changeset#put} / {@link Changeset#remove} / {@link Changeset#removeAll}.
      */
     @Test
-    public void testKeySet() {
+    void testKeySet() {
         Changeset cs = new Changeset();
         assertTrue(cs.keySet().isEmpty());
         Map<String, String> tags = new HashMap<>();

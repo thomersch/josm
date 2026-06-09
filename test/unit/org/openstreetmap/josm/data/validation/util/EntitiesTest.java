@@ -1,31 +1,19 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.validation.util;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import net.trajano.commons.testing.UtilityClassTestUtil;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for class {@link Entities}.
  */
-public class EntitiesTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+class EntitiesTest {
     /**
      * Tests that {@code Entities} satisfies utility class criteria.
      * @throws ReflectiveOperationException if an error occurs
      */
     @Test
-    public void testUtilityClass() throws ReflectiveOperationException {
+    void testUtilityClass() throws ReflectiveOperationException {
         UtilityClassTestUtil.assertUtilityClassWellDefined(Entities.class);
     }
 }

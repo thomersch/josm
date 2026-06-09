@@ -21,13 +21,13 @@ import java.util.TreeMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import javax.json.Json;
-import javax.json.JsonArray;
-import javax.json.JsonString;
-import javax.json.JsonValue;
-import javax.json.stream.JsonParser;
-import javax.json.stream.JsonParser.Event;
-import javax.json.stream.JsonParsingException;
+import jakarta.json.Json;
+import jakarta.json.JsonArray;
+import jakarta.json.JsonString;
+import jakarta.json.JsonValue;
+import jakarta.json.stream.JsonParser;
+import jakarta.json.stream.JsonParser.Event;
+import jakarta.json.stream.JsonParsingException;
 
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.DataSet;
@@ -199,8 +199,8 @@ public final class Territories {
                 if (event == Event.START_OBJECT) {
                     for (JsonValue feature : json.getObject().getJsonArray("features")) {
                         ofNullable(feature.asJsonObject().getJsonObject("properties")).ifPresent(props ->
-                        ofNullable(props.getJsonObject("urls")).ifPresent(urls ->
-                        ofNullable(urls.getString(TAGINFO)).ifPresent(taginfo -> {
+                        ofNullable(props.getJsonObject("urls")).flatMap(urls ->
+                        ofNullable(urls.getString(TAGINFO))).ifPresent(taginfo -> {
                             JsonArray iso1 = props.getJsonArray(ISO3166_1_LC);
                             JsonArray iso2 = props.getJsonArray(ISO3166_2_LC);
                             if (iso1 != null) {
@@ -208,7 +208,7 @@ public final class Territories {
                             } else if (iso2 != null) {
                                 readExternalTaginfo(taginfoGeofabrikCache, taginfo, iso2, source);
                             }
-                        })));
+                        }));
                     }
                 }
             }

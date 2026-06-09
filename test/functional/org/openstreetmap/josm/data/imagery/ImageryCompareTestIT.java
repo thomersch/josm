@@ -1,40 +1,37 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.imagery;
 
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.net.URL;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.openstreetmap.josm.spi.preferences.Config;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
+import org.openstreetmap.josm.testutils.annotations.FunctionalTest;
+import org.openstreetmap.josm.testutils.annotations.IntegrationTest;
 import org.openstreetmap.josm.tools.HttpClient;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
  * Automatic test of imagery synchronization between JOSM and ELI.
  * See <a href="https://josm.openstreetmap.de/wiki/ImageryCompare">JOSM wiki</a>
  */
-public class ImageryCompareTestIT {
+@BasicPreferences
+@FunctionalTest
+@IntegrationTest
+@Timeout(60)
+class ImageryCompareTestIT {
 
     private static final String BLACK_PREFIX = "<pre style=\"margin:3px;color:black\">";
     private static final String RED_PREFIX = "<pre style=\"margin:3px;color:red\">";
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences().timeout(60000);
 
     /**
      * Test of imagery entries.
      * @throws Exception if an error occurs
      */
     @Test
-    public void testImageryEntries() throws Exception {
+    void testImageryEntries() throws Exception {
         // Increase traditional timeouts to avoid random problems
         Config.getPref().putInt("socket.timeout.connect", 60);
         Config.getPref().putInt("socket.timeout.read", 90);

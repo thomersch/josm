@@ -13,12 +13,14 @@ import java.awt.Insets;
 import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.Window;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import javax.swing.JComponent;
 
+import org.openstreetmap.josm.data.preferences.BooleanProperty;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.CheckParameterUtil;
@@ -32,6 +34,16 @@ import org.openstreetmap.josm.tools.Logging;
  * @since 2008
  */
 public class WindowGeometry {
+
+    /**
+     * Preference key for the {@code MainFrame} geometry
+     */
+    public static final String PREF_KEY_GUI_GEOMETRY = "gui.geometry";
+
+    /**
+     * Whether storing/restoring of geometries to/from preferences is enabled
+     */
+    public static final BooleanProperty GUI_GEOMETRY_ENABLED = new BooleanProperty(PREF_KEY_GUI_GEOMETRY + ".enabled", true);
 
     /** the top left point */
     private Point topLeft;
@@ -106,7 +118,7 @@ public class WindowGeometry {
      * @return the geometry object
      */
     public static WindowGeometry centerOnScreen(Dimension extent) {
-        return centerOnScreen(extent, "gui.geometry");
+        return centerOnScreen(extent, PREF_KEY_GUI_GEOMETRY);
     }
 
     /**
@@ -207,6 +219,9 @@ public class WindowGeometry {
     }
 
     protected final void initFromPreferences(String preferenceKey) throws WindowGeometryException {
+        if (!GUI_GEOMETRY_ENABLED.get()) {
+            throw new WindowGeometryException("window geometry from preferences is disabled");
+        }
         String value = Config.getPref().get(preferenceKey);
         if (value.isEmpty())
             throw new WindowGeometryException(
@@ -232,7 +247,7 @@ public class WindowGeometry {
      * @return The geometry for the main window
      */
     public static WindowGeometry mainWindow(String preferenceKey, String arg, boolean maximize) {
-        Rectangle screenDimension = getScreenInfo("gui.geometry");
+        Rectangle screenDimension = getScreenInfo(PREF_KEY_GUI_GEOMETRY);
         if (arg != null) {
             final Matcher m = Pattern.compile("(\\d+)x(\\d+)(([+-])(\\d+)([+-])(\\d+))?").matcher(arg);
             if (m.matches()) {
@@ -273,10 +288,8 @@ public class WindowGeometry {
      * @param preferenceKey the preference key
      */
     public void remember(String preferenceKey) {
-        StringBuilder value = new StringBuilder(32);
-        value.append("x=").append(topLeft.x).append(",y=").append(topLeft.y)
-             .append(",width=").append(extent.width).append(",height=").append(extent.height);
-        Config.getPref().put(preferenceKey, value.toString());
+        String value = String.format(Locale.ROOT, "x=%d,y=%d,width=%d,height=%d", topLeft.x, topLeft.y, extent.width, extent.height);
+        Config.getPref().put(preferenceKey, value);
     }
 
     /**
@@ -501,17 +514,7 @@ public class WindowGeometry {
         if (obj == null || getClass() != obj.getClass())
             return false;
         WindowGeometry other = (WindowGeometry) obj;
-        if (extent == null) {
-            if (other.extent != null)
-                return false;
-        } else if (!extent.equals(other.extent))
-            return false;
-        if (topLeft == null) {
-            if (other.topLeft != null)
-                return false;
-        } else if (!topLeft.equals(other.topLeft))
-            return false;
-        return true;
+        return Objects.equals(extent, other.extent) && Objects.equals(topLeft, other.topLeft);
     }
 
     @Override

@@ -1,19 +1,23 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.actions;
 
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.contrib.java.lang.system.ExpectedSystemExit;
+import java.awt.GraphicsEnvironment;
+
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.cache.JCSCacheManager;
 import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.io.SaveLayersDialog;
 import org.openstreetmap.josm.gui.progress.swing.ProgressMonitorExecutor;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.Main;
 import org.openstreetmap.josm.tools.ImageProvider;
+import org.openstreetmap.josm.tools.Utils;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import com.ginsberg.junit.exit.ExpectSystemExitWithStatus;
 import mockit.Invocation;
 import mockit.Mock;
 import mockit.MockUp;
@@ -21,34 +25,27 @@ import mockit.MockUp;
 /**
  * Unit tests for class {@link ExitAction}.
  */
-public final class ExitActionTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().main();
-
-    /**
-     * System.exit rule
-     */
-    @Rule
-    public final ExpectedSystemExit exit = ExpectedSystemExit.none();
+@Main
+final class ExitActionTest {
+    @BeforeAll
+    static void beforeAll() {
+        assumeTrue(Utils.getJavaVersion() < 18 || "allow".equals(System.getProperty("java.security.manager")));
+    }
 
     /**
      * Unit test of {@link ExitAction#actionPerformed}
      */
     @Test
-    public void testActionPerformed() {
+    @ExpectSystemExitWithStatus(0)
+    void testActionPerformed() {
         TestUtils.assumeWorkingJMockit();
-        exit.expectSystemExitWithStatus(0);
 
         boolean[] workerShutdownCalled = {false};
         boolean[] workerShutdownNowCalled = {false};
         boolean[] imageProviderShutdownCalledNowFalse = {false};
         boolean[] imageProviderShutdownCalledNowTrue = {false};
         boolean[] jcsCacheManagerShutdownCalled = {false};
+        boolean[] saveLayersDialogCloseDialogCalled = {false};
 
         // critically we don't proceed into the actual implementation in any of these mock methods -
         // that would be quite annoying for tests following this one which were expecting to use any
@@ -88,6 +85,14 @@ public final class ExitActionTest {
                 jcsCacheManagerShutdownCalled[0] = true;
             }
         };
+        if (!GraphicsEnvironment.isHeadless()) {
+            new MockUp<SaveLayersDialog>() {
+                @Mock
+                private void closeDialog(Invocation invocation) {
+                    saveLayersDialogCloseDialogCalled[0] = true;
+                }
+            };
+        }
 
         // No layer
 
@@ -101,6 +106,9 @@ public final class ExitActionTest {
             assertTrue(imageProviderShutdownCalledNowFalse[0]);
             assertTrue(imageProviderShutdownCalledNowTrue[0]);
             assertTrue(jcsCacheManagerShutdownCalled[0]);
+            if (!GraphicsEnvironment.isHeadless()) {
+                assertTrue(saveLayersDialogCloseDialogCalled[0]);
+            }
         }
     }
 }

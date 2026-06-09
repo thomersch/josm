@@ -21,7 +21,7 @@ import org.openstreetmap.josm.tools.Utils;
  */
 public class LoadDataHandler extends RequestHandler {
 
-    private static final String OSM_MIME_TYPE = "application/x-osm+xml";
+    private static final String OSM_MIME_TYPE = "application/vnd.openstreetmap.data+xml";
 
     /**
      * The remote control command name used to import data.
@@ -81,7 +81,7 @@ public class LoadDataHandler extends RequestHandler {
     protected void validateRequest() throws RequestHandlerBadRequestException {
         validateDownloadParams();
         this.data = args.get("data");
-        /**
+        /*
          * Holds the mime type. Currently only OSM_MIME_TYPE is supported
          * But it could be extended to text/csv, application/gpx+xml, ... or even binary encoded data
          */

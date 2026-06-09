@@ -25,14 +25,16 @@ import javax.swing.JOptionPane;
 
 import org.openstreetmap.josm.actions.ReverseWayAction.ReverseWayResult;
 import org.openstreetmap.josm.command.AddCommand;
-import org.openstreetmap.josm.command.ChangeCommand;
+import org.openstreetmap.josm.command.ChangeMembersCommand;
 import org.openstreetmap.josm.command.ChangeNodesCommand;
+import org.openstreetmap.josm.command.ChangePropertyCommand;
 import org.openstreetmap.josm.command.Command;
 import org.openstreetmap.josm.command.DeleteCommand;
 import org.openstreetmap.josm.command.SequenceCommand;
 import org.openstreetmap.josm.command.SplitWayCommand;
 import org.openstreetmap.josm.data.UndoRedoHandler;
 import org.openstreetmap.josm.data.coor.EastNorth;
+import org.openstreetmap.josm.data.osm.AbstractPrimitive;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.NodePositionComparator;
@@ -100,6 +102,9 @@ public class JoinAreasAction extends JosmAction {
         }
     }
 
+    /**
+     * A record class to store how a multipolygon is constructed
+     */
     public static class Multipolygon {
         private final Way outerWay;
         private final List<Way> innerWays;
@@ -131,7 +136,7 @@ public class JoinAreasAction extends JosmAction {
     }
 
     // HelperClass
-    // Saves a relation and a role an OsmPrimitve was part of until it was stripped from all relations
+    // Saves a relation and a role an OsmPrimitive was part of until it was stripped from all relations
     private static class RelationRole {
         public final Relation rel;
         public final String role;
@@ -158,7 +163,7 @@ public class JoinAreasAction extends JosmAction {
 
     /**
      * HelperClass - saves a way and the "inside" side.
-     *
+     * <p>
      * insideToTheLeft: if true left side is "in", false -right side is "in".
      * Left and right are determined along the orientation of way.
      */
@@ -232,10 +237,19 @@ public class JoinAreasAction extends JosmAction {
         }
     }
 
+    /**
+     * A multipolygon with a list of inner ways and an assembled polygon for the outer way
+     */
     public static class AssembledMultipolygon {
+        /** The outer way of the multipolygon */
         public AssembledPolygon outerWay;
+        /** The inner polygons of the multipolygon */
         public List<AssembledPolygon> innerWays;
 
+        /**
+         * Create a new {@link AssembledMultipolygon}
+         * @param way The outer way
+         */
         public AssembledMultipolygon(AssembledPolygon way) {
             outerWay = way;
             innerWays = new ArrayList<>();
@@ -243,7 +257,7 @@ public class JoinAreasAction extends JosmAction {
     }
 
     /**
-     * This hepler class implements algorithm traversing trough connected ways.
+     * This helper class implements algorithm traversing through connected ways.
      * Assumes you are going in clockwise orientation.
      * @author viesturs
      */
@@ -399,7 +413,7 @@ public class JoinAreasAction extends JosmAction {
         }
 
         /**
-         * Search for an other way coming to the same head node at left side from last way. #9951
+         * Search for another way coming to the same head node at left side from last way. #9951
          * @return left way or null if none found
          */
         public WayInPolygon leftComingWay() {
@@ -525,6 +539,7 @@ public class JoinAreasAction extends JosmAction {
                     ways.size()) + "<br/>"
                     + tr("This can lead to nodes being deleted accidentally.") + "<br/>"
                     + tr("Are you really sure to continue?")
+                    + ' '
                     + tr("Please abort if you are not sure"),
                 tr("The selected area is incomplete. Continue?"),
                 allNodes, null);
@@ -649,8 +664,7 @@ public class JoinAreasAction extends JosmAction {
         allStartingWays.addAll(outerStartingWays);
 
         //first remove nodes in the same coordinate
-        boolean removedDuplicates = false;
-        removedDuplicates |= removeDuplicateNodes(allStartingWays);
+        boolean removedDuplicates = removeDuplicateNodes(allStartingWays);
 
         if (removedDuplicates) {
             hasChanges = true;
@@ -659,7 +673,7 @@ public class JoinAreasAction extends JosmAction {
             commitCommands(marktr("Removed duplicate nodes"));
             // remove now unconnected nodes without tags
             List<Node> toRemove = oldNodes.stream().filter(
-                    n -> (n.isNew() || !n.isOutsideDownloadArea()) && !n.hasKeys() && n.getReferrers().isEmpty())
+                    n -> n.isReferrersDownloaded() && !n.hasKeys() && n.getReferrers().isEmpty())
                     .collect(Collectors.toList());
             if (!toRemove.isEmpty()) {
                 cmds.add(new DeleteCommand(toRemove));
@@ -706,8 +720,7 @@ public class JoinAreasAction extends JosmAction {
 
         //  see #9599
         if (discardedWays.stream().anyMatch(w -> !w.isNew())) {
-            for (int i = 0; i < boundaries.size(); i++) {
-                AssembledPolygon ring = boundaries.get(i);
+            for (AssembledPolygon ring : boundaries) {
                 for (int k = 0; k < ring.ways.size(); k++) {
                     WayInPolygon ringWay = ring.ways.get(k);
                     Way older = keepOlder(ringWay.way, oldestWayMap, discardedWays);
@@ -885,7 +898,7 @@ public class JoinAreasAction extends JosmAction {
      * @param description The description of what the commands do
      */
     private void commitCommands(String description) {
-        switch(cmds.size()) {
+        switch (cmds.size()) {
         case 0:
             return;
         case 1:
@@ -1133,7 +1146,7 @@ public class JoinAreasAction extends JosmAction {
 
         if (chunks.size() > 1) {
             SplitWayCommand split = SplitWayCommand.splitWay(way, chunks,
-                    Collections.<OsmPrimitive>emptyList(), SplitWayCommand.Strategy.keepFirstChunk());
+                    Collections.emptyList(), SplitWayCommand.Strategy.keepFirstChunk());
 
             if (split != null) {
                 //execute the command, we need the results
@@ -1633,12 +1646,10 @@ public class JoinAreasAction extends JosmAction {
                     continue;
                 }
 
-                Relation newRel = new Relation(r);
-                List<RelationMember> members = newRel.getMembers();
+                List<RelationMember> members = r.getMembers();
                 members.remove(rm);
-                newRel.setMembers(members);
 
-                cmds.add(new ChangeCommand(r, newRel));
+                cmds.add(new ChangeMembersCommand(r, members));
                 RelationRole saverel = new RelationRole(r, rm.getRole());
                 if (!result.contains(saverel)) {
                     result.add(saverel);
@@ -1673,26 +1684,24 @@ public class JoinAreasAction extends JosmAction {
                 continue;
             }
             // Add it back!
-            Relation newRel = new Relation(r.rel);
-            newRel.addMember(new RelationMember(r.role, outer));
-            cmds.add(new ChangeCommand(r.rel, newRel));
+            List<RelationMember> modifiedMembers = new ArrayList<>(r.rel.getMembers());
+            modifiedMembers.add(new RelationMember(r.role, outer));
+            cmds.add(new ChangeMembersCommand(r.rel, modifiedMembers));
         }
 
-        Relation newRel;
-        RelationRole soleOuter;
         switch (multiouters.size()) {
         case 0:
             return;
         case 1:
             // Found only one to be part of a multipolygon relation, so just add it back as well
-            soleOuter = multiouters.get(0);
-            newRel = new Relation(soleOuter.rel);
-            newRel.addMember(new RelationMember(soleOuter.role, outer));
-            cmds.add(new ChangeCommand(ds, soleOuter.rel, newRel));
+            RelationRole soleOuter = multiouters.get(0);
+            List<RelationMember> modifiedMembers = new ArrayList<>(soleOuter.rel.getMembers());
+            modifiedMembers.add(new RelationMember(soleOuter.role, outer));
+            cmds.add(new ChangeMembersCommand(ds, soleOuter.rel, modifiedMembers));
             return;
         default:
             // Create a new relation with all previous members and (Way)outer as outer.
-            newRel = new Relation();
+            Relation newRel = new Relation();
             for (RelationRole r : multiouters) {
                 // Add members
                 for (RelationMember rm : r.rel.getMembers()) {
@@ -1701,9 +1710,7 @@ public class JoinAreasAction extends JosmAction {
                     }
                 }
                 // Add tags
-                for (String key : r.rel.keySet()) {
-                    newRel.put(key, r.rel.get(key));
-                }
+                r.rel.visitKeys((p, key, value) -> newRel.put(key, value));
                 // Delete old relation
                 relationsToDelete.add(r.rel);
             }
@@ -1717,11 +1724,11 @@ public class JoinAreasAction extends JosmAction {
      * @param ways The List of Ways to remove all tags from
      */
     private void stripTags(Collection<Way> ways) {
-        for (Way w : ways) {
-            final Way wayWithoutTags = new Way(w);
-            wayWithoutTags.removeAll();
-            cmds.add(new ChangeCommand(w, wayWithoutTags));
-        }
+        Map<String, String> tagsToRemove = new HashMap<>();
+        ways.stream().flatMap(AbstractPrimitive::keys).forEach(k -> tagsToRemove.put(k, null));
+        if (tagsToRemove.isEmpty())
+            return;
+        cmds.add(new ChangePropertyCommand(new ArrayList<>(ways), tagsToRemove));
         /* I18N: current action printed in status display */
         commitCommands(marktr("Remove tags from inner ways"));
     }

@@ -33,7 +33,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -50,6 +49,8 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 
+import org.apache.commons.jcs3.access.CacheAccess;
+import org.openstreetmap.gui.jmapviewer.OsmMercator;
 import org.openstreetmap.josm.actions.AutoScaleAction;
 import org.openstreetmap.josm.actions.ExpertToggleAction;
 import org.openstreetmap.josm.actions.RenameLayerAction;
@@ -57,8 +58,10 @@ import org.openstreetmap.josm.actions.ToggleUploadDiscouragedLayerAction;
 import org.openstreetmap.josm.data.APIDataSet;
 import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.data.Data;
+import org.openstreetmap.josm.data.IBounds;
 import org.openstreetmap.josm.data.ProjectionBounds;
 import org.openstreetmap.josm.data.UndoRedoHandler;
+import org.openstreetmap.josm.data.cache.JCSCacheManager;
 import org.openstreetmap.josm.data.conflict.Conflict;
 import org.openstreetmap.josm.data.conflict.ConflictCollection;
 import org.openstreetmap.josm.data.coor.EastNorth;
@@ -71,6 +74,7 @@ import org.openstreetmap.josm.data.gpx.GpxTrack;
 import org.openstreetmap.josm.data.gpx.GpxTrackSegment;
 import org.openstreetmap.josm.data.gpx.IGpxTrackSegment;
 import org.openstreetmap.josm.data.gpx.WayPoint;
+import org.openstreetmap.josm.data.osm.BBox;
 import org.openstreetmap.josm.data.osm.DataIntegrityProblemException;
 import org.openstreetmap.josm.data.osm.DataSelectionListener;
 import org.openstreetmap.josm.data.osm.DataSet;
@@ -78,7 +82,10 @@ import org.openstreetmap.josm.data.osm.DataSetMerger;
 import org.openstreetmap.josm.data.osm.DatasetConsistencyTest;
 import org.openstreetmap.josm.data.osm.DownloadPolicy;
 import org.openstreetmap.josm.data.osm.HighlightUpdateListener;
+import org.openstreetmap.josm.data.osm.INode;
 import org.openstreetmap.josm.data.osm.IPrimitive;
+import org.openstreetmap.josm.data.osm.IRelation;
+import org.openstreetmap.josm.data.osm.IWay;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.OsmPrimitiveComparator;
@@ -92,7 +99,10 @@ import org.openstreetmap.josm.data.osm.event.DataSetListenerAdapter.Listener;
 import org.openstreetmap.josm.data.osm.visitor.BoundingXYVisitor;
 import org.openstreetmap.josm.data.osm.visitor.OsmPrimitiveVisitor;
 import org.openstreetmap.josm.data.osm.visitor.paint.AbstractMapRenderer;
+import org.openstreetmap.josm.data.osm.visitor.paint.ImageCache;
 import org.openstreetmap.josm.data.osm.visitor.paint.MapRendererFactory;
+import org.openstreetmap.josm.data.osm.visitor.paint.StyledTiledMapRenderer;
+import org.openstreetmap.josm.data.osm.visitor.paint.TileZXY;
 import org.openstreetmap.josm.data.osm.visitor.paint.relations.MultipolygonCache;
 import org.openstreetmap.josm.data.preferences.BooleanProperty;
 import org.openstreetmap.josm.data.preferences.IntegerProperty;
@@ -105,6 +115,8 @@ import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.MapFrame;
 import org.openstreetmap.josm.gui.MapView;
 import org.openstreetmap.josm.gui.MapViewState.MapViewPoint;
+import org.openstreetmap.josm.gui.NavigatableComponent;
+import org.openstreetmap.josm.gui.PrimitiveHoverListener;
 import org.openstreetmap.josm.gui.datatransfer.ClipboardUtils;
 import org.openstreetmap.josm.gui.datatransfer.data.OsmLayerTransferData;
 import org.openstreetmap.josm.gui.dialogs.LayerListDialog;
@@ -135,6 +147,7 @@ import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.ImageProvider.ImageSizes;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.UncheckedParseException;
+import org.openstreetmap.josm.tools.Utils;
 import org.openstreetmap.josm.tools.date.DateUtils;
 
 /**
@@ -144,10 +157,13 @@ import org.openstreetmap.josm.tools.date.DateUtils;
  * @author imi
  * @since 17
  */
-public class OsmDataLayer extends AbstractOsmDataLayer implements Listener, DataSelectionListener, HighlightUpdateListener {
+public class OsmDataLayer extends AbstractOsmDataLayer
+        implements Listener, DataSelectionListener, HighlightUpdateListener, PrimitiveHoverListener {
+    private static final int MAX_ZOOM = 30;
+    private static final int OVER_ZOOM = 2;
     private static final int HATCHED_SIZE = 15;
-    /** Property used to know if this layer has to be saved on disk */
-    public static final String REQUIRES_SAVE_TO_DISK_PROP = OsmDataLayer.class.getName() + ".requiresSaveToDisk";
+    // U+2205 EMPTY SET
+    private static final String IS_EMPTY_SYMBOL = "\u2205";
     /** Property used to know if this layer has to be uploaded */
     public static final String REQUIRES_UPLOAD_TO_SERVER_PROP = OsmDataLayer.class.getName() + ".requiresUploadToServer";
 
@@ -155,6 +171,15 @@ public class OsmDataLayer extends AbstractOsmDataLayer implements Listener, Data
     private boolean requiresUploadToServer;
     /** Flag used to know if the layer is being uploaded */
     private final AtomicBoolean isUploadInProgress = new AtomicBoolean(false);
+    /**
+     * A cache used for painting
+     */
+    private final CacheAccess<TileZXY, ImageCache> cache = JCSCacheManager.getCache("osmDataLayer:" + System.identityHashCode(this));
+    /** The map paint index that was painted (used to invalidate {@link #cache}) */
+    private int lastDataIdx;
+    /** The last zoom level (we invalidate all tiles when switching layers) */
+    private int lastZoom;
+    private boolean hoverListenerAdded;
 
     /**
      * List of validation errors in this layer.
@@ -497,13 +522,21 @@ public class OsmDataLayer extends AbstractOsmDataLayer implements Listener, Data
      * Draw nodes last to overlap the ways they belong to.
      */
     @Override public void paint(final Graphics2D g, final MapView mv, Bounds box) {
+        if (!hoverListenerAdded) {
+            MainApplication.getMap().mapView.addPrimitiveHoverListener(this);
+            hoverListenerAdded = true;
+        }
         boolean active = mv.getLayerManager().getActiveLayer() == this;
         boolean inactive = !active && Config.getPref().getBoolean("draw.data.inactive_color", true);
         boolean virtual = !inactive && mv.isVirtualNodesEnabled();
+        paintHatch(g, mv, active);
+        paintData(g, mv, box, inactive, virtual);
+    }
 
+    private void paintHatch(final Graphics2D g, final MapView mv, boolean active) {
         // draw the hatched area for non-downloaded region. only draw if we're the active
         // and bounds are defined; don't draw for inactive layers or loaded GPX files etc
-        if (active && DrawingPreference.SOURCE_BOUNDS_PROP.get() && !data.getDataSources().isEmpty()) {
+        if (active && Boolean.TRUE.equals(DrawingPreference.SOURCE_BOUNDS_PROP.get()) && !data.getDataSources().isEmpty()) {
             // initialize area with current viewport
             Rectangle b = mv.getBounds();
             // on some platforms viewport bounds seem to be offset from the left,
@@ -536,11 +569,43 @@ public class OsmDataLayer extends AbstractOsmDataLayer implements Listener, Data
                 Logging.error(e);
             }
         }
+    }
 
+    private void paintData(final Graphics2D g, final MapView mv, Bounds box, boolean inactive, boolean virtual) {
+        // Used to invalidate cache
+        int zoom = getZoom(mv);
+        if (zoom != lastZoom) {
+            // We just mark the previous zoom as dirty before moving in.
+            // It means we don't have to traverse up/down z-levels marking tiles as dirty (this can get *very* expensive).
+            this.cache.getMatching("TileZXY\\{" + lastZoom + "/.*")
+                    .forEach((tile, imageCache) -> this.cache.put(tile, imageCache.becomeDirty()));
+        }
+        lastZoom = zoom;
         AbstractMapRenderer painter = MapRendererFactory.getInstance().createActiveRenderer(g, mv, inactive);
-        painter.enableSlowOperations(mv.getMapMover() == null || !mv.getMapMover().movementInProgress()
-                || !PROPERTY_HIDE_LABELS_WHILE_DRAGGING.get());
-        painter.render(data, virtual, box);
+        if (!(painter instanceof StyledTiledMapRenderer) || zoom - OVER_ZOOM > Config.getPref().getInt("mappaint.fast_render.zlevel", 16)) {
+            painter.enableSlowOperations(mv.getMapMover() == null || !mv.getMapMover().movementInProgress()
+                    || !PROPERTY_HIDE_LABELS_WHILE_DRAGGING.get());
+        } else {
+            StyledTiledMapRenderer renderer = (StyledTiledMapRenderer) painter;
+            renderer.setCache(box, this.cache, zoom, (tile) -> {
+                /* This causes "bouncing". I'm not certain why.
+                if (oldState.equalsInWindow(mv.getState())) { (oldstate = mv.getState())
+                    final Point upperLeft = mv.getPoint(tile);
+                    final Point lowerRight = mv.getPoint(new TileZXY(tile.zoom(), tile.x() + 1, tile.y() + 1));
+                    GuiHelper.runInEDT(() -> mv.repaint(0, upperLeft.x, upperLeft.y, lowerRight.x - upperLeft.x, lowerRight.y - upperLeft.y));
+                }
+                 */
+                // Invalidate doesn't trigger an instant repaint, but putting this off lets us batch the repaints needed for multiple tiles
+                MainApplication.worker.submit(this::invalidate);
+            });
+
+            if (this.data.getMappaintCacheIndex() != this.lastDataIdx) {
+                this.cache.clear();
+                this.lastDataIdx = this.data.getMappaintCacheIndex();
+                Logging.trace("OsmDataLayer {0} paint cache cleared", this.getName());
+            }
+        }
+        painter.render(this.data, virtual, box);
         MainApplication.getMap().conflictDialog.paintConflicts(g, mv);
     }
 
@@ -650,7 +715,7 @@ public class OsmDataLayer extends AbstractOsmDataLayer implements Listener, Data
      */
     public void cleanupAfterUpload(final Collection<? extends IPrimitive> processed) {
         // return immediately if an upload attempt failed
-        if (processed == null || processed.isEmpty())
+        if (Utils.isEmpty(processed))
             return;
 
         UndoRedoHandler.getInstance().clean(data);
@@ -709,6 +774,8 @@ public class OsmDataLayer extends AbstractOsmDataLayer implements Listener, Data
         addConditionalInformation(p, tr("Download is blocked"), data.getDownloadPolicy() == DownloadPolicy.BLOCKED);
         addConditionalInformation(p, tr("Upload is discouraged"), isUploadDiscouraged());
         addConditionalInformation(p, tr("Upload is blocked"), data.getUploadPolicy() == UploadPolicy.BLOCKED);
+        addConditionalInformation(p, IS_EMPTY_SYMBOL + " " + tr("Empty layer"), this.getDataSet().isEmpty());
+        addConditionalInformation(p, IS_DIRTY_SYMBOL + " " + tr("Unsaved changes"), this.isDirty());
 
         return p;
     }
@@ -756,18 +823,23 @@ public class OsmDataLayer extends AbstractOsmDataLayer implements Listener, Data
      * @return GPX data
      */
     public static GpxData toGpxData(DataSet data, File file) {
-        GpxData gpxData = new GpxData();
+        GpxData gpxData = new GpxData(true);
+        fillGpxData(gpxData, data, file, GpxConstants.GPX_PREFIX);
+        gpxData.endUpdate();
+        return gpxData;
+    }
+
+    protected static void fillGpxData(GpxData gpxData, DataSet data, File file, String gpxPrefix) {
         if (data.getGPXNamespaces() != null) {
             gpxData.getNamespaces().addAll(data.getGPXNamespaces());
         }
         gpxData.storageFile = file;
         Set<Node> doneNodes = new HashSet<>();
-        waysToGpxData(data.getWays(), gpxData, doneNodes);
-        nodesToGpxData(data.getNodes(), gpxData, doneNodes);
-        return gpxData;
+        waysToGpxData(data.getWays(), gpxData, doneNodes, gpxPrefix);
+        nodesToGpxData(data.getNodes(), gpxData, doneNodes, gpxPrefix);
     }
 
-    private static void waysToGpxData(Collection<Way> ways, GpxData gpxData, Set<Node> doneNodes) {
+    private static void waysToGpxData(Collection<Way> ways, GpxData gpxData, Set<Node> doneNodes, String gpxPrefix) {
         /* When the dataset has been obtained from a gpx layer and now is being converted back,
          * the ways have negative ids. The first created way corresponds to the first gpx segment,
          * and has the highest id (i.e., closest to zero).
@@ -786,7 +858,7 @@ public class OsmDataLayer extends AbstractOsmDataLayer implements Listener, Data
             GpxExtensionCollection trkExts = new GpxExtensionCollection();
             GpxExtensionCollection segExts = new GpxExtensionCollection();
             for (Entry<String, String> e : w.getKeys().entrySet()) {
-                String k = e.getKey().startsWith(GpxConstants.GPX_PREFIX) ? e.getKey().substring(GpxConstants.GPX_PREFIX.length()) : e.getKey();
+                String k = e.getKey().startsWith(gpxPrefix) ? e.getKey().substring(gpxPrefix.length()) : e.getKey();
                 String v = e.getValue();
                 if (GpxConstants.RTE_TRK_KEYS.contains(k)) {
                     trkAttr.put(k, v);
@@ -794,7 +866,7 @@ public class OsmDataLayer extends AbstractOsmDataLayer implements Listener, Data
                     k = GpxConstants.EXTENSION_ABBREVIATIONS.entrySet()
                             .stream()
                             .filter(s -> s.getValue().equals(e.getKey()))
-                            .map(s -> s.getKey().substring(GpxConstants.GPX_PREFIX.length()))
+                            .map(s -> s.getKey().substring(gpxPrefix.length()))
                             .findAny()
                             .orElse(k);
                     if (k.startsWith("extension")) {
@@ -817,10 +889,10 @@ public class OsmDataLayer extends AbstractOsmDataLayer implements Listener, Data
                     }
                     continue;
                 }
-                if (!n.isTagged() || containsOnlyGpxTags(n)) {
+                if (!n.isTagged() || containsOnlyGpxTags(n, gpxPrefix)) {
                     doneNodes.add(n);
                 }
-                trkseg.add(nodeToWayPoint(n));
+                trkseg.add(nodeToWayPoint(n, Long.MIN_VALUE, gpxPrefix));
             }
             trk.add(new GpxTrackSegment(trkseg));
             trk.forEach(gpxseg -> gpxseg.getExtensions().addAll(segExts));
@@ -830,92 +902,100 @@ public class OsmDataLayer extends AbstractOsmDataLayer implements Listener, Data
         });
     }
 
-    private static boolean containsOnlyGpxTags(Tagged t) {
-        return t.getKeys().keySet().stream()
-                .allMatch(key -> GpxConstants.WPT_KEYS.contains(key) || key.startsWith(GpxConstants.GPX_PREFIX));
+    private static boolean containsOnlyGpxTags(Tagged t, String gpxPrefix) {
+        return t.keys()
+                .allMatch(key -> GpxConstants.WPT_KEYS.contains(key) || key.startsWith(gpxPrefix));
     }
 
     /**
      * Reads the Gpx key from the given {@link OsmPrimitive}, with or without &quot;gpx:&quot; prefix
      * @param prim OSM primitive
+     * @param gpxPrefix the GPX prefix
      * @param key GPX key without prefix
      * @return the value or <code>null</code> if not present
-     * @since 15419
      */
-    public static String gpxVal(OsmPrimitive prim, String key) {
-        return Optional.ofNullable(prim.get(GpxConstants.GPX_PREFIX + key)).orElse(prim.get(key));
+    private static String gpxVal(OsmPrimitive prim, String gpxPrefix, String key) {
+        String val = prim.get(gpxPrefix + key);
+        return val != null ? val : prim.get(key);
     }
 
     /**
-     * Converts a node to a waypoint.
-     * @param n the {@code Node} to convert
-     * @return {@code WayPoint} object
-     * @since 13210
-     */
-    public static WayPoint nodeToWayPoint(Node n) {
-        return nodeToWayPoint(n, Long.MIN_VALUE);
-    }
-
-    /**
-     * Converts a node to a waypoint.
+     * Converts a node to a waypoint with default {@link GpxConstants#GPX_PREFIX} for tags.
      * @param n the {@code Node} to convert
      * @param time a timestamp value in milliseconds from the epoch.
      * @return {@code WayPoint} object
      * @since 13210
      */
     public static WayPoint nodeToWayPoint(Node n, long time) {
+        return nodeToWayPoint(n, time, GpxConstants.GPX_PREFIX);
+    }
+
+    /**
+     * Converts a node to a waypoint with a configurable GPX prefix for tags.
+     * @param n the {@code Node} to convert
+     * @param time a timestamp value in milliseconds from the epoch.
+     * @param gpxPrefix the GPX prefix for tags
+     * @return {@code WayPoint} object
+     * @since 18078
+     */
+    public static WayPoint nodeToWayPoint(Node n, long time, String gpxPrefix) {
         WayPoint wpt = new WayPoint(n.getCoor());
 
         // Position info
 
-        addDoubleIfPresent(wpt, n, GpxConstants.PT_ELE);
+        addDoubleIfPresent(wpt, n, gpxPrefix, GpxConstants.PT_ELE, null);
 
         try {
             String v;
             if (time > Long.MIN_VALUE) {
                 wpt.setTimeInMillis(time);
-            } else if ((v = gpxVal(n, GpxConstants.PT_TIME)) != null) {
-                wpt.setTimeInMillis(DateUtils.tsFromString(v));
+            } else if ((v = gpxVal(n, gpxPrefix, GpxConstants.PT_TIME)) != null) {
+                wpt.setInstant(DateUtils.parseInstant(v));
             } else if (!n.isTimestampEmpty()) {
-                wpt.setTime(Integer.toUnsignedLong(n.getRawTimestamp()));
+                wpt.setInstant(n.getInstant());
             }
         } catch (UncheckedParseException | DateTimeException e) {
             Logging.error(e);
         }
 
-        addDoubleIfPresent(wpt, n, GpxConstants.PT_MAGVAR);
-        addDoubleIfPresent(wpt, n, GpxConstants.PT_GEOIDHEIGHT);
+        addDoubleIfPresent(wpt, n, gpxPrefix, GpxConstants.PT_MAGVAR, null);
+        addDoubleIfPresent(wpt, n, gpxPrefix, GpxConstants.PT_GEOIDHEIGHT, null);
 
         // Description info
 
-        addStringIfPresent(wpt, n, GpxConstants.GPX_NAME);
-        addStringIfPresent(wpt, n, GpxConstants.GPX_DESC, "description");
-        addStringIfPresent(wpt, n, GpxConstants.GPX_CMT, "comment");
-        addStringIfPresent(wpt, n, GpxConstants.GPX_SRC, "source", "source:position");
+        addStringIfPresent(wpt, n, gpxPrefix, GpxConstants.GPX_NAME, null, null);
+        addStringIfPresent(wpt, n, gpxPrefix, GpxConstants.GPX_DESC, "description", null);
+        addStringIfPresent(wpt, n, gpxPrefix, GpxConstants.GPX_CMT, "comment", null);
+        addStringIfPresent(wpt, n, gpxPrefix, GpxConstants.GPX_SRC, "source", "source:position");
 
         Collection<GpxLink> links = Stream.of("link", "url", "website", "contact:website")
-                .map(key -> gpxVal(n, key))
+                .map(key -> gpxVal(n, gpxPrefix, key))
                 .filter(Objects::nonNull)
                 .map(GpxLink::new)
                 .collect(Collectors.toList());
         wpt.put(GpxConstants.META_LINKS, links);
 
-        addStringIfPresent(wpt, n, GpxConstants.PT_SYM, "wpt_symbol");
-        addStringIfPresent(wpt, n, GpxConstants.PT_TYPE);
+        addStringIfPresent(wpt, n, gpxPrefix, GpxConstants.PT_SYM, "wpt_symbol", null);
+        addStringIfPresent(wpt, n, gpxPrefix, GpxConstants.PT_TYPE, null, null);
+
+        // Angle info
+        addDoubleIfPresent(wpt, n, gpxPrefix, GpxConstants.PT_COURSE, "gps:course");
 
         // Accuracy info
-        addStringIfPresent(wpt, n, GpxConstants.PT_FIX, "gps:fix");
-        addIntegerIfPresent(wpt, n, GpxConstants.PT_SAT, "gps:sat");
-        addDoubleIfPresent(wpt, n, GpxConstants.PT_HDOP, "gps:hdop");
-        addDoubleIfPresent(wpt, n, GpxConstants.PT_VDOP, "gps:vdop");
-        addDoubleIfPresent(wpt, n, GpxConstants.PT_PDOP, "gps:pdop");
-        addDoubleIfPresent(wpt, n, GpxConstants.PT_AGEOFDGPSDATA, "gps:ageofdgpsdata");
-        addIntegerIfPresent(wpt, n, GpxConstants.PT_DGPSID, "gps:dgpsid");
+        addStringIfPresent(wpt, n, gpxPrefix, GpxConstants.PT_FIX, "gps:fix", null);
+        addIntegerIfPresent(wpt, n, gpxPrefix, GpxConstants.PT_SAT, "gps:sat");
+        addDoubleIfPresent(wpt, n, gpxPrefix, GpxConstants.PT_HDOP, "gps:hdop");
+        addDoubleIfPresent(wpt, n, gpxPrefix, GpxConstants.PT_VDOP, "gps:vdop");
+        addDoubleIfPresent(wpt, n, gpxPrefix, GpxConstants.PT_PDOP, "gps:pdop");
+        addDoubleIfPresent(wpt, n, gpxPrefix, GpxConstants.PT_STD_HDEV, "gps:stdhdev");
+        addDoubleIfPresent(wpt, n, gpxPrefix, GpxConstants.PT_STD_VDEV, "gps:stdvdev");
+        addDoubleIfPresent(wpt, n, gpxPrefix, GpxConstants.PT_AGEOFDGPSDATA, "gps:ageofdgpsdata");
+        addIntegerIfPresent(wpt, n, gpxPrefix, GpxConstants.PT_DGPSID, "gps:dgpsid");
 
         return wpt;
     }
 
-    private static void nodesToGpxData(Collection<Node> nodes, GpxData gpxData, Set<Node> doneNodes) {
+    private static void nodesToGpxData(Collection<Node> nodes, GpxData gpxData, Set<Node> doneNodes, String gpxPrefix) {
         List<Node> sortedNodes = new ArrayList<>(nodes);
         sortedNodes.removeAll(doneNodes);
         Collections.sort(sortedNodes);
@@ -923,58 +1003,59 @@ public class OsmDataLayer extends AbstractOsmDataLayer implements Listener, Data
             if (n.isIncomplete() || n.isDeleted()) {
                 continue;
             }
-            gpxData.waypoints.add(nodeToWayPoint(n));
+            gpxData.waypoints.add(nodeToWayPoint(n, Long.MIN_VALUE, gpxPrefix));
         }
     }
 
-    private static void addIntegerIfPresent(WayPoint wpt, OsmPrimitive p, String gpxKey, String... osmKeys) {
-        List<String> possibleKeys = new ArrayList<>(Arrays.asList(osmKeys));
-        possibleKeys.add(0, gpxKey);
-        for (String key : possibleKeys) {
-            String value = gpxVal(p, key);
-            if (value != null) {
-                try {
-                    int i = Integer.parseInt(value);
-                    // Sanity checks
-                    if ((!GpxConstants.PT_SAT.equals(gpxKey) || i >= 0) &&
-                        (!GpxConstants.PT_DGPSID.equals(gpxKey) || (0 <= i && i <= 1023))) {
-                        wpt.put(gpxKey, value);
-                        break;
-                    }
-                } catch (NumberFormatException e) {
-                    Logging.trace(e);
-                }
-            }
+    private static void addIntegerIfPresent(WayPoint wpt, OsmPrimitive p, String gpxPrefix, String gpxKey, String osmKey) {
+        String value = gpxVal(p, gpxPrefix, gpxKey);
+        if (value == null && osmKey != null) {
+            value = gpxVal(p, gpxPrefix, osmKey);
         }
-    }
-
-    private static void addDoubleIfPresent(WayPoint wpt, OsmPrimitive p, String gpxKey, String... osmKeys) {
-        List<String> possibleKeys = new ArrayList<>(Arrays.asList(osmKeys));
-        possibleKeys.add(0, gpxKey);
-        for (String key : possibleKeys) {
-            String value = gpxVal(p, key);
-            if (value != null) {
-                try {
-                    double d = Double.parseDouble(value);
-                    // Sanity checks
-                    if (!GpxConstants.PT_MAGVAR.equals(gpxKey) || (0.0 <= d && d < 360.0)) {
-                        wpt.put(gpxKey, value);
-                        break;
-                    }
-                } catch (NumberFormatException e) {
-                    Logging.trace(e);
-                }
-            }
-        }
-    }
-
-    private static void addStringIfPresent(WayPoint wpt, OsmPrimitive p, String gpxKey, String... osmKeys) {
-        Stream.concat(Stream.of(gpxKey), Arrays.stream(osmKeys))
-                .map(key -> gpxVal(p, key))
+        if (value != null) {
+            try {
+                final int i = Integer.parseInt(value);
                 // Sanity checks
-                .filter(value -> value != null && (!GpxConstants.PT_FIX.equals(gpxKey) || GpxConstants.FIX_VALUES.contains(value)))
-                .findFirst()
-                .ifPresent(value -> wpt.put(gpxKey, value));
+                if ((!GpxConstants.PT_SAT.equals(gpxKey) || i >= 0) &&
+                        (!GpxConstants.PT_DGPSID.equals(gpxKey) || (0 <= i && i <= 1023))) {
+                    wpt.put(gpxKey, i);
+                }
+            } catch (NumberFormatException e) {
+                Logging.trace(e);
+            }
+        }
+    }
+
+    private static void addDoubleIfPresent(WayPoint wpt, OsmPrimitive p, String gpxPrefix, String gpxKey, String osmKey) {
+        String value = gpxVal(p, gpxPrefix, gpxKey);
+        if (value == null && osmKey != null) {
+            value = gpxVal(p, gpxPrefix, osmKey);
+        }
+        if (value != null) {
+            try {
+                final double d = Double.parseDouble(value);
+                // Sanity checks
+                if (!GpxConstants.PT_MAGVAR.equals(gpxKey) || (0.0 <= d && d < 360.0)) {
+                    wpt.put(gpxKey, d);
+                }
+            } catch (NumberFormatException e) {
+                Logging.trace(e);
+            }
+        }
+    }
+
+    private static void addStringIfPresent(WayPoint wpt, OsmPrimitive p, String gpxPrefix, String gpxKey, String osmKey, String osmKey2) {
+        String value = gpxVal(p, gpxPrefix, gpxKey);
+        if (value == null && osmKey != null) {
+            value = gpxVal(p, gpxPrefix, osmKey);
+        }
+        if (value == null && osmKey2 != null) {
+            value = gpxVal(p, gpxPrefix, osmKey2);
+        }
+        // Sanity checks
+        if (value != null && (!GpxConstants.PT_FIX.equals(gpxKey) || GpxConstants.FIX_VALUES.contains(value))) {
+            wpt.put(gpxKey, value);
+        }
     }
 
     /**
@@ -1000,11 +1081,13 @@ public class OsmDataLayer extends AbstractOsmDataLayer implements Listener, Data
 
         @Override
         public void actionPerformed(ActionEvent e) {
+            String name = getName().replaceAll("^" + tr("Converted from: {0}", ""), "");
             final GpxData gpxData = toGpxData();
-            final GpxLayer gpxLayer = new GpxLayer(gpxData, tr("Converted from: {0}", getName()));
+            final GpxLayer gpxLayer = new GpxLayer(gpxData, tr("Converted from: {0}", name), true);
             if (getAssociatedFile() != null) {
                 String filename = getAssociatedFile().getName().replaceAll(Pattern.quote(".gpx.osm") + '$', "") + ".gpx";
                 gpxLayer.setAssociatedFile(new File(getAssociatedFile().getParentFile(), filename));
+                gpxLayer.getGpxData().setModified(true);
             }
             MainApplication.getLayerManager().addLayer(gpxLayer, false);
             if (Config.getPref().getBoolean("marker.makeautomarkers", true) && !gpxData.waypoints.isEmpty()) {
@@ -1060,9 +1143,21 @@ public class OsmDataLayer extends AbstractOsmDataLayer implements Listener, Data
     }
 
     @Override
+    public String getLabel() {
+        String label = super.getLabel();
+        if (this.isDirty()) {
+            label += " " + IS_DIRTY_SYMBOL;
+        }
+        if (this.getDataSet().isEmpty()) {
+            label += " " + IS_EMPTY_SYMBOL;
+        }
+        return label;
+    }
+
+    @Override
     public void onPostLoadFromFile() {
         setRequiresSaveToFile(false);
-        setRequiresUploadToServer(isModified());
+        setRequiresUploadToServer(getDataSet().requiresUploadToServer());
         invalidate();
     }
 
@@ -1071,19 +1166,19 @@ public class OsmDataLayer extends AbstractOsmDataLayer implements Listener, Data
      */
     public void onPostDownloadFromServer() {
         setRequiresSaveToFile(true);
-        setRequiresUploadToServer(isModified());
+        setRequiresUploadToServer(getDataSet().requiresUploadToServer());
         invalidate();
     }
 
     @Override
     public void onPostSaveToFile() {
         setRequiresSaveToFile(false);
-        setRequiresUploadToServer(isModified());
+        setRequiresUploadToServer(getDataSet().requiresUploadToServer());
     }
 
     @Override
     public void onPostUploadToServer() {
-        setRequiresUploadToServer(isModified());
+        setRequiresUploadToServer(getDataSet().requiresUploadToServer());
         // keep requiresSaveToDisk unchanged
     }
 
@@ -1118,8 +1213,14 @@ public class OsmDataLayer extends AbstractOsmDataLayer implements Listener, Data
         data.removeHighlightUpdateListener(this);
         data.removeDataSetListener(dataSetListenerAdapter);
         data.removeDataSetListener(MultipolygonCache.getInstance());
+        data.clearSelection();
+        validationErrors.clear();
         removeClipboardDataFor(this);
         recentRelations.clear();
+        if (hoverListenerAdded) {
+            hoverListenerAdded = false;
+            MainApplication.getMap().mapView.removePrimitiveHoverListener(this);
+        }
     }
 
     protected static void removeClipboardDataFor(OsmDataLayer osm) {
@@ -1138,6 +1239,7 @@ public class OsmDataLayer extends AbstractOsmDataLayer implements Listener, Data
 
     @Override
     public void processDatasetEvent(AbstractDatasetChangedEvent event) {
+        resetTiles(event.getPrimitives());
         invalidate();
         setRequiresSaveToFile(true);
         setRequiresUploadToServer(event.getDataset().requiresUploadToServer());
@@ -1145,7 +1247,129 @@ public class OsmDataLayer extends AbstractOsmDataLayer implements Listener, Data
 
     @Override
     public void selectionChanged(SelectionChangeEvent event) {
+        Set<IPrimitive> primitives = new HashSet<>(event.getAdded());
+        primitives.addAll(event.getRemoved());
+        resetTiles(primitives);
         invalidate();
+    }
+
+    private void resetTiles(Collection<? extends IPrimitive> primitives) {
+        // Clear the cache if we aren't using tiles. And return.
+        if (!MapRendererFactory.getInstance().isMapRendererActive(StyledTiledMapRenderer.class)) {
+            this.cache.clear();
+            return;
+        }
+        // Don't use anything that uses filtered collections. It becomes slow at large datasets.
+        if (primitives.size() > 100) {
+            dirtyAll();
+            return;
+        }
+        if (primitives.size() < 5) {
+            for (IPrimitive p : primitives) {
+                resetTiles(p);
+            }
+            return;
+        }
+        // Most of the time, a selection is going to be a big box.
+        // So we want to optimize for that case.
+        BBox box = null;
+        for (IPrimitive primitive : primitives) {
+            if (primitive == null || primitive.getDataSet() != this.getDataSet()) continue;
+            final Collection<? extends IPrimitive> referrers = primitive.getReferrers();
+            if (box == null) {
+                box = new BBox(primitive.getBBox());
+            } else {
+                box.addPrimitive(primitive, 0);
+            }
+            for (IPrimitive referrer : referrers) {
+                box.addPrimitive(referrer, 0);
+            }
+        }
+        if (box != null) {
+            resetBounds(box.getMinLat(), box.getMinLon(), box.getMaxLat(), box.getMaxLon());
+        }
+    }
+
+    private void resetTiles(IPrimitive p) {
+        if (p instanceof INode) {
+            resetBounds(getInvalidatedBBox((INode) p, null));
+        } else if (p instanceof IWay) {
+            IWay<?> way = (IWay<?>) p;
+            for (int i = 0; i < way.getNodesCount() - 1; i++) {
+                resetBounds(getInvalidatedBBox(way.getNode(i), way.getNode(i + 1)));
+            }
+        } else if (p instanceof IRelation<?>) {
+            for (IPrimitive member : ((IRelation<?>) p).getMemberPrimitivesList()) {
+                if (member instanceof IRelation) {
+                    resetBounds(member.getBBox()); // Avoid recursive relation issues
+                    break;
+                } else {
+                    resetTiles(member);
+                }
+            }
+        } else {
+            throw new IllegalArgumentException("Unsupported primitive type: " + p.getClass().getName());
+        }
+    }
+
+    private BBox getInvalidatedBBox(INode first, INode second) {
+        final BBox bbox = new BBox(first);
+        if (second != null) {
+            bbox.add(second);
+        }
+        return bbox;
+    }
+
+    private void resetBounds(IBounds bbox) {
+        resetBounds(bbox.getMinLat(), bbox.getMinLon(), bbox.getMaxLat(), bbox.getMaxLon());
+    }
+
+    private void resetBounds(double minLat, double minLon, double maxLat, double maxLon) {
+        // Get the current zoom. Hopefully we aren't painting with a different navigatable component
+        final int currentZoom = lastZoom;
+        final AtomicInteger counter = new AtomicInteger();
+        TileZXY.boundsToTiles(minLat, minLon, maxLat, maxLon, currentZoom, 1).limit(100).forEach(tile -> {
+            final ImageCache imageCache = this.cache.get(tile);
+            if (imageCache != null && !imageCache.isDirty()) {
+                this.cache.put(tile, imageCache.becomeDirty());
+            }
+            counter.incrementAndGet();
+        });
+        if (counter.get() > 100) {
+            dirtyAll();
+        }
+    }
+
+    private void dirtyAll() {
+        this.cache.getMatching(".*").forEach((key, value) -> {
+            this.cache.remove(key);
+            this.cache.put(key, value.becomeDirty());
+        });
+    }
+
+    /**
+     * Get the zoom for a {@link NavigatableComponent}
+     * @param navigatableComponent The component to get the zoom from
+     * @return The zoom for the navigatable component
+     */
+    private static int getZoom(NavigatableComponent navigatableComponent) {
+        final double scale = navigatableComponent.getScale();
+        // We might have to fall back to the old method if user is reprojecting
+        // 256 is the "target" size, (TODO check HiDPI!)
+        final int targetSize = Config.getPref().getInt("mappaint.fast_render.tile_size", 256);
+        CheckParameterUtil.ensureThat(targetSize > 0, "mappaint.fast_render.tile_size should be > 0 (default 256)");
+        final double topResolution = 2 * Math.PI * OsmMercator.EARTH_RADIUS / targetSize;
+        int zoom;
+        for (zoom = 0; zoom < MAX_ZOOM; zoom++) { // Use something like imagery.{generic|tms}.max_zoom_lvl (20 is a bit too low for our needs)
+            if (scale > topResolution / Math.pow(2, zoom)) {
+                zoom = zoom > 0 ? zoom - 1 : zoom;
+                break;
+            }
+        }
+        // We paint at a few levels higher, note that the tiles are appropriately sized (if 256 is the "target" size, the tiles should be
+        // 64px square).
+        zoom += OVER_ZOOM;
+        return zoom;
     }
 
     @Override
@@ -1168,6 +1392,7 @@ public class OsmDataLayer extends AbstractOsmDataLayer implements Listener, Data
         if (data.getUploadPolicy() != UploadPolicy.BLOCKED &&
                 (uploadDiscouraged ^ isUploadDiscouraged())) {
             data.setUploadPolicy(uploadDiscouraged ? UploadPolicy.DISCOURAGED : UploadPolicy.NORMAL);
+            setRequiresSaveToFile(true);
             for (LayerStateChangeListener l : layerStateChangeListeners) {
                 l.uploadDiscouragedChanged(this, uploadDiscouraged);
             }
@@ -1189,9 +1414,9 @@ public class OsmDataLayer extends AbstractOsmDataLayer implements Listener, Data
         if (isDataSetEmpty() && 1 != GuiHelper.runInEDTAndWaitAndReturn(() ->
             new ExtendedDialog(
                     MainApplication.getMainFrame(),
-                    tr("Empty document"),
+                    tr("Empty layer"),
                     tr("Save anyway"), tr("Cancel"))
-                .setContent(tr("The document contains no data."))
+                .setContent(tr("The layer contains no data."))
                 .setButtonIcons("save", "cancel")
                 .showDialog().getValue()
         )) {
@@ -1254,6 +1479,11 @@ public class OsmDataLayer extends AbstractOsmDataLayer implements Listener, Data
     }
 
     @Override
+    public String getChangesetSourceTag() {
+        return this.data.getChangeSetTags().getOrDefault("source", null);
+    }
+
+    @Override
     public AbstractUploadDialog getUploadDialog() {
         UploadDialog dialog = UploadDialog.getUploadDialog();
         dialog.setUploadedPrimitives(new APIDataSet(data));
@@ -1273,6 +1503,16 @@ public class OsmDataLayer extends AbstractOsmDataLayer implements Listener, Data
     @Override
     public void highlightUpdated(HighlightUpdateEvent e) {
         invalidate();
+    }
+
+    @Override
+    public void primitiveHovered(PrimitiveHoverEvent e) {
+        List<IPrimitive> primitives = new ArrayList<>(2);
+        primitives.add(e.getHoveredPrimitive());
+        primitives.add(e.getPreviousPrimitive());
+        primitives.removeIf(Objects::isNull);
+        resetTiles(primitives);
+        this.invalidate();
     }
 
     @Override
@@ -1317,5 +1557,15 @@ public class OsmDataLayer extends AbstractOsmDataLayer implements Listener, Data
     public boolean autosave(File file) throws IOException {
         new OsmExporter().exportData(file, this, true /* no backup with appended ~ */);
         return true;
+    }
+
+    /**
+     * Duplicates this layer with a new name and a copy of this layer dataset.
+     * @param newName name of new layer
+     * @return A copy of this layer
+     * @since 18233
+     */
+    public OsmDataLayer duplicate(String newName) {
+        return new OsmDataLayer(new DataSet(getDataSet()), newName, null);
     }
 }

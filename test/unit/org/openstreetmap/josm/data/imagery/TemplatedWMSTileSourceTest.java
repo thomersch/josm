@@ -1,13 +1,16 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.imagery;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.openstreetmap.josm.tools.I18n.tr;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.openstreetmap.gui.jmapviewer.FeatureAdapter;
 import org.openstreetmap.gui.jmapviewer.TileXY;
 import org.openstreetmap.gui.jmapviewer.interfaces.ICoordinate;
+import org.openstreetmap.gui.jmapviewer.interfaces.TemplatedTileSource;
 import org.openstreetmap.gui.jmapviewer.tilesources.TemplatedTMSTileSource;
 import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.data.coor.EastNorth;
@@ -16,30 +19,31 @@ import org.openstreetmap.josm.data.projection.CustomProjection;
 import org.openstreetmap.josm.data.projection.Projection;
 import org.openstreetmap.josm.data.projection.ProjectionRegistry;
 import org.openstreetmap.josm.data.projection.Projections;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
  * Unit tests for class {@link TemplatedWMSTileSource}.
  */
-public class TemplatedWMSTileSourceTest {
+@org.openstreetmap.josm.testutils.annotations.Projection
+class TemplatedWMSTileSourceTest implements TileSourceTest {
 
     private final ImageryInfo testImageryWMS = new ImageryInfo("test imagery", "http://localhost", "wms", null, null);
     private final ImageryInfo testImageryTMS = new ImageryInfo("test imagery", "http://localhost", "tms", null, null);
 
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
+    @Override
+    public ImageryInfo getInfo() {
+        return new ImageryInfo(testImageryWMS);
+    }
+
+    @Override
+    public TemplatedTileSource getTileSource(ImageryInfo info) {
+        return new TemplatedWMSTileSource(info, ProjectionRegistry.getProjection());
+    }
 
     /**
      * Test EPSG:3857
      */
     @Test
-    public void testEPSG3857() {
+    void testEPSG3857() {
         Projection projection = Projections.getProjectionByCode("EPSG:3857");
         ProjectionRegistry.setProjection(projection);
         TemplatedWMSTileSource source = new TemplatedWMSTileSource(testImageryWMS, projection);
@@ -64,7 +68,7 @@ public class TemplatedWMSTileSourceTest {
      * Test EPSG:4326
      */
     @Test
-    public void testEPSG4326() {
+    void testEPSG4326() {
         Projection projection = Projections.getProjectionByCode("EPSG:4326");
         ProjectionRegistry.setProjection(projection);
         TemplatedWMSTileSource source = getSource(projection);
@@ -80,7 +84,7 @@ public class TemplatedWMSTileSourceTest {
      * Test EPSG:4326 - wide bounds
      */
     @Test
-    public void testEPSG4326widebounds() {
+    void testEPSG4326widebounds() {
         Projection projection = new CustomProjection("+proj=lonlat +datum=WGS84 +axis=neu +bounds=-180,53,180,54");
         ProjectionRegistry.setProjection(projection);
         TemplatedWMSTileSource source = getSource(projection);
@@ -93,7 +97,7 @@ public class TemplatedWMSTileSourceTest {
      * Test EPSG:4326 - narrow bounds
      */
     @Test
-    public void testEPSG4326narrowbounds() {
+    void testEPSG4326narrowbounds() {
         Projection projection = new CustomProjection("+proj=lonlat +datum=WGS84 +axis=neu +bounds=18,-90,20,90");
         ProjectionRegistry.setProjection(projection);
         TemplatedWMSTileSource source = getSource(projection);
@@ -106,7 +110,7 @@ public class TemplatedWMSTileSourceTest {
      * Test EPSG:2180
      */
     @Test
-    public void testEPSG2180() {
+    void testEPSG2180() {
         Projection projection = Projections.getProjectionByCode("EPSG:2180");
         ProjectionRegistry.setProjection(projection);
         TemplatedWMSTileSource source = getSource(projection);
@@ -123,7 +127,7 @@ public class TemplatedWMSTileSourceTest {
      * Test EPSG:3006 with bounds
      */
     @Test
-    public void testEPSG3006withbounds() {
+    void testEPSG3006withbounds() {
         Projection projection =
                 new CustomProjection("+proj=utm +zone=33 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 "
                         + "+units=m +no_defs +axis=neu +wmssrs=EPSG:3006 +bounds=10.5700,55.2000,24.1800,69.1000 ");
@@ -139,7 +143,7 @@ public class TemplatedWMSTileSourceTest {
      * Test EPSG:3006 without bounds
      */
     @Test
-    public void testEPSG3006withoutbounds() {
+    void testEPSG3006withoutbounds() {
         Projection projection =
                 new CustomProjection("+proj=utm +zone=33 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 "
                         + "+units=m +no_defs +axis=neu +wmssrs=EPSG:3006");
@@ -155,7 +159,7 @@ public class TemplatedWMSTileSourceTest {
      * Test getTileUrl
      */
     @Test
-    public void testGetTileUrl() {
+    void testGetTileUrl() {
         // "https://maps.six.nsw.gov.au/arcgis/services/public/NSW_Imagery_Dates/MapServer/WMSServer?
         // SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&CRS={proj}&BBOX={bbox}&WIDTH={width}&HEIGHT={height}
         // &LAYERS=0&STYLES=&FORMAT=image/png32&DPI=96&MAP_RESOLUTION=96&FORMAT_OPTIONS=dpi:96&TRANSPARENT=TRUE",
@@ -200,12 +204,54 @@ public class TemplatedWMSTileSourceTest {
                 ts.getTileUrl(1, 2, 3));
     }
 
+    @Test
+    void testApiKeyValid() {
+        try {
+            Projection projection = Projections.getProjectionByCode("EPSG:4326");
+            ProjectionRegistry.setProjection(projection);
+            FeatureAdapter.registerApiKeyAdapter(id -> "test_api_key");
+            ImageryInfo testImageryWMS = new ImageryInfo("test imagery",
+                    "https://maps.six.nsw.gov.au/arcgis/services/{apikey}/NSW_Imagery_Dates/MapServer/WMSServer?SERVICE=WMS&VERSION=1.3.0&"
+                            + "REQUEST=GetMap&CRS={proj}&BBOX={bbox}&WIDTH={width}&HEIGHT={height}&LAYERS=0&STYLES=&FORMAT=image/png32&DPI=96&"
+                            + "MAP_RESOLUTION=96&FORMAT_OPTIONS=dpi:96&TRANSPARENT=TRUE", "wms", null, null);
+            testImageryWMS.setId("TemplatedWMSTileSourceTest#testApiKeyValid");
+            TemplatedWMSTileSource ts = new TemplatedWMSTileSource(testImageryWMS, projection);
+            assertEquals("https://maps.six.nsw.gov.au/arcgis/services/test_api_key/NSW_Imagery_Dates/MapServer/WMSServer?SERVICE=WMS&"
+                            + "VERSION=1.3.0&REQUEST=GetMap&CRS=EPSG:4326&BBOX=-1350.0000000,540.0000000,-990.0000000,900.0000000&WIDTH=512&"
+                            + "HEIGHT=512&LAYERS=0&STYLES=&FORMAT=image/png32&DPI=96&MAP_RESOLUTION=96&FORMAT_OPTIONS=dpi:96&TRANSPARENT=TRUE",
+                    ts.getTileUrl(1, 2, 3));
+        } finally {
+            FeatureAdapter.registerApiKeyAdapter(new FeatureAdapter.DefaultApiKeyAdapter());
+        }
+    }
+
+    @Test
+    void testApiKeyInvalid() {
+        try {
+            FeatureAdapter.registerApiKeyAdapter(id -> null);
+            ImageryInfo testImageryWMS = new ImageryInfo("test imagery",
+                    "https://maps.six.nsw.gov.au/arcgis/services/{apikey}/NSW_Imagery_Dates/MapServer/WMSServer?SERVICE=WMS&VERSION=1.3.0&"
+                            + "REQUEST=GetMap&CRS={proj}&BBOX={bbox}&WIDTH={width}&HEIGHT={height}&LAYERS=0&STYLES=&FORMAT=image/png32&DPI=96&"
+                            + "MAP_RESOLUTION=96&FORMAT_OPTIONS=dpi:96&TRANSPARENT=TRUE", "wms", null, null);
+            testImageryWMS.setId("TemplatedWMSTileSourceTest#testApiKeyInvalid");
+            Projection projection = Projections.getProjectionByCode("EPSG:4326");
+            IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                            () -> new TemplatedWMSTileSource(testImageryWMS, projection));
+            assertEquals(tr("Could not retrieve API key for imagery with id={0}. Cannot add layer.\n"
+                            + "API key for imagery with id=TemplatedWMSTileSourceTest#testApiKeyInvalid may not be available.",
+                            testImageryWMS.getId()),
+                    exception.getMessage());
+        } finally {
+            FeatureAdapter.registerApiKeyAdapter(new FeatureAdapter.DefaultApiKeyAdapter());
+        }
+    }
+
     private void verifyMercatorTile(TemplatedWMSTileSource source, int x, int y, int z) {
         TemplatedTMSTileSource verifier = new TemplatedTMSTileSource(testImageryTMS);
         LatLon result = getTileLatLon(source, x, y, z);
         ICoordinate expected = verifier.tileXYToLatLon(x, y, z - 1);
         assertEquals(expected.getLat(), result.lat(), 1e-4);
-        assertEquals(LatLon.normalizeLon(expected.getLon() - result.lon()), 0.0, 1e-4);
+        assertEquals(0.0, LatLon.normalizeLon(expected.getLon() - result.lon()), 1e-4);
         LatLon tileCenter = new Bounds(result, getTileLatLon(source, x+1, y+1, z)).getCenter();
         TileXY backwardsResult = source.latLonToTileXY(CoordinateConversion.llToCoor(tileCenter), z);
         assertEquals(x, backwardsResult.getXIndex());
@@ -223,18 +269,15 @@ public class TemplatedWMSTileSourceTest {
 
     private void verifyLocation(TemplatedWMSTileSource source, LatLon location, int z) {
         Projection projection = ProjectionRegistry.getProjection();
-        assertTrue(
-                "Point outside world bounds",
-                projection.getWorldBoundsLatLon().contains(location)
-                );
+        assertTrue(projection.getWorldBoundsLatLon().contains(location), "Point outside world bounds");
 
         TileXY tileIndex = source.latLonToTileXY(CoordinateConversion.llToCoor(location), z);
 
-        assertTrue("X index: " + tileIndex.getXIndex() + " greater than tileXmax: " + source.getTileXMax(z) + " at zoom: " + z,
-                tileIndex.getXIndex() <= source.getTileXMax(z));
+        assertTrue(tileIndex.getXIndex() <= source.getTileXMax(z),
+                "X index: " + tileIndex.getXIndex() + " greater than tileXmax: " + source.getTileXMax(z) + " at zoom: " + z);
 
-        assertTrue("Y index: " + tileIndex.getYIndex() + " greater than tileYmax: " + source.getTileYMax(z) + " at zoom: " + z,
-                tileIndex.getYIndex() <= source.getTileYMax(z));
+        assertTrue(tileIndex.getYIndex() <= source.getTileYMax(z),
+                "Y index: " + tileIndex.getYIndex() + " greater than tileYmax: " + source.getTileYMax(z) + " at zoom: " + z);
 
         ICoordinate x1 = source.tileXYToLatLon(tileIndex.getXIndex(), tileIndex.getYIndex(), z);
         ICoordinate x2 = source.tileXYToLatLon(tileIndex.getXIndex() + 1, tileIndex.getYIndex() + 1, z);
@@ -244,8 +287,8 @@ public class TemplatedWMSTileSourceTest {
         Bounds bounds = new Bounds(x1.getLat(), x1.getLon(), true);
         bounds.extend(x2.getLat(), x2.getLon());
         // test that location is within tile bounds
-        assertTrue(location + " not within " + bounds + " for tile " + z + "/" + tileIndex.getXIndex() + "/" + tileIndex.getYIndex(),
-                bounds.contains(location));
+        assertTrue(bounds.contains(location),
+                location + " not within " + bounds + " for tile " + z + "/" + tileIndex.getXIndex() + "/" + tileIndex.getYIndex());
         verifyTileSquareness(source, tileIndex.getXIndex(), tileIndex.getYIndex(), z);
     }
 

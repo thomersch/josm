@@ -8,7 +8,6 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 
-import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Way;
@@ -86,15 +85,16 @@ public class LongSegment extends Test {
     }
 
     private boolean ignoreWay(Way w) {
-        return visitedWays.contains(w) || w.hasTag("route", "ferry") || w.hasTag("bay", "fjord") || w.hasTag("natural", "strait");
+        return w.hasKey("boundary") || w.hasTag("route", "ferry") || w.hasTag("bay", "fjord")
+                || w.hasTag("natural", "strait") || visitedWays.contains(w);
     }
 
     private void visitWaySegment(Way w, int i) {
-        LatLon coor1 = w.getNode(i).getCoor();
-        LatLon coor2 = w.getNode(i + 1).getCoor();
+        Node oneI = w.getNode(i);
+        Node twoI = w.getNode(i + 1);
 
-        if (coor1 != null && coor2 != null) {
-            Double length = coor1.greatCircleDistance(coor2);
+        if (oneI.isLatLonKnown() && twoI.isLatLonKnown()) {
+            double length = oneI.greatCircleDistance(twoI);
             if (length > maxlength) {
                 addErrorForSegment(new WaySegment(w, i), length / 1000.0);
             }
@@ -105,7 +105,7 @@ public class LongSegment extends Test {
         if (reported.add(waySegment)) {
             errors.add(TestError.builder(this, Severity.WARNING, LONG_SEGMENT)
                     .message(tr("Long segments"), marktr("Very long segment of {0} kilometers"), length.intValue())
-                    .primitives(waySegment.way)
+                    .primitives(waySegment.getWay())
                     .highlightWaySegments(Collections.singleton(waySegment))
                     .build());
         }
@@ -134,7 +134,7 @@ public class LongSegment extends Test {
 
     private static boolean isUsableNode(OsmPrimitive p) {
         // test changed nodes - ways referred by them may not be checked automatically.
-        return p instanceof Node && p.isDrawable();
+        return p instanceof Node && ((Node) p).isLatLonKnown();
     }
 
     private static boolean isUsableWay(OsmPrimitive p) {

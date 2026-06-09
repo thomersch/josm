@@ -1,32 +1,23 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import net.trajano.commons.testing.UtilityClassTestUtil;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for class {@link PreferencesUtils}.
  */
-public class PreferencesUtilsTest {
-
+@BasicPreferences
+class PreferencesUtilsTest {
     /**
      * Setup test.
      */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences();
-
-    /**
-     * Setup test.
-     */
-    @Before
+    @BeforeEach
     public void setUp() {
         PreferencesUtils.resetLog();
     }
@@ -35,7 +26,7 @@ public class PreferencesUtilsTest {
      * Test method for {@link PreferencesUtils#log}.
      */
     @Test
-    public void testLog() {
+    void testLog() {
         assertEquals("", PreferencesUtils.getLog());
         PreferencesUtils.log("test");
         assertEquals("test\n", PreferencesUtils.getLog());
@@ -50,7 +41,7 @@ public class PreferencesUtilsTest {
      * @throws ReflectiveOperationException if an error occurs
      */
     @Test
-    public void testUtilityClass() throws ReflectiveOperationException {
+    void testUtilityClass() throws ReflectiveOperationException {
         UtilityClassTestUtil.assertUtilityClassWellDefined(PreferencesUtils.class);
     }
 }

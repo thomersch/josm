@@ -1,66 +1,37 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.io.remotecontrol;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
-import java.security.KeyStore.TrustedCertificateEntry;
-import java.util.stream.Collectors;
 
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.openstreetmap.josm.TestUtils;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.spi.preferences.Config;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-import org.openstreetmap.josm.tools.PlatformHookWindows;
-import org.openstreetmap.josm.tools.PlatformManager;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-import mockit.Mock;
-import mockit.MockUp;
+import org.openstreetmap.josm.testutils.annotations.AssertionsInEDT;
+import org.openstreetmap.josm.testutils.annotations.HTTPS;
 
 /**
  * Unit tests for Remote Control
  */
-public class RemoteControlTest {
+@AssertionsInEDT
+@HTTPS
+class RemoteControlTest {
 
     private String httpBase;
-
-    private static class PlatformHookWindowsMock extends MockUp<PlatformHookWindows> {
-        @Mock
-        public boolean setupHttpsCertificate(String entryAlias, TrustedCertificateEntry trustedCert) {
-            return true;
-        }
-    }
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences().https().assertionsInEDT();
 
     /**
      * Starts Remote control before testing requests.
      * @throws GeneralSecurityException if a security error occurs
      */
-    @Before
+    @BeforeEach
     public void setUp() throws GeneralSecurityException {
-        if (PlatformManager.isPlatformWindows() && "True".equals(System.getenv("APPVEYOR"))) {
-            // appveyor doesn't like us tinkering with the root keystore, so mock this out
-            TestUtils.assumeWorkingJMockit();
-            new PlatformHookWindowsMock();
-        }
-
         RemoteControl.start();
         httpBase = "http://127.0.0.1:"+Config.getPref().getInt("remote.control.port", 8111);
     }
@@ -68,7 +39,7 @@ public class RemoteControlTest {
     /**
      * Stops Remote control after testing requests.
      */
-    @After
+    @AfterEach
     public void tearDown() {
         RemoteControl.stop();
     }
@@ -78,20 +49,16 @@ public class RemoteControlTest {
      * @throws Exception if an error occurs
      */
     @Test
-    public void testHttpListOfCommands() throws Exception {
+    void testHttpListOfCommands() throws Exception {
         testListOfCommands(httpBase);
     }
 
     private void testListOfCommands(String url) throws IOException, ReflectiveOperationException {
         HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
         connection.connect();
-        assertEquals(connection.getResponseCode(), HttpURLConnection.HTTP_BAD_REQUEST);
+        assertEquals(HttpURLConnection.HTTP_BAD_REQUEST, connection.getResponseCode());
         try (InputStream is = connection.getErrorStream()) {
-            // TODO this code should be refactored somewhere in Utils as it is used in several JOSM classes
-            String responseBody;
-            try (BufferedReader in = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
-                responseBody = in.lines().collect(Collectors.joining("\n"));
-            }
+            String responseBody = new String(is.readAllBytes(), StandardCharsets.UTF_8);
             assert responseBody.contains(RequestProcessor.getUsageAsHtml());
         }
     }

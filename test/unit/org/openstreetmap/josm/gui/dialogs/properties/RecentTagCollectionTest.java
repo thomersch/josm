@@ -1,42 +1,33 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.dialogs.properties;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Arrays;
 import java.util.Collections;
 
-import org.junit.Rule;
-import org.junit.Test;
 import org.openstreetmap.josm.data.osm.Tag;
 import org.openstreetmap.josm.data.osm.search.SearchParseError;
 import org.openstreetmap.josm.data.osm.search.SearchSetting;
 import org.openstreetmap.josm.data.preferences.ListProperty;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests of {@link RecentTagCollection} class.
  */
-public class RecentTagCollectionTest {
-
-    /**
-     * Setup tests
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences();
-
+@BasicPreferences
+class RecentTagCollectionTest {
     /**
      * Performs various tests on a {@link RecentTagCollection}.
      *
      * @throws SearchParseError if an error has been encountered while compiling
      */
     @Test
-    public void testVarious() throws SearchParseError {
+    void testVarious() throws SearchParseError {
         final RecentTagCollection recentTags = new RecentTagCollection(2);
         assertTrue(recentTags.isEmpty());
 

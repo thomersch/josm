@@ -42,7 +42,7 @@ public final class LatLonParser {
             + "("+DEG+"|o|deg)|"                // (3)
             + "('|"+MIN+"|min)|"                // (4)
             + "(\"|"+SEC+"|sec)|"               // (5)
-            + "(,|;)|"                          // (6)
+            + "([,;])|"                         // (6)
             + "([NSEW"+N_TR+S_TR+E_TR+W_TR+"])|"// (7)
             + "\\s+|"
             + "(.+)", Pattern.CASE_INSENSITIVE);
@@ -60,7 +60,7 @@ public final class LatLonParser {
             + "(?:[NE]|(?<neg2>[SW]))?";
     private static final Pattern P_DMS = Pattern.compile("^" + DMS + "$");
 
-    private static class LatLonHolder {
+    private static final class LatLonHolder {
         private double lat = Double.NaN;
         private double lon = Double.NaN;
     }

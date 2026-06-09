@@ -57,7 +57,7 @@ public class LineElement extends StyleElement {
      */
     public float realWidth;
     /**
-     * A flag indicating if the direction arrwos should be painted. Should not be accessed directly
+     * A flag indicating if the direction arrows should be painted. Should not be accessed directly
      */
     public boolean wayDirectionArrows;
 
@@ -217,8 +217,8 @@ public class LineElement extends StyleElement {
         if (!super.equals(obj))
             return false;
         final LineElement other = (LineElement) obj;
-        return offset == other.offset &&
-               realWidth == other.realWidth &&
+        return Float.compare(offset, other.offset) == 0 &&
+               Float.compare(realWidth, other.realWidth) == 0 &&
                wayDirectionArrows == other.wayDirectionArrows &&
                Objects.equals(line, other.line) &&
                Objects.equals(color, other.color) &&
@@ -311,8 +311,8 @@ public class LineElement extends StyleElement {
     }
 
     private static LineElement createImpl(Environment env, LineType type) {
-        Cascade c = env.mc.getCascade(env.layer);
-        Cascade cDef = env.mc.getCascade("default");
+        Cascade c = env.getCascade();
+        Cascade cDef = env.getCascade("default");
         Float width = computeWidth(type, c, cDef);
         if (width == null)
             return null;
@@ -422,11 +422,9 @@ public class LineElement extends StyleElement {
     }
 
     private static Float computeWidth(LineType type, Cascade c, Cascade cDef) {
-        Float width;
         switch (type) {
             case NORMAL:
-                width = getWidth(c, WIDTH, getWidth(cDef, WIDTH, null));
-                break;
+                return getWidth(c, WIDTH, getWidth(cDef, WIDTH, null));
             case CASING:
                 Float casingWidth = c.get(type.prefix + WIDTH, null, Float.class, true);
                 if (casingWidth == null) {
@@ -437,16 +435,12 @@ public class LineElement extends StyleElement {
                 }
                 if (casingWidth == null)
                     return null;
-                width = Optional.ofNullable(getWidth(c, WIDTH, getWidth(cDef, WIDTH, null))).orElse(0f) + 2 * casingWidth;
-                break;
+                return Optional.ofNullable(getWidth(c, WIDTH, getWidth(cDef, WIDTH, null))).orElse(0f) + 2 * casingWidth;
             case LEFT_CASING:
             case RIGHT_CASING:
-                width = getWidth(c, type.prefix + WIDTH, null);
-                break;
-            default:
-                throw new AssertionError();
+                return getWidth(c, type.prefix + WIDTH, null);
         }
-        return width;
+        throw new AssertionError();
     }
 
     private static float computeRealWidth(Environment env, LineType type, Cascade c) {

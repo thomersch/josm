@@ -1,31 +1,20 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.preferences.display;
 
-import static org.junit.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-import org.junit.BeforeClass;
-import org.junit.Test;
-import org.openstreetmap.josm.JOSMFixture;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.gui.preferences.PreferencesTestUtils;
 
 /**
  * Unit tests of {@link ColorPreference} class.
  */
-public class ColorPreferenceTest {
-
-    /**
-     * Setup test.
-     */
-    @BeforeClass
-    public static void setUpBeforeClass() {
-        JOSMFixture.createUnitTestFixture().init();
-    }
-
+class ColorPreferenceTest {
     /**
      * Unit test of {@link ColorPreference#ColorPreference}.
      */
     @Test
-    public void testColorPreference() {
+    void testColorPreference() {
         assertNotNull(new ColorPreference.Factory().createPreferenceSetting());
     }
 
@@ -33,7 +22,7 @@ public class ColorPreferenceTest {
      * Unit test of {@link ColorPreference#addGui}.
      */
     @Test
-    public void testAddGui() {
+    void testAddGui() {
         PreferencesTestUtils.doTestPreferenceSettingAddGui(new ColorPreference.Factory(), null);
     }
 }

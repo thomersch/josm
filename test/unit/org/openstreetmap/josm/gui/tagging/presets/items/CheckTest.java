@@ -1,40 +1,37 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.tagging.presets.items;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-
-import java.util.Collections;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import javax.swing.JPanel;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.openstreetmap.josm.data.osm.OsmPrimitive;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
+import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetItemGuiSupport;
+import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetItemTest;
+import org.openstreetmap.josm.testutils.annotations.Main;
 
 /**
  * Unit tests of {@link Check} class.
  */
-public class CheckTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().main();
+@Main
+class CheckTest implements RegionSpecificTest, TaggingPresetItemTest {
+    @Override
+    public Check getInstance() {
+        final Check check = new Check();
+        check.key = "crossing:island";
+        return check;
+    }
 
     /**
      * Unit test for {@link Check#addToPanel}.
      */
+    @Override
     @Test
     public void testAddToPanel() {
         JPanel p = new JPanel();
         assertEquals(0, p.getComponentCount());
-        assertTrue(new Check().addToPanel(p, Collections.<OsmPrimitive>emptyList(), false));
+        assertTrue(getInstance().addToPanel(p, TaggingPresetItemGuiSupport.create(false)));
         assertTrue(p.getComponentCount() > 0);
     }
 }

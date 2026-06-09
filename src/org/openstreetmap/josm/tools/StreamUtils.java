@@ -35,7 +35,7 @@ public final class StreamUtils {
     }
 
     /**
-     * Creqates a stream iterating the list in reversed order
+     * Creates a stream iterating the list in reversed order
      * @param list the list to iterate over
      * @param <T> the type of elements in the list
      * @return a stream iterating the list in reversed order
@@ -67,7 +67,7 @@ public final class StreamUtils {
      * @since 16436
      */
     public static <T> Collector<T, ?, List<T>> toUnmodifiableList() {
-        // Java 10: use java.util.stream.Collectors.toUnmodifiableList
+        // Java 10: use java.util.stream.Collectors.toUnmodifiableList (note: does not like null checks OR null entries)
         return Collectors.collectingAndThen(Collectors.toList(), Utils::toUnmodifiableList);
     }
 }

@@ -11,7 +11,6 @@ import java.awt.Graphics2D;
 import java.awt.GraphicsEnvironment;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
-import java.awt.Image;
 import java.awt.event.ActionEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
@@ -37,11 +36,13 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.ListCellRenderer;
+import javax.swing.SwingConstants;
 import javax.swing.WindowConstants;
 import javax.swing.event.TableModelEvent;
 import javax.swing.event.TableModelListener;
 
-import org.openstreetmap.josm.actions.SessionSaveAsAction;
+import org.openstreetmap.josm.actions.JosmAction;
+import org.openstreetmap.josm.actions.SessionSaveAction;
 import org.openstreetmap.josm.actions.UploadAction;
 import org.openstreetmap.josm.gui.ExceptionDialogUtil;
 import org.openstreetmap.josm.gui.MainApplication;
@@ -54,6 +55,8 @@ import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.util.WindowGeometry;
 import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.ImageProvider;
+import org.openstreetmap.josm.tools.ImageProvider.ImageSizes;
+import org.openstreetmap.josm.tools.ImageResource;
 import org.openstreetmap.josm.tools.InputMapUtils;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.UserCancelException;
@@ -61,8 +64,8 @@ import org.openstreetmap.josm.tools.Utils;
 
 /**
  * Dialog that pops up when the user closes a layer with modified data.
- *
- * It asks for confirmation that all modification should be discarded and offers
+ * <p>
+ * It asks for confirmation that all modifications should be discarded and offer
  * to save the layers to file or upload to server, depending on the type of layer.
  */
 public class SaveLayersDialog extends JDialog implements TableModelListener {
@@ -79,7 +82,10 @@ public class SaveLayersDialog extends JDialog implements TableModelListener {
         RESTART
     }
 
-    private enum UserAction {
+    /**
+     * The action a user decided to take with respect to an operation
+     */
+    enum UserAction {
         /** save/upload layers was successful, proceed with operation */
         PROCEED,
         /** save/upload of layers was not successful or user canceled operation */
@@ -91,7 +97,7 @@ public class SaveLayersDialog extends JDialog implements TableModelListener {
     private final UploadAndSaveProgressRenderer pnlUploadLayers = new UploadAndSaveProgressRenderer();
 
     private final SaveAndProceedAction saveAndProceedAction = new SaveAndProceedAction();
-    private final SaveSessionAction saveSessionAction = new SaveSessionAction();
+    private final SaveSessionButtonAction saveSessionAction = new SaveSessionButtonAction();
     private final DiscardAndProceedAction discardAndProceedAction = new DiscardAndProceedAction();
     private final CancelAction cancelAction = new CancelAction();
     private transient SaveAndUploadTask saveAndUploadTask;
@@ -110,27 +116,25 @@ public class SaveLayersDialog extends JDialog implements TableModelListener {
     public static boolean saveUnsavedModifications(Iterable<? extends Layer> selectedLayers, Reason reason) {
         if (!GraphicsEnvironment.isHeadless()) {
             SaveLayersDialog dialog = new SaveLayersDialog(MainApplication.getMainFrame());
-            List<AbstractModifiableLayer> layersWithUnmodifiedChanges = new ArrayList<>();
+            List<AbstractModifiableLayer> layersWithUnsavedChanges = new ArrayList<>();
             for (Layer l: selectedLayers) {
                 if (!(l instanceof AbstractModifiableLayer)) {
                     continue;
                 }
                 AbstractModifiableLayer odl = (AbstractModifiableLayer) l;
-                if (odl.isModified() &&
-                        ((!odl.isSavable() && !odl.isUploadable()) ||
-                                odl.requiresSaveToFile() ||
-                                (odl.requiresUploadToServer() && !odl.isUploadDiscouraged()))) {
-                    layersWithUnmodifiedChanges.add(odl);
+                if (odl.isModified() && (
+                        (odl.isSavable() && odl.requiresSaveToFile()) ||
+                        (odl.isUploadable() && odl.requiresUploadToServer() && !odl.isUploadDiscouraged()))) {
+                    layersWithUnsavedChanges.add(odl);
                 }
             }
             dialog.prepareForSavingAndUpdatingLayers(reason);
-            if (!layersWithUnmodifiedChanges.isEmpty()) {
-                dialog.getModel().populate(layersWithUnmodifiedChanges);
+            if (!layersWithUnsavedChanges.isEmpty()) {
+                dialog.getModel().populate(layersWithUnsavedChanges);
                 dialog.setVisible(true);
-                switch(dialog.getUserAction()) {
+                switch (dialog.getUserAction()) {
                     case PROCEED: return true;
-                    case CANCEL:
-                    default: return false;
+                    case CANCEL: return false;
                 }
             }
             dialog.closeDialog();
@@ -177,14 +181,14 @@ public class SaveLayersDialog extends JDialog implements TableModelListener {
         JPanel pnl = new JPanel(new GridBagLayout());
 
         model.addPropertyChangeListener(saveAndProceedAction);
-        pnl.add(saveAndProceedActionButton, GBC.std(0, 0).insets(5, 5, 0, 0).fill(GBC.HORIZONTAL));
+        pnl.add(saveAndProceedActionButton, GBC.std(0, 0).insets(5, 5, 0, 0).fill(GridBagConstraints.HORIZONTAL));
 
-        pnl.add(new JButton(saveSessionAction), GBC.std(1, 0).insets(5, 5, 5, 0).fill(GBC.HORIZONTAL));
+        pnl.add(new JButton(saveSessionAction), GBC.std(1, 0).insets(5, 5, 5, 0).fill(GridBagConstraints.HORIZONTAL));
 
         model.addPropertyChangeListener(discardAndProceedAction);
-        pnl.add(new JButton(discardAndProceedAction), GBC.std(0, 1).insets(5, 5, 0, 5).fill(GBC.HORIZONTAL));
+        pnl.add(new JButton(discardAndProceedAction), GBC.std(0, 1).insets(5, 5, 0, 5).fill(GridBagConstraints.HORIZONTAL));
 
-        pnl.add(new JButton(cancelAction), GBC.std(1, 1).insets(5, 5, 5, 5).fill(GBC.HORIZONTAL));
+        pnl.add(new JButton(cancelAction), GBC.std(1, 1).insets(5, 5, 5, 5).fill(GridBagConstraints.HORIZONTAL));
 
         JPanel pnl2 = new JPanel(new BorderLayout());
         pnl2.add(pnlUploadLayers, BorderLayout.CENTER);
@@ -262,7 +266,7 @@ public class SaveLayersDialog extends JDialog implements TableModelListener {
             gc.weightx = 1.0;
             gc.weighty = 0.0;
             add(lblMessage, gc);
-            lblMessage.setHorizontalAlignment(JLabel.LEFT);
+            lblMessage.setHorizontalAlignment(SwingConstants.LEADING);
             lstLayers.setCellRenderer(new LayerCellRenderer());
             gc.gridx = 0;
             gc.gridy = 1;
@@ -372,11 +376,15 @@ public class SaveLayersDialog extends JDialog implements TableModelListener {
         }
 
         public void cancel() {
-            switch(model.getMode()) {
-            case EDITING_DATA: cancelWhenInEditingModel();
+            switch (model.getMode()) {
+            case EDITING_DATA:
+                cancelWhenInEditingModel();
                 break;
-            case UPLOADING_AND_SAVING: cancelSafeAndUploadTask();
+            case UPLOADING_AND_SAVING:
+                cancelSafeAndUploadTask();
                 break;
+            default:
+                throw new IllegalStateException("Unexpected value: " + model.getMode());
             }
         }
 
@@ -421,49 +429,49 @@ public class SaveLayersDialog extends JDialog implements TableModelListener {
         public void propertyChange(PropertyChangeEvent evt) {
             if (evt.getPropertyName().equals(SaveLayersModel.MODE_PROP)) {
                 Mode mode = (Mode) evt.getNewValue();
-                switch(mode) {
-                case EDITING_DATA: setEnabled(true);
+                switch (mode) {
+                case EDITING_DATA:
+                    setEnabled(true);
                     break;
-                case UPLOADING_AND_SAVING: setEnabled(false);
+                case UPLOADING_AND_SAVING:
+                    setEnabled(false);
                     break;
+                default:
+                    throw new IllegalStateException("Unexpected value: " + mode);
                 }
             }
         }
     }
 
-    class SaveSessionAction extends SessionSaveAsAction {
+    class SaveSessionButtonAction extends JosmAction {
 
-        SaveSessionAction() {
-            super(false, false);
+        SaveSessionButtonAction() {
+            super(tr("Save Session"), "session", SessionSaveAction.getTooltip(), null, false, null, false);
         }
 
         @Override
         public void actionPerformed(ActionEvent e) {
             try {
-                saveSession();
-                setUserAction(UserAction.PROCEED);
-                closeDialog();
-            } catch (UserCancelException ignore) {
-                Logging.trace(ignore);
+                if (SessionSaveAction.getInstance().saveSession(false, true)) {
+                    setUserAction(UserAction.PROCEED);
+                    closeDialog();
+                }
+            } catch (UserCancelException userCancelException) {
+                Logging.trace(userCancelException);
             }
         }
     }
 
     final class SaveAndProceedAction extends AbstractAction implements PropertyChangeListener {
-        private static final int ICON_SIZE = 24;
-        private static final String BASE_ICON = "BASE_ICON";
-        private final transient Image save = getImage("save", false);
-        private final transient Image upld = getImage("upload", false);
-        private final transient Image saveDis = getImage("save", true);
-        private final transient Image upldDis = getImage("upload", true);
+
+        private ImageResource actionImg;
 
         SaveAndProceedAction() {
             initForReason(Reason.EXIT);
         }
 
-        Image getImage(String name, boolean disabled) {
-            ImageIcon img = new ImageProvider(name).setDisabled(disabled).setOptional(true).get();
-            return img != null ? img.getImage() : null;
+        ImageResource getImage(String name, boolean disabled) {
+            return new ImageProvider(name).setDisabled(disabled).setOptional(true).getResource();
         }
 
         public void initForReason(Reason reason) {
@@ -471,34 +479,44 @@ public class SaveLayersDialog extends JDialog implements TableModelListener {
                 case EXIT:
                     putValue(NAME, tr("Perform actions before exiting"));
                     putValue(SHORT_DESCRIPTION, tr("Exit JOSM with saving. Unsaved changes are uploaded and/or saved."));
-                    putValue(BASE_ICON, ImageProvider.getIfAvailable("exit"));
+                    actionImg = new ImageProvider("exit").getResource();
                     break;
                 case RESTART:
                     putValue(NAME, tr("Perform actions before restarting"));
                     putValue(SHORT_DESCRIPTION, tr("Restart JOSM with saving. Unsaved changes are uploaded and/or saved."));
-                    putValue(BASE_ICON, ImageProvider.getIfAvailable("restart"));
+                    actionImg = new ImageProvider("restart").getResource();
                     break;
                 case DELETE:
                     putValue(NAME, tr("Perform actions before deleting"));
                     putValue(SHORT_DESCRIPTION, tr("Save/Upload layers before deleting. Unsaved changes are not lost."));
-                    putValue(BASE_ICON, ImageProvider.getIfAvailable("dialogs", "delete"));
+                    actionImg = new ImageProvider("dialogs", "delete").getResource();
                     break;
             }
             redrawIcon();
         }
 
         public void redrawIcon() {
-            ImageIcon base = ((ImageIcon) getValue(BASE_ICON));
-            BufferedImage newIco = new BufferedImage(ICON_SIZE*3, ICON_SIZE, BufferedImage.TYPE_4BYTE_ABGR);
+            ImageResource uploadImg = model.getLayersToUpload().isEmpty() ? getImage("upload", true) : getImage("upload", false);
+            ImageResource saveImg = model.getLayersToSave().isEmpty() ? getImage("save", true) : getImage("save", false);
+            attachImageIcon(SMALL_ICON, ImageSizes.SMALLICON, uploadImg, saveImg, actionImg);
+            attachImageIcon(LARGE_ICON_KEY, ImageSizes.LARGEICON, uploadImg, saveImg, actionImg);
+        }
+
+        private void attachImageIcon(String key, ImageSizes size, ImageResource uploadImg, ImageResource saveImg, ImageResource actionImg) {
+            Dimension dim = size.getImageDimension();
+            BufferedImage newIco = new BufferedImage(((int) dim.getWidth())*3, (int) dim.getHeight(), BufferedImage.TYPE_4BYTE_ABGR);
             Graphics2D g = newIco.createGraphics();
-            // CHECKSTYLE.OFF: SingleSpaceSeparator
-            g.drawImage(model.getLayersToUpload().isEmpty() ? upldDis : upld, ICON_SIZE*0, 0, ICON_SIZE, ICON_SIZE, null);
-            g.drawImage(model.getLayersToSave().isEmpty()   ? saveDis : save, ICON_SIZE*1, 0, ICON_SIZE, ICON_SIZE, null);
-            if (base != null) {
-                g.drawImage(base.getImage(),                                  ICON_SIZE*2, 0, ICON_SIZE, ICON_SIZE, null);
+            drawImageIcon(g, 0, dim, uploadImg);
+            drawImageIcon(g, 1, dim, saveImg);
+            drawImageIcon(g, 2, dim, actionImg);
+            putValue(key, new ImageIcon(newIco));
+        }
+
+        private void drawImageIcon(Graphics2D g, int index, Dimension dim, ImageResource img) {
+            if (img != null) {
+                g.drawImage(img.getImageIcon(dim).getImage(),
+                        ((int) dim.getWidth())*index, 0, (int) dim.getWidth(), (int) dim.getHeight(), null);
             }
-            // CHECKSTYLE.ON: SingleSpaceSeparator
-            putValue(SMALL_ICON, new ImageIcon(newIco));
         }
 
         @Override
@@ -512,11 +530,15 @@ public class SaveLayersDialog extends JDialog implements TableModelListener {
         public void propertyChange(PropertyChangeEvent evt) {
             if (evt.getPropertyName().equals(SaveLayersModel.MODE_PROP)) {
                 SaveLayersModel.Mode mode = (SaveLayersModel.Mode) evt.getNewValue();
-                switch(mode) {
-                case EDITING_DATA: setEnabled(true);
+                switch (mode) {
+                case EDITING_DATA:
+                    setEnabled(true);
                     break;
-                case UPLOADING_AND_SAVING: setEnabled(false);
+                case UPLOADING_AND_SAVING:
+                    setEnabled(false);
                     break;
+                default:
+                    throw new IllegalStateException("Unexpected value: " + mode);
                 }
             }
         }
@@ -545,53 +567,67 @@ public class SaveLayersDialog extends JDialog implements TableModelListener {
             for (final SaveLayerInfo layerInfo: toUpload) {
                 AbstractModifiableLayer layer = layerInfo.getLayer();
                 if (canceled) {
-                    model.setUploadState(layer, UploadOrSaveState.CANCELED);
+                    GuiHelper.runInEDTAndWait(() -> model.setUploadState(layer, UploadOrSaveState.CANCELED));
                     continue;
                 }
-                monitor.subTask(tr("Preparing layer ''{0}'' for upload ...", layerInfo.getName()));
+                GuiHelper.runInEDTAndWait(() -> monitor.subTask(tr("Preparing layer ''{0}'' for upload ...", layerInfo.getName())));
 
+                // checkPreUploadConditions must not be run in the EDT to avoid deadlocks
                 if (!UploadAction.checkPreUploadConditions(layer)) {
-                    model.setUploadState(layer, UploadOrSaveState.FAILED);
+                    GuiHelper.runInEDTAndWait(() -> model.setUploadState(layer, UploadOrSaveState.FAILED));
                     continue;
                 }
 
-                AbstractUploadDialog dialog = layer.getUploadDialog();
-                if (dialog != null) {
-                    dialog.setVisible(true);
-                    if (dialog.isCanceled()) {
-                        model.setUploadState(layer, UploadOrSaveState.CANCELED);
-                        continue;
-                    }
-                    dialog.rememberUserInput();
-                }
-
-                currentTask = layer.createUploadTask(monitor);
-                if (currentTask == null) {
-                    model.setUploadState(layer, UploadOrSaveState.FAILED);
-                    continue;
-                }
-                Future<?> currentFuture = worker.submit(currentTask);
-                try {
-                    // wait for the asynchronous task to complete
-                    currentFuture.get();
-                } catch (CancellationException e) {
-                    Logging.trace(e);
-                    model.setUploadState(layer, UploadOrSaveState.CANCELED);
-                } catch (InterruptedException | ExecutionException e) {
-                    Logging.error(e);
-                    model.setUploadState(layer, UploadOrSaveState.FAILED);
-                    ExceptionDialogUtil.explainException(e);
-                }
-                if (currentTask.isCanceled()) {
-                    model.setUploadState(layer, UploadOrSaveState.CANCELED);
-                } else if (currentTask.isFailed()) {
-                    Logging.error(currentTask.getLastException());
-                    ExceptionDialogUtil.explainException(currentTask.getLastException());
-                    model.setUploadState(layer, UploadOrSaveState.FAILED);
-                } else {
-                    model.setUploadState(layer, UploadOrSaveState.OK);
-                }
+                GuiHelper.runInEDTAndWait(() -> uploadLayersUploadModelStateOnFinish(layer));
                 currentTask = null;
+            }
+        }
+
+        /**
+         * Update the {@link #model} state on upload finish
+         * @param layer The layer that has been saved
+         */
+        private void uploadLayersUploadModelStateOnFinish(AbstractModifiableLayer layer) {
+            AbstractUploadDialog dialog = layer.getUploadDialog();
+            if (dialog != null) {
+                dialog.setVisible(true);
+                if (dialog.isCanceled()) {
+                    model.setUploadState(layer, UploadOrSaveState.CANCELED);
+                    return;
+                }
+                dialog.rememberUserInput();
+            }
+
+            currentTask = layer.createUploadTask(monitor);
+            if (currentTask == null) {
+                model.setUploadState(layer, UploadOrSaveState.FAILED);
+                return;
+            }
+            Future<?> currentFuture = worker.submit(currentTask);
+            try {
+                // wait for the asynchronous task to complete
+                currentFuture.get();
+            } catch (CancellationException e) {
+                Logging.trace(e);
+                model.setUploadState(layer, UploadOrSaveState.CANCELED);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                Logging.error(e);
+                model.setUploadState(layer, UploadOrSaveState.FAILED);
+                ExceptionDialogUtil.explainException(e);
+            } catch (ExecutionException e) {
+                Logging.error(e);
+                model.setUploadState(layer, UploadOrSaveState.FAILED);
+                ExceptionDialogUtil.explainException(e);
+            }
+            if (currentTask.isCanceled()) {
+                model.setUploadState(layer, UploadOrSaveState.CANCELED);
+            } else if (currentTask.isFailed()) {
+                Logging.error(currentTask.getLastException());
+                ExceptionDialogUtil.explainException(currentTask.getLastException());
+                model.setUploadState(layer, UploadOrSaveState.FAILED);
+            } else {
+                model.setUploadState(layer, UploadOrSaveState.OK);
             }
         }
 
@@ -661,12 +697,13 @@ public class SaveLayersDialog extends JDialog implements TableModelListener {
 
         @Override
         public void run() {
+            GuiHelper.runInEDTAndWait(() -> model.setMode(SaveLayersModel.Mode.UPLOADING_AND_SAVING));
+            // We very specifically do not want to block the EDT or the worker thread when validating
+            List<SaveLayerInfo> toUpload = model.getLayersToUpload();
+            if (!toUpload.isEmpty()) {
+                uploadLayers(toUpload);
+            }
             GuiHelper.runInEDTAndWait(() -> {
-                model.setMode(SaveLayersModel.Mode.UPLOADING_AND_SAVING);
-                List<SaveLayerInfo> toUpload = model.getLayersToUpload();
-                if (!toUpload.isEmpty()) {
-                    uploadLayers(toUpload);
-                }
                 List<SaveLayerInfo> toSave = model.getLayersToSave();
                 if (!toSave.isEmpty()) {
                     saveLayers(toSave);

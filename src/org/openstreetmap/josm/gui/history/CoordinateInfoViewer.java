@@ -1,25 +1,34 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.history;
+
 import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.awt.Color;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.event.ActionEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 
+import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JPopupMenu;
 import javax.swing.UIManager;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 
 import org.openstreetmap.gui.jmapviewer.JMapViewer;
 import org.openstreetmap.gui.jmapviewer.MapMarkerDot;
+import org.openstreetmap.josm.command.MoveCommand;
+import org.openstreetmap.josm.data.UndoRedoHandler;
+import org.openstreetmap.josm.data.coor.ILatLon;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.coor.conversion.DecimalDegreesCoordinateFormat;
+import org.openstreetmap.josm.data.osm.Node;
+import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.history.HistoryNode;
 import org.openstreetmap.josm.data.osm.history.HistoryOsmPrimitive;
 import org.openstreetmap.josm.gui.NavigatableComponent;
@@ -29,6 +38,7 @@ import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.widgets.JosmTextArea;
 import org.openstreetmap.josm.tools.CheckParameterUtil;
 import org.openstreetmap.josm.tools.Destroyable;
+import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.Pair;
 
 /**
@@ -113,6 +123,11 @@ public class CoordinateInfoViewer extends HistoryBrowserPanel {
         mapViewer = new MapViewer(model);
         add(mapViewer, gc);
         mapViewer.setZoomControlsVisible(false);
+
+        JPopupMenu popupMenu = new JPopupMenu();
+        popupMenu.add(new RestoreCoordinateAction());
+        setComponentPopupMenu(popupMenu);
+        mapViewer.setComponentPopupMenu(popupMenu);
     }
 
     /**
@@ -394,8 +409,8 @@ public class CoordinateInfoViewer extends HistoryBrowserPanel {
         protected void refresh() {
             final Pair<LatLon, LatLon> coordinates = updater.getCoordinates();
             if (coordinates == null) return;
-            final LatLon coord = coordinates.a;
-            final LatLon oppositeCoord = coordinates.b;
+            final ILatLon coord = coordinates.a;
+            final ILatLon oppositeCoord = coordinates.b;
 
             // update distance
             //
@@ -421,6 +436,28 @@ public class CoordinateInfoViewer extends HistoryBrowserPanel {
         @Override
         public void destroy() {
             lblDistance.destroy();
+        }
+    }
+
+    private class RestoreCoordinateAction extends AbstractAction {
+
+        RestoreCoordinateAction() {
+            super(tr("Restore"));
+            new ImageProvider("undo").getResource().attachImageIcon(this, true);
+        }
+
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            OsmPrimitive primitive = getPrimitiveFromDataSet(PointInTimeType.REFERENCE_POINT_IN_TIME);
+            if (!(primitive instanceof Node) || ((Node) primitive).getEastNorth() == null) {
+                return;
+            }
+            HistoryOsmPrimitive historyPrimitive = model.getPointInTime(PointInTimeType.REFERENCE_POINT_IN_TIME);
+            if (!(historyPrimitive instanceof HistoryNode) || ((HistoryNode) historyPrimitive).getCoords() == null) {
+                return;
+            }
+            MoveCommand command = new MoveCommand(((Node) primitive), ((HistoryNode) historyPrimitive).getCoords());
+            UndoRedoHandler.getInstance().add(command);
         }
     }
 }

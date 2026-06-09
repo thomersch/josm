@@ -5,7 +5,9 @@ import java.awt.Component;
 import java.net.Authenticator.RequestorType;
 import java.net.PasswordAuthentication;
 
-import org.openstreetmap.josm.data.oauth.OAuthToken;
+import org.openstreetmap.josm.data.oauth.IOAuthToken;
+
+import jakarta.annotation.Nullable;
 
 /**
  * A CredentialsAgent manages two credentials:
@@ -56,29 +58,45 @@ public interface CredentialsAgent {
             throws CredentialsAgentException;
 
     /**
-     * Lookup the current OAuth Access Token to access the OSM server. Replies null, if no
+     * Lookup the current OAuth Access Token to access the specified server. Replies null, if no
      * Access Token is currently managed by this CredentialAgent.
      *
-     * @return the current OAuth Access Token to access the OSM server.
+     * @param host The host to get OAuth credentials for
+     * @return the current OAuth Access Token to access the specified server.
      * @throws CredentialsAgentException if something goes wrong
+     * @since 18650
      */
-    OAuthToken lookupOAuthAccessToken() throws CredentialsAgentException;
+    @Nullable
+    IOAuthToken lookupOAuthAccessToken(String host) throws CredentialsAgentException;
 
     /**
      * Stores the OAuth Access Token <code>accessToken</code>.
      *
-     * @param accessToken the access Token. null, to remove the Access Token.
+     * @param host The host the access token is for
+     * @param accessToken the access Token. null, to remove the Access Token. This will remove all IOAuthTokens <i>not</i> managed by
+     *                    {@link #storeOAuthAccessToken(String, IOAuthToken)}.
      * @throws CredentialsAgentException if something goes wrong
+     * @since 18650
      */
-    void storeOAuthAccessToken(OAuthToken accessToken) throws CredentialsAgentException;
+    void storeOAuthAccessToken(String host, IOAuthToken accessToken) throws CredentialsAgentException;
 
     /**
      * Purges the internal credentials cache for the given requestor type.
      * @param requestorType the type of service.
-     * {@link RequestorType#SERVER} for the OSM API server, {@link RequestorType#PROXY} for a proxy server
+     * {@link RequestorType#PROXY} for a proxy server, {@link RequestorType#SERVER} for other servers.
      * @since 12992
      */
     void purgeCredentialsCache(RequestorType requestorType);
+
+    /**
+     * Purges the internal credentials cache for the given requestor type and host.
+     * @param requestorType the type of service.
+     * @param host the host.
+     * {@link RequestorType#PROXY} for a proxy server, {@link RequestorType#SERVER} for other servers.
+     */
+    default void purgeCredentialsCache(RequestorType requestorType, String host) {
+        purgeCredentialsCache(requestorType);
+    }
 
     /**
      * Provide a Panel that is shown below the API password / username fields

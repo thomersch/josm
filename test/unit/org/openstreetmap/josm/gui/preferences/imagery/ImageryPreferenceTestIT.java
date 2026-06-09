@@ -1,6 +1,10 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.preferences.imagery;
 
+import static java.util.Collections.singletonList;
+import static java.util.Collections.synchronizedList;
+import static java.util.Collections.synchronizedMap;
+import static java.util.stream.Collectors.toList;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -10,14 +14,13 @@ import java.io.IOException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import javax.imageio.ImageIO;
@@ -25,7 +28,10 @@ import javax.imageio.ImageIO;
 import org.apache.commons.jcs3.access.CacheAccess;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.extension.RegisterExtension;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -59,35 +65,34 @@ import org.openstreetmap.josm.data.projection.ProjectionRegistry;
 import org.openstreetmap.josm.data.projection.Projections;
 import org.openstreetmap.josm.io.imagery.ApiKeyProvider;
 import org.openstreetmap.josm.io.imagery.WMSImagery.WMSGetCapabilitiesException;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.HTTPS;
+import org.openstreetmap.josm.testutils.annotations.I18n;
+import org.openstreetmap.josm.testutils.annotations.IntegrationTest;
+import org.openstreetmap.josm.testutils.annotations.ProjectionNadGrids;
 import org.openstreetmap.josm.tools.HttpClient;
 import org.openstreetmap.josm.tools.HttpClient.Response;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.Utils;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-
 /**
  * Integration tests of {@link ImageryPreference} class.
  */
+@HTTPS
+@I18n
+@IntegrationTest
+@org.openstreetmap.josm.testutils.annotations.Projection
+@ProjectionNadGrids
+@Timeout(value = 40, unit = TimeUnit.MINUTES)
 public class ImageryPreferenceTestIT {
 
     private static final String ERROR_SEP = " -> ";
     private static final LatLon GREENWICH = new LatLon(51.47810, -0.00170);
     private static final int DEFAULT_ZOOM = 12;
 
-    /**
-     * Setup rule
-     */
-    @RegisterExtension
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    static JOSMTestRules test = new JOSMTestRules().https().i18n().preferences().projection().projectionNadGrids()
-                                                   .timeout((int) TimeUnit.MINUTES.toMillis(40));
-
     /** Entry to test */
-    private final Map<String, Map<ImageryInfo, List<String>>> errors = Collections.synchronizedMap(new TreeMap<>());
-    private final Map<String, Map<ImageryInfo, List<String>>> ignoredErrors = Collections.synchronizedMap(new TreeMap<>());
-    private static final Map<String, byte[]> workingURLs = Collections.synchronizedMap(new TreeMap<>());
+    private final Map<String, Map<ImageryInfo, List<String>>> errors = synchronizedMap(new TreeMap<>());
+    private final Map<String, Map<ImageryInfo, List<String>>> ignoredErrors = synchronizedMap(new TreeMap<>());
+    private static final Map<String, byte[]> workingURLs = synchronizedMap(new TreeMap<>());
 
     private static TMSCachedTileLoaderJob helper;
     private static final List<String> errorsToIgnore = new ArrayList<>();
@@ -123,8 +128,9 @@ public class ImageryPreferenceTestIT {
         ImageryLayerInfo.instance.load(false);
         return ImageryLayerInfo.instance.getDefaultLayers()
                 .stream()
-                .map(i -> Arguments.of(i.getId(), i))
-                .collect(Collectors.toList());
+                //.filter(i -> "OGDLidarZH-DOM-2017".equals(i.getId())) // enable to test one specific entry
+                .map(i -> Arguments.of(i.getCountryCode().isEmpty() ? i.getId() : i.getCountryCode() + '-' + i.getId(), i))
+                .collect(toList());
     }
 
     private boolean addError(ImageryInfo info, String error) {
@@ -139,17 +145,17 @@ public class ImageryPreferenceTestIT {
     }
 
     private static boolean isIgnoredSubstring(String substring) {
-        return errorsToIgnore.parallelStream().anyMatch(x -> substring.contains(x));
+        return errorsToIgnore.parallelStream().anyMatch(substring::contains);
     }
 
     private static boolean addError(Map<String, Map<ImageryInfo, List<String>>> map, ImageryInfo info, String errorMsg) {
-        return map.computeIfAbsent(info.getCountryCode(), x -> Collections.synchronizedMap(new TreeMap<>()))
-                  .computeIfAbsent(info, x -> Collections.synchronizedList(new ArrayList<>()))
+        return map.computeIfAbsent(info.getCountryCode(), x -> synchronizedMap(new TreeMap<>()))
+                  .computeIfAbsent(info, x -> synchronizedList(new ArrayList<>()))
                   .add(errorMsg);
     }
 
     private Optional<byte[]> checkUrl(ImageryInfo info, String url) {
-        if (url != null && !url.isEmpty()) {
+        if (!Utils.isEmpty(url)) {
             if (workingURLs.containsKey(url)) {
                 return Optional.of(workingURLs.get(url));
             }
@@ -165,7 +171,7 @@ public class ImageryPreferenceTestIT {
                     Logging.warn(url + " -> HTTP " + response.getResponseCode());
                 }
                 try {
-                    byte[] data = Utils.readBytesFromStream(response.getContent());
+                    byte[] data = response.getContent().readAllBytes();
                     if (response.getResponseCode() < 300) {
                         workingURLs.put(url, data);
                     }
@@ -186,6 +192,22 @@ public class ImageryPreferenceTestIT {
 
     private void checkLinkUrl(ImageryInfo info, String url) {
         checkUrl(info, url).filter(x -> x.length == 0).ifPresent(x -> addError(info, url + " -> returned empty contents"));
+    }
+
+    private List<String> checkTileUrls(ImageryInfo info, List<AbstractTileSource> tileSources, ICoordinate center, int zoom)
+            throws IOException {
+        List<String> errors = new ArrayList<>();
+        for (AbstractTileSource tileSource : tileSources) {
+            String error = checkTileUrl(info, tileSource, center, zoom);
+            if (!error.isEmpty()) {
+                errors.add(error);
+                if (error.contains("This request used more time than allowed and has been forcefully stopped")) {
+                    // No need to kill both remote server and our Jenkins instance... On error of this kind is enough to see there's a problem
+                    break;
+                }
+            }
+        }
+        return errors;
     }
 
     private String checkTileUrl(ImageryInfo info, AbstractTileSource tileSource, ICoordinate center, int zoom)
@@ -279,7 +301,7 @@ public class ImageryPreferenceTestIT {
 
     private static LatLon getCenter(ImageryBounds bounds) {
         List<Shape> shapes = bounds.getShapes();
-        return shapes != null && !shapes.isEmpty() ? getPointInShape(shapes.get(0)) : bounds.getCenter();
+        return !Utils.isEmpty(shapes) ? getPointInShape(shapes.get(0)) : bounds.getCenter();
     }
 
     private void checkEntry(ImageryInfo info) {
@@ -306,20 +328,20 @@ public class ImageryPreferenceTestIT {
             ImageryBounds bounds = info.getBounds();
             // Some imagery sources do not define tiles at (0,0). So pickup Greenwich Royal Observatory for global sources
             ICoordinate center = CoordinateConversion.llToCoor(bounds != null ? getCenter(bounds) : GREENWICH);
-            AbstractTileSource tileSource = getTileSource(info);
+            List<AbstractTileSource> tileSources = getTileSources(info);
             // test min zoom and try to detect the correct value in case of error
             int maxZoom = info.getMaxZoom() > 0 ? Math.min(DEFAULT_ZOOM, info.getMaxZoom()) : DEFAULT_ZOOM;
             for (int zoom = info.getMinZoom(); zoom < maxZoom; zoom++) {
-                if (!isZoomError(checkTileUrl(info, tileSource, center, zoom))) {
+                if (!isZoomError(checkTileUrls(info, tileSources, center, zoom))) {
                     break;
                 }
             }
             // checking max zoom for real is complex, see https://josm.openstreetmap.de/ticket/16073#comment:27
             if (info.getMaxZoom() > 0 && info.getImageryType() != ImageryType.SCANEX) {
-                checkTileUrl(info, tileSource, center, Utils.clamp(DEFAULT_ZOOM, info.getMinZoom() + 1, info.getMaxZoom()));
+                checkTileUrls(info, tileSources, center, Utils.clamp(DEFAULT_ZOOM, info.getMinZoom() + 1, info.getMaxZoom()));
             }
-        } catch (IOException | RuntimeException | WMSGetCapabilitiesException | WMTSGetCapabilitiesException e) {
-            addError(info, info.getUrl() + ERROR_SEP + e.toString());
+        } catch (IOException | RuntimeException | WMSGetCapabilitiesException e) {
+            addError(info, info.getUrl() + ERROR_SEP + e);
         }
 
         for (ImageryInfo mirror : info.getMirrors()) {
@@ -327,42 +349,54 @@ public class ImageryPreferenceTestIT {
         }
     }
 
-    private static boolean isZoomError(String error) {
-        String[] parts = error.split(ERROR_SEP, -1);
-        String lastPart = parts.length > 0 ? parts[parts.length - 1].toLowerCase(Locale.ENGLISH) : "";
-        return lastPart.contains("bbox")
-            || lastPart.contains("bounding box");
+    private static boolean isZoomError(List<String> errors) {
+        return errors.stream().anyMatch(error -> {
+            String[] parts = error.split(ERROR_SEP, -1);
+            String lastPart = parts.length > 0 ? parts[parts.length - 1].toLowerCase(Locale.ENGLISH) : "";
+            return lastPart.contains("bbox")
+                || lastPart.contains("bounding box");
+        });
     }
 
-    private static Projection getProjection(ImageryInfo info) {
-        for (String code : info.getServerProjections()) {
-            Projection proj = Projections.getProjectionByCode(code);
-            if (proj != null) {
-                return proj;
-            }
-        }
-        return ProjectionRegistry.getProjection();
+    private static List<Projection> getProjections(ImageryInfo info) {
+        List<Projection> projs = info.getServerProjections().stream()
+                .map(Projections::getProjectionByCode).filter(Objects::nonNull).collect(toList());
+        return projs.isEmpty() ? singletonList(ProjectionRegistry.getProjection()) : projs;
     }
 
-    @SuppressWarnings("fallthrough")
-    private static AbstractTileSource getTileSource(ImageryInfo info)
-            throws IOException, WMTSGetCapabilitiesException, WMSGetCapabilitiesException {
+    private List<AbstractTileSource> getTileSources(ImageryInfo info)
+            throws IOException, WMSGetCapabilitiesException {
         switch (info.getImageryType()) {
             case BING:
-                return new BingAerialTileSource(info);
+                return singletonList(new BingAerialTileSource(info));
             case SCANEX:
-                return new ScanexTileSource(info);
+                return singletonList(new ScanexTileSource(info));
             case TMS:
-                return new JosmTemplatedTMSTileSource(info);
+                return singletonList(new JosmTemplatedTMSTileSource(info));
             case WMS_ENDPOINT:
-                info = convertWmsEndpointToWms(info); // fall-through
+                return getWmsTileSources(convertWmsEndpointToWms(info));
             case WMS:
-                return new TemplatedWMSTileSource(info, getProjection(info));
+                return getWmsTileSources(info);
             case WMTS:
-                return new WMTSTileSource(info, getProjection(info));
+                return getWmtsTileSources(info);
             default:
                 throw new UnsupportedOperationException(info.toString());
         }
+    }
+
+    private static List<AbstractTileSource> getWmsTileSources(ImageryInfo info) {
+        return getProjections(info).stream().map(proj -> new TemplatedWMSTileSource(info, proj)).collect(toList());
+    }
+
+    private List<AbstractTileSource> getWmtsTileSources(ImageryInfo info) {
+        return getProjections(info).stream().map(proj -> {
+            try {
+                return new WMTSTileSource(info, proj);
+            } catch (IOException | WMTSGetCapabilitiesException e) {
+                addError(info, info.getUrl() + ERROR_SEP + e);
+                return null;
+            }
+        }).filter(Objects::nonNull).collect(toList());
     }
 
     private static ImageryInfo convertWmsEndpointToWms(ImageryInfo info) throws IOException, WMSGetCapabilitiesException {
@@ -375,7 +409,7 @@ public class ImageryPreferenceTestIT {
         for (LayerDetails layer : layers) {
             boolean hasNoChildren = layer.getChildren().isEmpty();
             if (hasNoChildren && layer.getName() != null) {
-                return Collections.singletonList(layer);
+                return singletonList(layer);
             } else if (!hasNoChildren) {
                 return firstLeafLayer(layer.getChildren());
             }
@@ -383,8 +417,12 @@ public class ImageryPreferenceTestIT {
         throw new IllegalArgumentException("Unable to find a valid WMS layer");
     }
 
-    private static String format(Map<String, Map<ImageryInfo, List<String>>> map) {
-        return map.toString().replaceAll("\\}, ", "\n\\}, ").replaceAll(", ImageryInfo\\{", "\n      ,ImageryInfo\\{");
+    private static String format(String id, Map<String, Map<ImageryInfo, List<String>>> map) {
+        // #16567 - Shouldn't be necessary to print id if Ant worked properly
+        // See https://josm.openstreetmap.de/ticket/16567#comment:53
+        // See https://bz.apache.org/bugzilla/show_bug.cgi?id=64564
+        // See https://github.com/apache/ant/pull/121
+        return id + " => " + map.toString().replaceAll("\\}, ", "\n\\}, ").replaceAll(", ImageryInfo\\{", "\n      ,ImageryInfo\\{");
     }
 
     /**
@@ -393,12 +431,14 @@ public class ImageryPreferenceTestIT {
      * @param id The id of the imagery info to show as the test name
      * @param info The imagery info to test
      */
+    @Execution(ExecutionMode.CONCURRENT)
     @ParameterizedTest(name = "{0}")
     @MethodSource("data")
-    public void testImageryEntryValidity(String id, ImageryInfo info) {
+    @Disabled("Takes a long time")
+    void testImageryEntryValidity(String id, ImageryInfo info) {
         checkEntry(info);
-        assertTrue(errors.isEmpty(), format(errors));
+        assertTrue(errors.isEmpty(), format(id, errors));
         assertFalse(workingURLs.isEmpty());
-        assumeTrue(ignoredErrors.isEmpty(), format(ignoredErrors));
+        assumeTrue(ignoredErrors.isEmpty(), format(id, ignoredErrors));
     }
 }

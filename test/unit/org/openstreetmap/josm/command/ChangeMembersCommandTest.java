@@ -1,15 +1,12 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.command;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Collections;
 import java.util.List;
 
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.command.CommandTest.CommandTestDataWithRelation;
 import org.openstreetmap.josm.data.osm.DataSet;
@@ -18,29 +15,28 @@ import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.RelationMember;
 import org.openstreetmap.josm.data.osm.User;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.gui.mappaint.ElemStyles;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
+import org.openstreetmap.josm.testutils.annotations.I18n;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import nl.jqno.equalsverifier.EqualsVerifier;
 import nl.jqno.equalsverifier.Warning;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests of {@link ChangeMembersCommand} class.
  */
-public class ChangeMembersCommandTest {
-
-    /**
-     * We need prefs for nodes.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences().i18n();
+@I18n
+// We need prefs for nodes.
+@BasicPreferences
+class ChangeMembersCommandTest {
     private CommandTestDataWithRelation testData;
 
     /**
      * Set up the test data.
      */
-    @Before
+    @BeforeEach
     public void createTestData() {
         testData = new CommandTestDataWithRelation();
     }
@@ -49,7 +45,7 @@ public class ChangeMembersCommandTest {
      * Test {@link ChangeMembersCommand#executeCommand()}
      */
     @Test
-    public void testChange() {
+    void testChange() {
         assertTrue(testData.existingNode.getReferrers().contains(testData.existingRelation));
         assertEquals(2, testData.existingRelation.getMembersCount());
         List<RelationMember> members = testData.existingRelation.getMembers();
@@ -69,7 +65,7 @@ public class ChangeMembersCommandTest {
      * Test {@link ChangeMembersCommand#undoCommand()}
      */
     @Test
-    public void testUndo() {
+    void testUndo() {
         List<RelationMember> members = testData.existingRelation.getMembers();
         members.add(new RelationMember("n2", testData.existingNode2));
         Command command = new ChangeMembersCommand(testData.existingRelation, members);
@@ -85,7 +81,7 @@ public class ChangeMembersCommandTest {
      * Test {@link ChangeMembersCommand#getDescriptionText()}
      */
     @Test
-    public void testDescription() {
+    void testDescription() {
         testData.existingRelation.put("name", "xy");
         List<RelationMember> members = testData.existingRelation.getMembers();
         members.remove(1);
@@ -96,7 +92,7 @@ public class ChangeMembersCommandTest {
      * Unit test of methods {@link ChangeMembersCommand#equals} and {@link ChangeMembersCommand#hashCode}.
      */
     @Test
-    public void testEqualsContract() {
+    void testEqualsContract() {
         TestUtils.assumeWorkingEqualsVerifier();
         EqualsVerifier.forClass(ChangeMembersCommand.class).usingGetClass()
             .withPrefabValues(DataSet.class,
@@ -107,6 +103,8 @@ public class ChangeMembersCommandTest {
                 new Node(1), new Node(2))
             .withPrefabValues(OsmDataLayer.class,
                 new OsmDataLayer(new DataSet(), "1", null), new OsmDataLayer(new DataSet(), "2", null))
+            .withPrefabValues(ElemStyles.class,
+                new ElemStyles(), new ElemStyles())
             .suppress(Warning.NONFINAL_FIELDS)
             .verify();
     }

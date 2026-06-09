@@ -5,9 +5,8 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
-import org.junit.Before;
-import org.junit.Ignore;
-import org.junit.Rule;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Relation;
@@ -22,23 +21,17 @@ import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.tagging.TagEditorModel;
 import org.openstreetmap.josm.gui.tagging.ac.AutoCompletingTextField;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetHandler;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
+import org.openstreetmap.josm.testutils.annotations.Main;
 
 /**
  * This class provides the basic test environment for relation editor actions.
  * @author Michael Zangl
  */
-@Ignore
+@Disabled
+@BasicPreferences
+@Main
 public abstract class AbstractRelationEditorActionTest {
-    /**
-     * Platform for tooltips.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences().main();
-
     protected OsmDataLayer layer;
 
     private SelectionTableModel selectionTableModel;
@@ -90,7 +83,7 @@ public abstract class AbstractRelationEditorActionTest {
     /**
      * Set up the test data required for common tests using one relation.
      */
-    @Before
+    @BeforeEach
     public void setupTestData() {
         DataSet ds = new DataSet();
         final Relation orig = new Relation(1);

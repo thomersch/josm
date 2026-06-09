@@ -6,8 +6,8 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 import java.awt.GridBagLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -20,6 +20,7 @@ import javax.swing.JPanel;
 import javax.swing.JRadioButton;
 
 import org.openstreetmap.josm.data.gpx.GpxConstants;
+import org.openstreetmap.josm.data.gpx.GpxData;
 import org.openstreetmap.josm.data.gpx.GpxExtension;
 import org.openstreetmap.josm.data.gpx.GpxExtensionCollection;
 import org.openstreetmap.josm.data.gpx.IGpxTrack;
@@ -35,7 +36,7 @@ import org.openstreetmap.josm.gui.layer.GpxLayer;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.GBC;
-import org.openstreetmap.josm.tools.date.DateUtils;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * Converts a {@link GpxLayer} to a {@link OsmDataLayer}.
@@ -55,33 +56,44 @@ public class ConvertFromGpxLayerAction extends ConvertToDataLayerAction<GpxLayer
 
     @Override
     public DataSet convert() {
+        return convert(layer.data, Config.getPref().get(GPX_SETTING, "ask"), GpxConstants.GPX_PREFIX);
+    }
+
+    /**
+     * Converts the given {@link GpxData} to a {@link DataSet}
+     * @param data GPX data to convert
+     * @param convertTags "list", "ask" or "no"
+     * @param gpxPrefix GPX prefix for tags
+     * @return the converted dataset
+     * @since 18078
+     */
+    public static DataSet convert(GpxData data, String convertTags, String gpxPrefix) {
         final DataSet ds = new DataSet();
-        ds.setGPXNamespaces(layer.data.getNamespaces());
+        ds.setGPXNamespaces(data.getNamespaces());
 
         List<String> keys = new ArrayList<>(); // note that items in this list don't have the GPX_PREFIX
-        String convertTags = Config.getPref().get(GPX_SETTING, "ask");
         boolean check = "list".equals(convertTags) || "ask".equals(convertTags);
         boolean none = "no".equals(convertTags); // no need to convert tags when no dialog will be shown anyways
 
-        for (IGpxTrack trk : layer.data.getTracks()) {
+        for (IGpxTrack trk : data.getTracks()) {
             for (IGpxTrackSegment segment : trk.getSegments()) {
                 List<Node> nodes = new ArrayList<>();
                 for (WayPoint p : segment.getWayPoints()) {
                     Node n = new Node(p.getCoor());
-                    addAttributes(p.getAttributes(), n, keys, check, none);
+                    addAttributes(p.getAttributes(), n, keys, check, none, gpxPrefix);
                     if (!none) {
-                        addExtensions(p.getExtensions(), n, false, keys, check);
+                        addExtensions(p.getExtensions(), n, false, keys, check, gpxPrefix);
                     }
                     ds.addPrimitive(n);
                     nodes.add(n);
                 }
                 Way w = new Way();
                 w.setNodes(nodes);
-                addAttributes(trk.getAttributes(), w, keys, check, none);
-                addAttributes(segment.getAttributes(), w, keys, check, none);
+                addAttributes(trk.getAttributes(), w, keys, check, none, gpxPrefix);
+                addAttributes(segment.getAttributes(), w, keys, check, none, gpxPrefix);
                 if (!none) {
-                    addExtensions(trk.getExtensions(), w, false, keys, check);
-                    addExtensions(segment.getExtensions(), w, true, keys, check);
+                    addExtensions(trk.getExtensions(), w, false, keys, check, gpxPrefix);
+                    addExtensions(segment.getExtensions(), w, true, keys, check, gpxPrefix);
                 }
                 ds.addPrimitive(w);
             }
@@ -106,52 +118,54 @@ public class ConvertFromGpxLayerAction extends ConvertToDataLayerAction<GpxLayer
 
                 if ("no".equals(res.sel)) {
                     // User just chose not to convert any tags, but that was unknown before the initial conversion
-                    return filterDataSet(ds, null);
+                    return filterDataSet(ds, null, gpxPrefix);
                 } else if ("all".equals(res.sel)) {
                     return ds;
                 }
             }
             if (!listPos.containsAll(keys)) {
-                return filterDataSet(ds, listPos);
+                return filterDataSet(ds, listPos, gpxPrefix);
             }
         }
         return ds;
     }
 
-    private static void addAttributes(Map<String, Object> attr, OsmPrimitive p, List<String> keys, boolean check, boolean none) {
+    private static void addAttributes(
+            Map<String, Object> attr, OsmPrimitive p, List<String> keys, boolean check, boolean none, String gpxPrefix) {
         for (Entry<String, Object> entry : attr.entrySet()) {
             String key = entry.getKey();
             Object obj = entry.getValue();
-            if (check && !keys.contains(key) && (obj instanceof String || obj instanceof Number || obj instanceof Date)) {
+            if (check && !keys.contains(key) && (obj instanceof String || obj instanceof Number || obj instanceof Instant)) {
                 keys.add(key);
             }
             if (!none && (obj instanceof String || obj instanceof Number)) {
                 // only convert when required
-                p.put(GpxConstants.GPX_PREFIX + key, obj.toString());
-            } else if (obj instanceof Date && GpxConstants.PT_TIME.equals(key)) {
+                p.put(gpxPrefix + key, obj.toString());
+            } else if (obj instanceof Instant && GpxConstants.PT_TIME.equals(key)) {
                 // timestamps should always be converted
-                Date date = (Date) obj;
+                Instant date = (Instant) obj;
                 if (!none) { //... but the tag will only be set when required
-                    p.put(GpxConstants.GPX_PREFIX + key, DateUtils.fromDate(date));
+                    p.put(gpxPrefix + key, String.valueOf(date));
                 }
-                p.setTimestamp(date);
+                p.setInstant(date);
             }
         }
     }
 
-    private static void addExtensions(GpxExtensionCollection exts, OsmPrimitive p, boolean seg, List<String> keys, boolean check) {
+    private static void addExtensions(
+            GpxExtensionCollection exts, OsmPrimitive p, boolean seg, List<String> keys, boolean check, String gpxPrefix) {
         for (GpxExtension ext : exts) {
             String value = ext.getValue();
-            if (value != null && !value.isEmpty()) {
+            if (!Utils.isEmpty(value)) {
                 String extpre = "extension:";
                 String pre = ext.getPrefix();
-                if (pre == null || pre.isEmpty()) {
+                if (Utils.isEmpty(pre)) {
                     pre = "other";
                 }
                 // needs to be distinguished since both track and segment extensions are applied to the resulting way
                 String segpre = seg ? "segment:" : "";
                 String key = ext.getFlatKey();
-                String fullkey = GpxConstants.GPX_PREFIX + extpre + pre + ":" + segpre + key;
+                String fullkey = gpxPrefix + extpre + pre + ":" + segpre + key;
                 if (GpxConstants.EXTENSION_ABBREVIATIONS.containsKey(fullkey)) {
                     fullkey = GpxConstants.EXTENSION_ABBREVIATIONS.get(fullkey);
                 }
@@ -160,7 +174,7 @@ public class ConvertFromGpxLayerAction extends ConvertToDataLayerAction<GpxLayer
                 }
                 p.put(fullkey, value);
             }
-            addExtensions(ext.getExtensions(), p, seg, keys, check);
+            addExtensions(ext.getExtensions(), p, seg, keys, check, gpxPrefix);
         }
     }
 
@@ -168,22 +182,23 @@ public class ConvertFromGpxLayerAction extends ConvertToDataLayerAction<GpxLayer
      * Filters the tags of the given {@link DataSet}
      * @param ds The {@link DataSet}
      * @param listPos A {@code List<String>} containing the tags (without prefix) to be kept, can be {@code null} if all tags are to be removed
+     * @param gpxPrefix The GPX prefix
      * @return The {@link DataSet}
-     * @since 14103
+     * @since 18078
      */
-    public DataSet filterDataSet(DataSet ds, List<String> listPos) {
+    public static DataSet filterDataSet(DataSet ds, List<String> listPos, String gpxPrefix) {
         for (OsmPrimitive p : ds.getPrimitives(p -> p instanceof Node || p instanceof Way)) {
-            for (String key : p.keySet()) {
+            p.visitKeys((primitive, key, value) -> {
                 String listkey;
-                if (listPos != null && key.startsWith(GpxConstants.GPX_PREFIX)) {
-                    listkey = key.substring(GpxConstants.GPX_PREFIX.length());
+                if (listPos != null && key.startsWith(gpxPrefix)) {
+                    listkey = key.substring(gpxPrefix.length());
                 } else {
                     listkey = key;
                 }
                 if (listPos == null || !listPos.contains(listkey)) {
-                   p.put(key, null);
+                    p.put(key, null);
                 }
-            }
+            });
         }
         return ds;
     }

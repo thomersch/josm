@@ -25,17 +25,6 @@ import org.openstreetmap.josm.data.osm.search.SearchParseError;
  */
 public final class SearchCompilerQueryWizard {
 
-    private static final SearchCompilerQueryWizard instance = new SearchCompilerQueryWizard();
-
-    /**
-     * Replies the unique instance of this class.
-     *
-     * @return the unique instance of this class
-     */
-    public static SearchCompilerQueryWizard getInstance() {
-        return instance;
-    }
-
     private SearchCompilerQueryWizard() {
         // private constructor for utility class
     }
@@ -46,21 +35,24 @@ public final class SearchCompilerQueryWizard {
      * @return an Overpass QL query
      * @throws UncheckedParseException when the parsing fails
      */
-    public String constructQuery(final String search) {
+    public static String constructQuery(final String search) {
         try {
-            Matcher matcher = Pattern.compile("\\s+GLOBAL\\s*$", Pattern.CASE_INSENSITIVE).matcher(search);
+            Matcher matcher = Pattern.compile("\\s+GLOBAL\\s*$", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CHARACTER_CLASS)
+                    .matcher(search);
             if (matcher.find()) {
                 final Match match = SearchCompiler.compile(matcher.replaceFirst(""));
                 return constructQuery(match, ";", "");
             }
 
-            matcher = Pattern.compile("\\s+IN BBOX\\s*$", Pattern.CASE_INSENSITIVE).matcher(search);
+            matcher = Pattern.compile("\\s+IN BBOX\\s*$", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CHARACTER_CLASS)
+                    .matcher(search);
             if (matcher.find()) {
                 final Match match = SearchCompiler.compile(matcher.replaceFirst(""));
                 return constructQuery(match, "[bbox:{{bbox}}];", "");
             }
 
-            matcher = Pattern.compile("\\s+(?<mode>IN|AROUND)\\s+(?<area>[^\" ]+|\"[^\"]+\")\\s*$", Pattern.CASE_INSENSITIVE).matcher(search);
+            matcher = Pattern.compile("\\s+(?<mode>IN|AROUND)\\s+(?<area>[^\" ]+|\"[^\"]+\")\\s*$",
+                    Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CHARACTER_CLASS).matcher(search);
             if (matcher.find()) {
                 final Match match = SearchCompiler.compile(matcher.replaceFirst(""));
                 final String mode = matcher.group("mode").toUpperCase(Locale.ENGLISH);
@@ -73,7 +65,7 @@ public final class SearchCompilerQueryWizard {
                     throw new IllegalStateException(mode);
                 }
             }
-            
+
             final Match match = SearchCompiler.compile(search);
             return constructQuery(match, "[bbox:{{bbox}}];", "");
         } catch (SearchParseError | UnsupportedOperationException e) {
@@ -81,7 +73,7 @@ public final class SearchCompilerQueryWizard {
         }
     }
 
-    private String constructQuery(final Match match, final String bounds, final String queryLineSuffix) {
+    private static String constructQuery(final Match match, final String bounds, final String queryLineSuffix) {
         final List<Match> normalized = normalizeToDNF(match);
         final List<String> queryLines = new ArrayList<>();
         queryLines.add("[out:xml][timeout:90]" + bounds);
@@ -89,10 +81,11 @@ public final class SearchCompilerQueryWizard {
         for (Match conjunction : normalized) {
             final EnumSet<OsmPrimitiveType> types = EnumSet.noneOf(OsmPrimitiveType.class);
             final String query = constructQuery(conjunction, types);
-            (types.isEmpty() || types.size() == 3
+            queryLines.addAll((types.isEmpty() || types.size() == 3
                     ? Stream.of("nwr")
                     : types.stream().map(OsmPrimitiveType::getAPIName))
-                    .forEach(type -> queryLines.add("  " + type + query + queryLineSuffix + ";"));
+                    .map(type -> "  " + type + query + queryLineSuffix + ";")
+                    .collect(Collectors.toList()));
         }
         queryLines.add(");");
         queryLines.add("(._;>;);");
@@ -135,11 +128,15 @@ public final class SearchCompilerQueryWizard {
                     return "[" + (negated ? "!" : "") + quote(key) + "]";
                 case EXACT:
                     return "[" + quote(key) + (negated ? "!=" : "=") + quote(value) + "]";
+                case ANY_KEY: // *=value
+                    // fall through
                 case EXACT_REGEXP:
                     final Matcher matcher = Pattern.compile("/(?<regex>.*)/(?<flags>i)?").matcher(value);
                     final String valueQuery = matcher.matches()
                             ? quote(matcher.group("regex")) + Optional.ofNullable(matcher.group("flags")).map(f -> "," + f).orElse("")
                             : quote(value);
+                    if (mode == SearchCompiler.ExactKeyValue.Mode.ANY_KEY)
+                        return "[~\"^.*$\"" + (negated ? "!~" : "~") + valueQuery + "]";
                     return "[" + quote(key) + (negated ? "!~" : "~") + valueQuery + "]";
                 case MISSING_KEY:
                     // special case for empty values, see https://github.com/drolbr/Overpass-API/issues/53

@@ -1,32 +1,21 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.preferences.audio;
 
-import static org.junit.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-import org.junit.BeforeClass;
-import org.junit.Test;
-import org.openstreetmap.josm.JOSMFixture;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.gui.preferences.PreferencesTestUtils;
 import org.openstreetmap.josm.spi.preferences.Config;
 
 /**
  * Unit tests of {@link AudioPreference} class.
  */
-public class AudioPreferenceTest {
-
-    /**
-     * Setup test.
-     */
-    @BeforeClass
-    public static void setUpBeforeClass() {
-        JOSMFixture.createUnitTestFixture().init();
-    }
-
+class AudioPreferenceTest {
     /**
      * Unit test of {@link AudioPreference#AudioPreference}.
      */
     @Test
-    public void testAudioPreference() {
+    void testAudioPreference() {
         assertNotNull(new AudioPreference.Factory().createPreferenceSetting());
     }
 
@@ -34,7 +23,7 @@ public class AudioPreferenceTest {
      * Unit test of {@link AudioPreference#addGui}.
      */
     @Test
-    public void testAddGui() {
+    void testAddGui() {
         Config.getPref().putBoolean("audio.menuinvisible", true);
         PreferencesTestUtils.doTestPreferenceSettingAddGui(new AudioPreference.Factory(), null);
         Config.getPref().putBoolean("audio.menuinvisible", false);

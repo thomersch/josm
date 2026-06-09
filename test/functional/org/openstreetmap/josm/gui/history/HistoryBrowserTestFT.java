@@ -5,7 +5,6 @@ import java.awt.BorderLayout;
 
 import javax.swing.JFrame;
 
-import org.junit.BeforeClass;
 import org.openstreetmap.josm.JOSMFixture;
 import org.openstreetmap.josm.data.osm.OsmPrimitiveType;
 import org.openstreetmap.josm.data.osm.SimplePrimitiveId;
@@ -16,12 +15,7 @@ import org.openstreetmap.josm.io.OsmServerHistoryReader;
 import org.openstreetmap.josm.io.OsmTransferException;
 import org.openstreetmap.josm.tools.Logging;
 
-public class HistoryBrowserTestFT extends JFrame {
-
-    @BeforeClass
-    public static void init() {
-        JOSMFixture.createFunctionalTestFixture().init();
-    }
+class HistoryBrowserTestFT extends JFrame {
 
     private HistoryBrowser browser;
 
@@ -48,16 +42,15 @@ public class HistoryBrowserTestFT extends JFrame {
     /**
      * Constructs a new {@code HistoryBrowserTest}.
      */
-    public HistoryBrowserTestFT() {
+    HistoryBrowserTestFT() {
         build();
         //populate(OsmPrimitiveType.NODE,354117);
         //populate(OsmPrimitiveType.WAY,37951);
         populate(OsmPrimitiveType.RELATION, 5055);
-
     }
 
     public static void main(String[] args) {
-        HistoryBrowserTestFT.init();
+        JOSMFixture.createFunctionalTestFixture().init();
         new HistoryBrowserTestFT().setVisible(true);
     }
 }

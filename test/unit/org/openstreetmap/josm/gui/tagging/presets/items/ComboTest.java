@@ -1,110 +1,152 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.tagging.presets.items;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.Color;
-import java.util.Arrays;
-import java.util.Collections;
 
 import javax.swing.JPanel;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.OsmUtils;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetItemGuiSupport;
+import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetItemTest;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
+import org.openstreetmap.josm.testutils.annotations.I18n;
+import org.openstreetmap.josm.testutils.annotations.Main;
 
 /**
  * Unit tests of {@link Combo} class.
  */
-public class ComboTest {
+@BasicPreferences
+@I18n("de")
+@Main
+class ComboTest implements TaggingPresetItemTest {
+    @Override
+    public Combo getInstance() {
+        return new Combo();
+    }
 
     /**
-     * Setup test.
+     * Unit test for {@link Check#addToPanel}.
      */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().main().i18n("de");
-
-    /**
-     * Unit test for {@link Combo#addToPanel}.
-     */
+    @Override
     @Test
     public void testAddToPanel() {
         JPanel p = new JPanel();
         assertEquals(0, p.getComponentCount());
-        assertTrue(new Combo().addToPanel(p, Collections.<OsmPrimitive>emptyList(), false));
+        assertTrue(getInstance().addToPanel(p, TaggingPresetItemGuiSupport.create(false)));
         assertTrue(p.getComponentCount() > 0);
     }
 
     /**
-     * Unit test for {@link ComboMultiSelect#use_last_as_default} and {@link ComboMultiSelect#getItemToSelect}
+     * Unit test for {@link ComboMultiSelect#use_last_as_default} and {@link ComboMultiSelect#getInitialValue}
      */
     @Test
-    public void testUseLastAsDefault() {
-        Combo combo = new Combo();
+    void testUseLastAsDefault() {
+        final Combo combo = getInstance();
         combo.key = "addr:country";
-        combo.use_last_as_default = 1;
         combo.values_from = "java.util.Locale#getISOCountries";
         OsmPrimitive way = OsmUtils.createPrimitive("way");
+        OsmPrimitive wayTagged = OsmUtils.createPrimitive("way highway=residential");
         OsmPrimitive wayAT = OsmUtils.createPrimitive("way addr:country=AT");
         OsmPrimitive waySI = OsmUtils.createPrimitive("way addr:country=SI");
-
-        combo.addToPanel(new JPanel(), Collections.singleton(way), false);
-        assertEquals("", combo.getSelectedValue());
-
-        combo.default_ = "SI";
-        combo.addToPanel(new JPanel(), Collections.singleton(way), false);
-        assertEquals("SI", combo.getSelectedValue());
-        combo.addToPanel(new JPanel(), Collections.singleton(wayAT), false);
-        assertEquals("AT", combo.getSelectedValue());
-        combo.default_ = null;
-
         KeyedItem.LAST_VALUES.clear();
         KeyedItem.LAST_VALUES.put("addr:country", "AT");
-        combo.addToPanel(new JPanel(), Collections.singleton(way), false);
-        assertEquals("AT", combo.getSelectedValue());
-        combo.addToPanel(new JPanel(), Collections.singleton(wayAT), true);
-        assertEquals("AT", combo.getSelectedValue());
-        combo.addToPanel(new JPanel(), Collections.singleton(way), true);
-        assertEquals("", combo.getSelectedValue());
-        combo.use_last_as_default = 2; // "force"
-        combo.addToPanel(new JPanel(), Collections.singleton(way), true);
-        assertEquals("AT", combo.getSelectedValue());
-        KeyedItem.LAST_VALUES.clear();
+        Combo.PROP_FILL_DEFAULT.put(false);
+        combo.use_last_as_default = 0;
 
-        combo.addToPanel(new JPanel(), Arrays.asList(wayAT, waySI), true);
-        assertEquals(Combo.DIFFERENT, combo.getSelectedValue());
+        combo.addToPanel(new JPanel(), TaggingPresetItemGuiSupport.create(false, way));
+        assertEquals("", combo.getSelectedItem().value);
+        combo.addToPanel(new JPanel(), TaggingPresetItemGuiSupport.create(false, wayTagged));
+        assertEquals("", combo.getSelectedItem().value);
+        combo.addToPanel(new JPanel(), TaggingPresetItemGuiSupport.create(false, wayAT));
+        assertEquals("AT", combo.getSelectedItem().value);
+        combo.addToPanel(new JPanel(), TaggingPresetItemGuiSupport.create(false, waySI));
+        assertEquals("SI", combo.getSelectedItem().value);
+        combo.addToPanel(new JPanel(), TaggingPresetItemGuiSupport.create(false, wayAT, waySI));
+        assertEquals(Combo.DIFFERENT, combo.getSelectedItem().value);
+
+        combo.default_ = "AT";
+        combo.addToPanel(new JPanel(), TaggingPresetItemGuiSupport.create(false, way));
+        assertEquals("AT", combo.getSelectedItem().value);
+        combo.addToPanel(new JPanel(), TaggingPresetItemGuiSupport.create(false, wayTagged));
+        assertEquals("", combo.getSelectedItem().value);
+        combo.addToPanel(new JPanel(), TaggingPresetItemGuiSupport.create(false, wayAT));
+        assertEquals("AT", combo.getSelectedItem().value);
+        combo.addToPanel(new JPanel(), TaggingPresetItemGuiSupport.create(false, waySI));
+        assertEquals("SI", combo.getSelectedItem().value);
+        combo.addToPanel(new JPanel(), TaggingPresetItemGuiSupport.create(false, wayAT, waySI));
+        assertEquals(Combo.DIFFERENT, combo.getSelectedItem().value);
+
+        Combo.PROP_FILL_DEFAULT.put(true);
+        combo.addToPanel(new JPanel(), TaggingPresetItemGuiSupport.create(false, way));
+        assertEquals("AT", combo.getSelectedItem().value);
+        combo.addToPanel(new JPanel(), TaggingPresetItemGuiSupport.create(false, wayTagged));
+        assertEquals("AT", combo.getSelectedItem().value);
+        combo.addToPanel(new JPanel(), TaggingPresetItemGuiSupport.create(false, wayAT));
+        assertEquals("AT", combo.getSelectedItem().value);
+        combo.addToPanel(new JPanel(), TaggingPresetItemGuiSupport.create(false, waySI));
+        assertEquals("SI", combo.getSelectedItem().value);
+        combo.addToPanel(new JPanel(), TaggingPresetItemGuiSupport.create(false, wayAT, waySI));
+        assertEquals(Combo.DIFFERENT, combo.getSelectedItem().value);
+        Combo.PROP_FILL_DEFAULT.put(false);
+        combo.default_ = null;
+
+        combo.use_last_as_default = 1; // untagged objects only
+        combo.addToPanel(new JPanel(), TaggingPresetItemGuiSupport.create(false, way));
+        assertEquals("AT", combo.getSelectedItem().value);
+        combo.addToPanel(new JPanel(), TaggingPresetItemGuiSupport.create(false, wayTagged));
+        assertEquals("", combo.getSelectedItem().value);
+        combo.addToPanel(new JPanel(), TaggingPresetItemGuiSupport.create(false, wayAT));
+        assertEquals("AT", combo.getSelectedItem().value);
+        combo.addToPanel(new JPanel(), TaggingPresetItemGuiSupport.create(false, waySI));
+        assertEquals("SI", combo.getSelectedItem().value);
+        combo.addToPanel(new JPanel(), TaggingPresetItemGuiSupport.create(false, wayAT, waySI));
+        assertEquals(Combo.DIFFERENT, combo.getSelectedItem().value);
+
+        combo.use_last_as_default = 2; // "force" on tagged objects too
+        combo.addToPanel(new JPanel(), TaggingPresetItemGuiSupport.create(false, way));
+        assertEquals("AT", combo.getSelectedItem().value);
+        combo.addToPanel(new JPanel(), TaggingPresetItemGuiSupport.create(false, wayTagged));
+        assertEquals("AT", combo.getSelectedItem().value);
+        combo.addToPanel(new JPanel(), TaggingPresetItemGuiSupport.create(false, wayAT));
+        assertEquals("AT", combo.getSelectedItem().value);
+        combo.addToPanel(new JPanel(), TaggingPresetItemGuiSupport.create(false, waySI));
+        assertEquals("SI", combo.getSelectedItem().value);
+        combo.addToPanel(new JPanel(), TaggingPresetItemGuiSupport.create(false, wayAT, waySI));
+        assertEquals(Combo.DIFFERENT, combo.getSelectedItem().value);
+        combo.use_last_as_default = 0;
+
+        KeyedItem.LAST_VALUES.clear();
     }
 
     @Test
-    public void testColor() {
-        Combo combo = new Combo();
+    void testColor() {
+        final Combo combo = getInstance();
         combo.key = "colour";
         combo.values = "red;green;blue;black";
         combo.values_context = "color";
         combo.delimiter = ';';
-        combo.addToPanel(new JPanel(), Collections.<OsmPrimitive>emptyList(), false);
+        combo.addToPanel(new JPanel(), TaggingPresetItemGuiSupport.create(false));
         assertEquals(5, combo.combobox.getItemCount());
         combo.presetListEntries.stream().filter(e -> "red".equals(e.value)).findFirst().ifPresent(combo.combobox::setSelectedItem);
-        assertEquals("red", combo.getSelectedValue());
+        assertEquals("red", combo.getSelectedItem().value);
         assertEquals("Rot", combo.getSelectedItem().toString());
         assertEquals(new Color(0xFF0000), combo.getColor());
         combo.presetListEntries.stream().filter(e -> "green".equals(e.value)).findFirst().ifPresent(combo.combobox::setSelectedItem);
-        assertEquals("green", combo.getSelectedValue());
+        assertEquals("green", combo.getSelectedItem().value);
         assertEquals("Grün", combo.getSelectedItem().toString());
         assertEquals(new Color(0x008000), combo.getColor());
         combo.combobox.setSelectedItem("#135");
-        assertEquals("#135", combo.getSelectedValue());
+        assertEquals("#135", combo.getSelectedItem().value);
         assertEquals(new Color(0x113355), combo.getColor());
         combo.combobox.setSelectedItem("#123456");
-        assertEquals("#123456", combo.getSelectedValue());
+        assertEquals("#123456", combo.getSelectedItem().value);
         assertEquals(new Color(0x123456), combo.getColor());
         combo.setColor(new Color(0x448822));
-        assertEquals("#448822", combo.getSelectedValue());
+        assertEquals("#448822", combo.getSelectedItem().value);
     }
 }

@@ -1,17 +1,15 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.validation.tests;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.InputStream;
 import java.util.Collection;
 
-import org.junit.Before;
-import org.junit.Test;
-import org.openstreetmap.josm.JOSMFixture;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.DataSet;
@@ -19,20 +17,13 @@ import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.data.validation.TestError;
 import org.openstreetmap.josm.io.OsmReader;
+import org.openstreetmap.josm.testutils.annotations.Projection;
 
 /**
  * Unit test of {@link HighwaysTest}.
  */
-public class HighwaysTest {
-
-    /**
-     * Setup test.
-     */
-    @Before
-    public void setUp() {
-        JOSMFixture.createUnitTestFixture().init();
-    }
-
+@Projection
+class HighwaysTest {
     private static Way createTestSetting(String highway, String highwayLink) {
         DataSet ds = new DataSet();
 
@@ -76,7 +67,7 @@ public class HighwaysTest {
      * Unit test of {@link Highways#isHighwayLinkOkay}.
      */
     @Test
-    public void testCombinations() {
+    void testCombinations() {
         assertTrue(Highways.isHighwayLinkOkay(createTestSetting("primary", "primary_link")));
         assertTrue(Highways.isHighwayLinkOkay(createTestSetting("primary", "primary")));
         assertFalse(Highways.isHighwayLinkOkay(createTestSetting("primary", "secondary_link")));
@@ -89,7 +80,7 @@ public class HighwaysTest {
      * Test source:maxspeed in United Kingdom.
      */
     @Test
-    public void testSourceMaxSpeedUnitedKingdom() {
+    void testSourceMaxSpeedUnitedKingdom() {
         Way link = createTestSetting("primary", "primary");
         link.put("maxspeed", "60 mph");
         link.put("source:maxspeed", "UK:nsl_single");
@@ -107,7 +98,7 @@ public class HighwaysTest {
      * @throws Exception if an error occurs
      */
     @Test
-    public void testTicket14891() throws Exception {
+    void testTicket14891() throws Exception {
         try (InputStream is = TestUtils.getRegressionDataStream(14891, "14891.osm.bz2")) {
             Collection<Way> ways = OsmReader.parseDataSet(is, null).getWays();
             Way roundabout = ways.stream().filter(w -> 10068083 == w.getId()).findFirst().get();
@@ -123,4 +114,15 @@ public class HighwaysTest {
             assertEquals(2, test.getErrors().size());
         }
     }
+
+    /**
+     * Test all error cases manually created in data.osm.
+     * @throws Exception in case of error
+     */
+    @Test
+    void testTicket9304() throws Exception {
+        final Highways test = new Highways();
+        ValidatorTestUtils.testSampleFile("nodist/data/9304-examples.osm", DataSet::getNodes, null, test);
+    }
+
 }

@@ -47,7 +47,7 @@ import org.openstreetmap.josm.tools.Logging;
  * (accuracy data is optional) into heap based Java arrays. This is the
  * highest performance option, and is useful for large volume transformations.
  * Non-file data sources (eg using an SQL Blob) are also supported through
- * InputStream. The RandonAccessFile option has a much smaller memory
+ * InputStream. The RandomAccessFile option has a much smaller memory
  * footprint as only the Sub Grid headers are stored in memory, but
  * transformation is slower because the file must be read a number of
  * times for each transformation.
@@ -170,28 +170,28 @@ public class NTV2GridShiftFile implements Serializable {
     private static NTV2SubGrid[] createSubGridTree(NTV2SubGrid... subGrid) {
         int topLevelCount = 0;
         Map<String, List<NTV2SubGrid>> subGridMap = new HashMap<>();
-        for (int i = 0; i < subGrid.length; i++) {
-            if ("NONE".equalsIgnoreCase(subGrid[i].getParentSubGridName())) {
+        for (NTV2SubGrid ntv2SubGrid : subGrid) {
+            if ("NONE".equalsIgnoreCase(ntv2SubGrid.getParentSubGridName())) {
                 topLevelCount++;
             }
-            subGridMap.put(subGrid[i].getSubGridName(), new ArrayList<NTV2SubGrid>());
+            subGridMap.put(ntv2SubGrid.getSubGridName(), new ArrayList<>());
         }
         NTV2SubGrid[] topLevelSubGrid = new NTV2SubGrid[topLevelCount];
         topLevelCount = 0;
-        for (int i = 0; i < subGrid.length; i++) {
-            if ("NONE".equalsIgnoreCase(subGrid[i].getParentSubGridName())) {
-                topLevelSubGrid[topLevelCount++] = subGrid[i];
+        for (NTV2SubGrid ntv2SubGrid : subGrid) {
+            if ("NONE".equalsIgnoreCase(ntv2SubGrid.getParentSubGridName())) {
+                topLevelSubGrid[topLevelCount++] = ntv2SubGrid;
             } else {
-                List<NTV2SubGrid> parent = subGridMap.get(subGrid[i].getParentSubGridName());
-                parent.add(subGrid[i]);
+                List<NTV2SubGrid> parent = subGridMap.get(ntv2SubGrid.getParentSubGridName());
+                parent.add(ntv2SubGrid);
             }
         }
         NTV2SubGrid[] nullArray = new NTV2SubGrid[0];
-        for (int i = 0; i < subGrid.length; i++) {
-            List<NTV2SubGrid> subSubGrids = subGridMap.get(subGrid[i].getSubGridName());
+        for (NTV2SubGrid ntv2SubGrid : subGrid) {
+            List<NTV2SubGrid> subSubGrids = subGridMap.get(ntv2SubGrid.getSubGridName());
             if (!subSubGrids.isEmpty()) {
                 NTV2SubGrid[] subGridArray = subSubGrids.toArray(nullArray);
-                subGrid[i].setSubGridArray(subGridArray);
+                ntv2SubGrid.setSubGridArray(subGridArray);
             }
         }
         return topLevelSubGrid;
@@ -262,8 +262,8 @@ public class NTV2GridShiftFile implements Serializable {
      */
     private static NTV2SubGrid getSubGrid(NTV2SubGrid[] topLevelSubGrid, double lon, double lat) {
         NTV2SubGrid sub = null;
-        for (int i = 0; i < topLevelSubGrid.length; i++) {
-            sub = topLevelSubGrid[i].getSubGridForCoord(lon, lat);
+        for (NTV2SubGrid topLevel : topLevelSubGrid) {
+            sub = topLevel.getSubGridForCoord(lon, lat);
             if (sub != null) {
                 break;
             }
@@ -273,30 +273,18 @@ public class NTV2GridShiftFile implements Serializable {
 
     @Override
     public String toString() {
-        return new StringBuilder(256)
-            .append("Headers  : ")
-            .append(overviewHeaderCount)
-            .append("\nSub Hdrs : ")
-            .append(subGridHeaderCount)
-            .append("\nSub Grids: ")
-            .append(subGridCount)
-            .append("\nType     : ")
-            .append(shiftType)
-            .append("\nVersion  : ")
-            .append(version)
-            .append("\nFr Ellpsd: ")
-            .append(fromEllipsoid)
-            .append("\nTo Ellpsd: ")
-            .append(toEllipsoid)
-            .append("\nFr Maj Ax: ")
-            .append(fromSemiMajorAxis)
-            .append("\nFr Min Ax: ")
-            .append(fromSemiMinorAxis)
-            .append("\nTo Maj Ax: ")
-            .append(toSemiMajorAxis)
-            .append("\nTo Min Ax: ")
-            .append(toSemiMinorAxis)
-            .toString();
+        char endl = '\n';
+        return "Headers  : " + overviewHeaderCount + endl +
+                "Sub Hdrs : " + subGridHeaderCount + endl +
+                "Sub Grids: " + subGridCount + endl +
+                "Type     : " + shiftType + endl +
+                "Version  : " + version + endl +
+                "Fr Ellpsd: " + fromEllipsoid + endl +
+                "To Ellpsd: " + toEllipsoid + endl +
+                "Fr Maj Ax: " + fromSemiMajorAxis + endl +
+                "Fr Min Ax: " + fromSemiMinorAxis + endl +
+                "To Maj Ax: " + toSemiMajorAxis + endl +
+                "To Min Ax: " + toSemiMinorAxis;
     }
 
     /**

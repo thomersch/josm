@@ -53,7 +53,7 @@ public class EastNorth extends Coordinate {
     }
 
     /**
-     * Adds the coordinates of an other EastNorth instance to this one.
+     * Adds the coordinates of another EastNorth instance to this one.
      * @param other The other instance.
      * @return The new EastNorth position.
      */
@@ -148,6 +148,24 @@ public class EastNorth extends Coordinate {
     }
 
     /**
+     * Behaves exactly like {@link EastNorth#heading(EastNorth)} if {@code refHeading} is {@code 0.0},
+     * otherwise gives a heading not relative to north (0.0).  It replies the radians needed to add to
+     * {@code refHeading} to get from this EastNorth to another.
+     * @param other the "destination" position
+     * @param refHeading origin ("false" north if different from {@code 0.0})
+     * @return heading with respect to {@code refHeading} as origin
+     * @since 18468
+     */
+    public double heading(EastNorth other, double refHeading) {
+        double hd = heading(other);
+        hd -= refHeading;
+        if (hd < 0) {
+            hd = 2 * Math.PI + hd;
+        }
+        return hd;
+    }
+
+    /**
      * Replies true if east and north are different from Double.NaN and not infinite
      *
      * @return true if east and north are different from Double.NaN and not infinite
@@ -157,7 +175,7 @@ public class EastNorth extends Coordinate {
     }
 
     /**
-     * Returns an EastNorth representing the this EastNorth rotated around
+     * Returns an EastNorth representing this EastNorth rotated around
      * a given EastNorth by a given angle
      * @param pivot the center of the rotation
      * @param angle the angle of the rotation

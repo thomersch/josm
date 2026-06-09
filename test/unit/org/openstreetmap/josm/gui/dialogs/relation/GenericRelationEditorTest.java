@@ -1,43 +1,78 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.dialogs.relation;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.fail;
+import static org.openstreetmap.josm.tools.I18n.tr;
 
+import java.awt.Component;
+import java.awt.Container;
+import java.awt.event.MouseEvent;
+import java.awt.event.MouseListener;
+import java.awt.event.WindowEvent;
+import java.util.ArrayDeque;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
+import javax.swing.Action;
+import javax.swing.JButton;
+import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.platform.commons.support.ReflectionSupport;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Relation;
+import org.openstreetmap.josm.data.osm.RelationMember;
 import org.openstreetmap.josm.data.osm.Way;
+import org.openstreetmap.josm.gui.ExtendedDialog;
+import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.SideButton;
+import org.openstreetmap.josm.gui.dialogs.RelationListDialog;
+import org.openstreetmap.josm.gui.dialogs.relation.actions.AddSelectedAtStartAction;
+import org.openstreetmap.josm.gui.dialogs.relation.actions.IRelationEditorActionAccess;
+import org.openstreetmap.josm.gui.dialogs.relation.actions.PasteMembersAction;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.tagging.TagEditorPanel;
 import org.openstreetmap.josm.gui.tagging.ac.AutoCompletingTextField;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.gui.tagging.presets.TaggingPreset;
+import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetHandler;
+import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetLabel;
+import org.openstreetmap.josm.spi.preferences.Config;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
+import org.openstreetmap.josm.testutils.annotations.Main;
+import org.openstreetmap.josm.testutils.annotations.Projection;
+import org.openstreetmap.josm.testutils.annotations.TaggingPresets;
+import org.openstreetmap.josm.testutils.mockers.ExtendedDialogMocker;
 import org.openstreetmap.josm.testutils.mockers.JOptionPaneSimpleMocker;
+import org.openstreetmap.josm.testutils.mockers.WindowMocker;
+import org.openstreetmap.josm.tools.JosmRuntimeException;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import mockit.Invocation;
+import mockit.Mock;
+import mockit.MockUp;
 
 /**
  * Unit tests of {@link GenericRelationEditor} class.
  */
+@BasicPreferences
+@Main
+@Projection
 public class GenericRelationEditorTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences().main();
-
     /**
      * Returns a new relation editor for unit tests.
      * @param orig relation
@@ -55,6 +90,16 @@ public class GenericRelationEditorTest {
 
             @Override
             public boolean isDirtyRelation() {
+                return false;
+            }
+
+            @Override
+            public boolean isDirtyRelation(boolean ignoreUninterestingTags) {
+                return false;
+            }
+
+            @Override
+            public boolean isDirtyEditor() {
                 return false;
             }
 
@@ -77,14 +122,43 @@ public class GenericRelationEditorTest {
             public OsmDataLayer getLayer() {
                 return layer;
             }
+
+            @Override
+            public void setIsSaving(boolean b) {
+                // do nothing
+            }
         };
+    }
+
+    @BeforeEach
+    void setup() {
+        new PasteMembersActionMock();
+        new WindowMocker();
+    }
+
+    private static AtomicReference<RelationEditor> setupGuiMocks() {
+        AtomicReference<RelationEditor> editorReference = new AtomicReference<>();
+        new MockUp<RelationEditor>() {
+            @Mock public RelationEditor getEditor(Invocation invocation, OsmDataLayer layer, Relation r,
+                                                  Collection<RelationMember> selectedMembers) {
+                editorReference.set(invocation.proceed(layer, r, selectedMembers));
+                return editorReference.get();
+            }
+        };
+        // We want to go through the `setVisible` code, just in case. So we have to mock the window location
+        new MockUp<GenericRelationEditor>() {
+            @Mock public void setVisible(boolean visible) {
+                // Do nothing. Ideally, we would just mock the awt methods called, but that would take a lot of mocking.
+            }
+        };
+        return editorReference;
     }
 
     /**
      * Unit test of {@link GenericRelationEditor#addPrimitivesToRelation}.
      */
     @Test
-    public void testAddPrimitivesToRelation() {
+    void testAddPrimitivesToRelation() {
         TestUtils.assumeWorkingJMockit();
         final JOptionPaneSimpleMocker jopsMocker = new JOptionPaneSimpleMocker();
 
@@ -116,7 +190,7 @@ public class GenericRelationEditorTest {
      * This test only tests if they do not throw exceptions.
      */
     @Test
-    public void testBuild() {
+    void testBuild() {
         DataSet ds = new DataSet();
         Relation relation = new Relation(1);
         ds.addPrimitive(relation);
@@ -131,5 +205,143 @@ public class GenericRelationEditorTest {
         JPanel top = GenericRelationEditor.buildTagEditorPanel(tagEditorPanel);
         assertNotNull(top);
         assertNotNull(tagEditorPanel.getModel());
+    }
+
+    @Test
+    void testNonRegression23091() throws Exception {
+        DataSet ds = new DataSet();
+        Relation relation = new Relation(1);
+        ds.addPrimitive(relation);
+        OsmDataLayer layer = new OsmDataLayer(ds, "test", null);
+
+        final GenericRelationEditor gr = new GenericRelationEditor(layer, relation, Collections.emptyList());
+        final IRelationEditorActionAccess iAccess = (IRelationEditorActionAccess)
+                ReflectionSupport.tryToReadFieldValue(GenericRelationEditor.class.getDeclaredField("actionAccess"), gr)
+                        .get();
+        final TaggingPresetHandler handler = (TaggingPresetHandler)
+                ReflectionSupport.tryToReadFieldValue(MemberTableModel.class.getDeclaredField("presetHandler"), iAccess.getMemberTableModel())
+                        .get();
+        final Collection<OsmPrimitive> selection = handler.getSelection();
+        assertEquals(1, selection.size());
+        assertSame(relation, selection.iterator().next(), "The selection should be the same");
+    }
+
+    /**
+     * Ensure that users can create new relations and modify them.
+     */
+    @Test
+    void testNonRegression23116() {
+        // Setup the mocks
+        final AtomicReference<RelationEditor> editorReference = setupGuiMocks();
+        // Set up the data
+        final DataSet dataSet = new DataSet();
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(dataSet, "GenericRelationEditorTest.testNonRegression23116", null));
+        dataSet.addPrimitive(TestUtils.newNode(""));
+        dataSet.setSelected(dataSet.allPrimitives());
+        final RelationListDialog relationListDialog = new RelationListDialog();
+        try {
+            final Action newAction = ((SideButton) getComponent(relationListDialog, 2, 0, 0)).getAction();
+            assertEquals("class org.openstreetmap.josm.gui.dialogs.RelationListDialog$NewAction",
+                    newAction.getClass().toString());
+            // Now get the buttons we want to push
+            newAction.actionPerformed(null);
+            final GenericRelationEditor editor = assertInstanceOf(GenericRelationEditor.class, editorReference.get());
+            final JButton okAction = getComponent(editor, 0, 1, 0, 2, 0);
+            assertEquals(tr("Delete"), okAction.getText(), "OK is Delete until the relation actually has data");
+            assertNotNull(editor);
+            final TagEditorPanel tagEditorPanel = getComponent(editor, 0, 1, 0, 1, 0, 0, 1, 1);
+            // We need at least one tag for the action to not be "Delete".
+            tagEditorPanel.getModel().add("type", "someUnknownTypeHere");
+            final Action addAtStartAction = assertInstanceOf(AddSelectedAtStartAction.class,
+                    ((JButton) getComponent(editor, 0, 1, 0, 1, 0, 0, 2, 0, 2, 1, 2, 0, 0)).getAction());
+            // Perform the actual test.
+            assertDoesNotThrow(() -> addAtStartAction.actionPerformed(null));
+            assertDoesNotThrow(() -> okAction.getAction().actionPerformed(null));
+            assertFalse(dataSet.getRelations().isEmpty());
+            assertSame(dataSet.getNodes().iterator().next(),
+                    dataSet.getRelations().iterator().next().getMember(0).getNode());
+        } finally {
+            // This avoids an issue with the cleanup code and the mocks for this test
+            if (editorReference.get() != null) {
+                RelationDialogManager.getRelationDialogManager().windowClosed(new WindowEvent(editorReference.get(), 0));
+            }
+        }
+    }
+
+    /**
+     * Ensure that users can create new relations with a preset available and open the preset.
+     * See {@link TaggingPreset#showAndApply} for where a relation may exist without a dataset.
+     */
+    @BasicPreferences
+    @TaggingPresets
+    @Test
+    void testNonRegression23196() {
+        // This happens when the preset validator is enabled (Preferences -> `Tagging Presets` -> `Run data validator on user input`)
+        Config.getPref().putBoolean("taggingpreset.validator", true);
+        // Setup the mocks
+        final AtomicReference<RelationEditor> editorReference = setupGuiMocks();
+        new ExtendedDialogMocker(Collections.singletonMap("Change 1 object", "Apply Preset")) {
+            @Override
+            protected String getString(ExtendedDialog instance) {
+                return instance.getTitle();
+            }
+        };
+        // Set up the data
+        final DataSet dataSet = new DataSet();
+        final OsmDataLayer layer = new OsmDataLayer(dataSet, "GenericRelationEditorTest.testNonRegression23196", null);
+        MainApplication.getLayerManager().addLayer(layer);
+        dataSet.addPrimitive(TestUtils.newNode(""));
+        dataSet.setSelected(dataSet.allPrimitives());
+        try {
+            RelationEditor.getEditor(layer, TestUtils.newRelation("type=multipolygon"),
+                    dataSet.getSelected().stream().map(p -> new RelationMember("", p)).collect(Collectors.toList()));
+            final GenericRelationEditor editor = assertInstanceOf(GenericRelationEditor.class, editorReference.get());
+            TaggingPresetLabel label = getComponentByNameOrText(TaggingPresetLabel.class, editor, "Relations/Multipolygon …");
+            final MouseEvent mouseEvent = new MouseEvent(label, 0, 0, 0, 0, 0, 0, false);
+            for (MouseListener listener : label.getMouseListeners()) {
+                assertDoesNotThrow(() -> listener.mouseClicked(mouseEvent));
+            }
+        } finally {
+            // This avoids an issue with the cleanup code and the mocks for this test
+            if (editorReference.get() != null) {
+                RelationDialogManager.getRelationDialogManager().windowClosed(new WindowEvent(editorReference.get(), 0));
+            }
+        }
+    }
+
+    private static <T extends Component> T getComponentByNameOrText(Class<T> clazz, Container parent, String name) {
+        final ArrayDeque<Component> componentDeque = new ArrayDeque<>(Collections.singletonList(parent));
+        while (!componentDeque.isEmpty()) {
+            final Component current = componentDeque.pop();
+            if (current instanceof Container) {
+                componentDeque.addAll(Arrays.asList(((Container) current).getComponents()));
+            }
+            if (clazz.isInstance(current)) {
+                T component = clazz.cast(current);
+                if (name.equals(component.getName())) {
+                    return component;
+                } else if (component instanceof JLabel && name.equals(((JLabel) component).getText())) {
+                    return component;
+                }
+            }
+        }
+        fail("Component with name " + name + " not found");
+        throw new JosmRuntimeException("This should never happen due to the fail line");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T extends Container> T getComponent(Container parent, int... tree) {
+        Container current = parent;
+        for (int i : tree) {
+            current = (Container) current.getComponent(i);
+        }
+        return (T) current;
+    }
+
+    private static final class PasteMembersActionMock extends MockUp<PasteMembersAction> {
+        @Mock
+        public void updateEnabledState() {
+            // Do nothing
+        }
     }
 }

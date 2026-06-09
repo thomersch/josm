@@ -21,11 +21,14 @@ import javax.xml.stream.XMLStreamReader;
 import org.openstreetmap.josm.data.osm.Changeset;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Node;
+import org.openstreetmap.josm.data.osm.NodeData;
 import org.openstreetmap.josm.data.osm.PrimitiveData;
 import org.openstreetmap.josm.data.osm.Relation;
+import org.openstreetmap.josm.data.osm.RelationData;
 import org.openstreetmap.josm.data.osm.RelationMemberData;
 import org.openstreetmap.josm.data.osm.Tagged;
 import org.openstreetmap.josm.data.osm.Way;
+import org.openstreetmap.josm.data.osm.WayData;
 import org.openstreetmap.josm.gui.progress.NullProgressMonitor;
 import org.openstreetmap.josm.gui.progress.ProgressMonitor;
 import org.openstreetmap.josm.tools.Logging;
@@ -198,6 +201,17 @@ public class OsmReader extends AbstractReader {
         }
     }
 
+    private void parseError() throws XMLStreamException {
+        while (parser.hasNext()) {
+            int event = parser.next();
+            if (event == XMLStreamConstants.CHARACTERS) {
+                throwException(parser.getText());
+            } else {
+                throwException("Unknown error element type");
+            }
+        }
+    }
+
     private void parseRemark() throws XMLStreamException {
         while (parser.hasNext()) {
             int event = parser.next();
@@ -234,7 +248,7 @@ public class OsmReader extends AbstractReader {
         return null;
     }
 
-    private void parseNodeTags(Node n) throws IllegalDataException {
+    private void parseNodeTags(NodeData n) throws IllegalDataException {
         try {
             while (parser.hasNext()) {
                 int event = parser.next();
@@ -262,7 +276,7 @@ public class OsmReader extends AbstractReader {
         return null;
     }
 
-    private void parseWayNodesAndTags(Way w, Collection<Long> nodeIds) throws IllegalDataException {
+    private void parseWayNodesAndTags(WayData w, Collection<Long> nodeIds) throws IllegalDataException {
         try {
             while (parser.hasNext()) {
                 int event = parser.next();
@@ -286,7 +300,7 @@ public class OsmReader extends AbstractReader {
         }
     }
 
-    private long parseWayNode(Way w) throws XMLStreamException {
+    private long parseWayNode(WayData w) throws XMLStreamException {
         if (parser.getAttributeValue(null, "ref") == null) {
             throwException(
                     tr("Missing mandatory attribute ''{0}'' on <nd> of way {1}.", "ref", Long.toString(w.getUniqueId()))
@@ -311,7 +325,7 @@ public class OsmReader extends AbstractReader {
         return null;
     }
 
-    private void parseRelationMembersAndTags(Relation r, Collection<RelationMemberData> members) throws IllegalDataException {
+    private void parseRelationMembersAndTags(RelationData r, Collection<RelationMemberData> members) throws IllegalDataException {
         try {
             while (parser.hasNext()) {
                 int event = parser.next();
@@ -335,7 +349,7 @@ public class OsmReader extends AbstractReader {
         }
     }
 
-    private RelationMemberData parseRelationMember(Relation r) throws XMLStreamException {
+    private RelationMemberData parseRelationMember(RelationData r) throws XMLStreamException {
         RelationMemberData result = null;
         try {
             String ref = parser.getAttributeValue(null, "ref");
@@ -390,6 +404,8 @@ public class OsmReader extends AbstractReader {
         if (printWarning && ("note".equals(element) || "meta".equals(element))) {
             // we know that Overpass API returns those elements
             Logging.debug(tr("Undefined element ''{0}'' found in input stream. Skipping.", element));
+        } else if ("error".equals(element)) {
+            parseError();
         } else if (printWarning) {
             Logging.info(tr("Undefined element ''{0}'' found in input stream. Skipping.", element));
         }
@@ -470,7 +486,7 @@ public class OsmReader extends AbstractReader {
     }
 
     /**
-     * Exception thrown after user cancelation.
+     * Exception thrown after user cancellation.
      */
     private static final class OsmParsingCanceledException extends XmlStreamParsingException implements ImportCancelException {
         /**
@@ -485,7 +501,7 @@ public class OsmReader extends AbstractReader {
 
     @Override
     protected DataSet doParseDataSet(InputStream source, ProgressMonitor progressMonitor) throws IllegalDataException {
-        return doParseDataSet(source, progressMonitor, ir -> {
+        return doParseDataSet(source, progressMonitor, (ParserWorker) ir -> {
             try {
                 setParser(XmlUtils.newSafeXMLInputFactory().createXMLStreamReader(ir));
                 parse();

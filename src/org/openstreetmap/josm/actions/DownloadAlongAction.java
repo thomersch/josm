@@ -22,6 +22,7 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 
 import org.openstreetmap.josm.actions.downloadtasks.DownloadTaskList;
+import org.openstreetmap.josm.data.coor.ILatLon;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.gui.MainApplication;
@@ -60,7 +61,7 @@ public abstract class DownloadAlongAction extends JosmAction {
      * @param registerInToolbar register this action for the toolbar preferences?
      */
     protected DownloadAlongAction(String name, String iconName, String tooltip, Shortcut shortcut, boolean registerInToolbar) {
-        super(name, iconName, tooltip, shortcut, registerInToolbar);
+        super(name, iconName, tooltip, shortcut, registerInToolbar, null, false);
     }
 
     protected static void addToDownload(Area a, Rectangle2D r, Collection<Rectangle2D> results, double maxArea) {
@@ -160,8 +161,8 @@ public abstract class DownloadAlongAction extends JosmAction {
     protected static Collection<LatLon> calcBetweenPoints(LatLon p1, LatLon p2, double bufferDist) {
         ArrayList<LatLon> intermediateNodes = new ArrayList<>();
         intermediateNodes.add(p2);
-        if (p1 != null && p2.greatCircleDistance(p1) > bufferDist) {
-            double d = p2.greatCircleDistance(p1) / bufferDist;
+        if (p1 != null && p2.greatCircleDistance((ILatLon) p1) > bufferDist) {
+            double d = p2.greatCircleDistance((ILatLon) p1) / bufferDist;
             int nbNodes = (int) d;
             if (Logging.isDebugEnabled()) {
                 Logging.debug(MessageFormat.format("{0} intermediate nodes to download between {1} and {2}", nbNodes, p2, p1));

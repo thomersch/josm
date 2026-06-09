@@ -1,18 +1,20 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.io;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.StringReader;
 import java.util.Arrays;
 import java.util.stream.Collectors;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
 /**
  * Unit tests of {@link NameFinder} class.
  */
-public class NameFinderTest {
+@BasicPreferences
+class NameFinderTest {
 
     // CHECKSTYLE.OFF: LineLength
 
@@ -40,7 +42,7 @@ public class NameFinderTest {
      * @throws Exception if any error occurs
      */
     @Test
-    public void testParseSearchResults() throws Exception {
+    void testParseSearchResults() throws Exception {
         try (StringReader reader = new StringReader(SAMPLE)) {
             assertEquals(Arrays.asList(
                     2702400314L, 1942586L, 301750823L, 300479055L, 33197279L, 150960458L, 153844606L, 132164L, 151839268L, 151753473L),

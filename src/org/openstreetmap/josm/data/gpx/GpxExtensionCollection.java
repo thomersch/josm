@@ -9,8 +9,9 @@ import java.util.Stack;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import org.apache.commons.jcs3.access.exception.InvalidArgumentException;
 import org.openstreetmap.josm.io.GpxReader;
+import org.openstreetmap.josm.tools.Logging;
+import org.openstreetmap.josm.tools.Utils;
 import org.xml.sax.Attributes;
 
 /**
@@ -22,7 +23,7 @@ public class GpxExtensionCollection extends ArrayList<GpxExtension> {
 
     private static final long serialVersionUID = 1L;
 
-    private final Stack<GpxExtension> childStack = new Stack<>();
+    private Stack<GpxExtension> childStack;
     private IWithAttributes parent;
 
     /**
@@ -46,6 +47,9 @@ public class GpxExtensionCollection extends ArrayList<GpxExtension> {
      * @param atts the attributes
      */
     public void openChild(String namespaceURI, String qName, Attributes atts) {
+        if (childStack == null) {
+            childStack = new Stack<>();
+        }
         GpxExtension child = new GpxExtension(namespaceURI, qName, atts);
         if (!childStack.isEmpty()) {
             childStack.lastElement().getExtensions().add(child);
@@ -57,20 +61,21 @@ public class GpxExtensionCollection extends ArrayList<GpxExtension> {
 
     /**
      * Sets the value for the last child and pops it from the stack, so the next one will be added to its parent.
-     * The qualified name is verified.
+     * A warning is issued if the qualified name does not equal the currently opened child.
      * @param qName the qualified name
      * @param value the value
      */
     public void closeChild(String qName, String value) {
-        if (childStack.isEmpty())
-            throw new InvalidArgumentException("Can't close child " + qName + ", no element in stack.");
+        if (Utils.isEmpty(childStack)) {
+            Logging.warn("Can''t close child ''{0}'', no element in stack.", qName);
+            return;
+        }
 
         GpxExtension child = childStack.pop();
-
         String childQN = child.getQualifiedName();
 
         if (!childQN.equals(qName))
-            throw new InvalidArgumentException("Can't close child " + qName + ", must close " + childQN + " first.");
+            Logging.warn("Couldn''t close child ''{0}'', closed ''{1}'' instead.", qName, childQN);
 
         child.setValue(value);
     }
@@ -223,7 +228,7 @@ public class GpxExtensionCollection extends ArrayList<GpxExtension> {
     public void remove(String prefix, String key) {
         stream(prefix, key)
         .collect(Collectors.toList()) //needs to be collected to avoid concurrent modification
-        .forEach(e -> super.remove(e));
+        .forEach(super::remove);
     }
 
     /**
@@ -234,7 +239,7 @@ public class GpxExtensionCollection extends ArrayList<GpxExtension> {
         stream()
         .filter(e -> Objects.equals(prefix, e.getPrefix()))
         .collect(Collectors.toList()) //needs to be collected to avoid concurrent modification
-        .forEach(e -> super.remove(e));
+        .forEach(super::remove);
     }
 
     /**
@@ -258,7 +263,10 @@ public class GpxExtensionCollection extends ArrayList<GpxExtension> {
 
     @Override
     public void clear() {
-        childStack.clear();
+        if (childStack != null) {
+            childStack.clear();
+            childStack = null;
+        }
         super.clear();
     }
 

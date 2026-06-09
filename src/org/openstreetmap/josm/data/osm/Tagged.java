@@ -1,10 +1,13 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.osm;
 
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * Objects implement Tagged if they provide a map of key/value pairs.
@@ -65,6 +68,18 @@ public interface Tagged {
     }
 
     /**
+     * Add all key/value pairs. This <i>may</i> be more performant than {@link #put}, depending upon the implementation.
+     * By default, this calls {@link #put} for each map entry.
+     * @param tags The tag map to add
+     * @since 18473
+     */
+    default void putAll(Map<String, String> tags) {
+        for (Map.Entry<String, String> entry : tags.entrySet()) {
+            put(entry.getKey(), entry.getValue());
+        }
+    }
+
+    /**
      * Replies the value of the given key; null, if there is no value for this key
      *
      * @param key the key
@@ -108,8 +123,7 @@ public interface Tagged {
      * @since 13430
      */
     default boolean hasTag(String key) {
-        String v = get(key);
-        return v != null && !v.isEmpty();
+        return !Utils.isEmpty(get(key));
     }
 
     /**
@@ -131,7 +145,13 @@ public interface Tagged {
      * @since 13668
      */
     default boolean hasTag(String key, String... values) {
-        return hasTag(key, Arrays.asList(values));
+        final String actualValue = get(key);
+        for (String value : values) {
+            if (Objects.equals(value, actualValue)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -166,7 +186,13 @@ public interface Tagged {
      * @since 13668
      */
     default boolean hasTagDifferent(String key, String... values) {
-        return hasTagDifferent(key, Arrays.asList(values));
+        final String actual = get(key);
+        for (String value : values) {
+            if (Objects.equals(actual, value)) {
+                return false;
+            }
+        }
+        return actual != null;
     }
 
     /**
@@ -185,8 +211,20 @@ public interface Tagged {
      * Replies the set of keys
      *
      * @return the set of keys
+     * @see #keys()
      */
     Collection<String> keySet();
+
+    /**
+     * Replies the keys as stream
+     *
+     * @return the keys as stream
+     * @see #keySet()
+     * @since 17584
+     */
+    default Stream<String> keys() {
+        return keySet().stream();
+    }
 
     /**
      * Gets the number of keys
@@ -218,5 +256,69 @@ public interface Tagged {
      */
     default boolean isKeyFalse(String key) {
         return OsmUtils.isFalse(get(key));
+    }
+
+    /**
+     * Returns a Tagged instance for the given tag collection
+     * @param tags the tag collection
+     * @return a Tagged instance for the given tag collection
+     */
+    static Tagged ofTags(Collection<Tag> tags) {
+        return ofMap(tags.stream().collect(Collectors.toMap(Tag::getKey, Tag::getValue, (a, b) -> a)));
+    }
+
+    /**
+     * Returns a Tagged instance for the given tag map
+     * @param tags the tag map
+     * @return a Tagged instance for the given tag map
+     */
+    static Tagged ofMap(Map<String, String> tags) {
+        return new Tagged() {
+
+            @Override
+            public String get(String key) {
+                return tags.get(key);
+            }
+
+            @Override
+            public Map<String, String> getKeys() {
+                return tags;
+            }
+
+            @Override
+            public Collection<String> keySet() {
+                return tags.keySet();
+            }
+
+            @Override
+            public void put(String key, String value) {
+                tags.put(key, value);
+            }
+
+            @Override
+            public void setKeys(Map<String, String> keys) {
+                tags.putAll(keys);
+            }
+
+            @Override
+            public boolean hasKeys() {
+                return !tags.isEmpty();
+            }
+
+            @Override
+            public int getNumKeys() {
+                return tags.size();
+            }
+
+            @Override
+            public void remove(String key) {
+                tags.remove(key);
+            }
+
+            @Override
+            public void removeAll() {
+                tags.clear();
+            }
+        };
     }
 }

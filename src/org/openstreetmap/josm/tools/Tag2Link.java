@@ -10,20 +10,22 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-import javax.json.Json;
-import javax.json.JsonArray;
-import javax.json.JsonReader;
-import javax.json.JsonValue;
+import jakarta.json.Json;
+import jakarta.json.JsonArray;
+import jakarta.json.JsonReader;
+import jakarta.json.JsonValue;
 
 import org.openstreetmap.josm.data.osm.OsmPrimitiveType;
 import org.openstreetmap.josm.data.osm.OsmUtils;
@@ -33,7 +35,7 @@ import org.openstreetmap.josm.io.CachedFile;
 
 /**
  * Extracts web links from OSM tags.
- * 
+ * <p>
  * The following rules are used:
  * <ul>
  * <li>internal rules for basic tags</li>
@@ -62,10 +64,11 @@ public final class Tag2Link {
             .collect(Collectors.joining("|"));
 
     static final ListProperty PREF_SOURCE = new ListProperty("tag2link.source",
-            Collections.singletonList("resource://META-INF/resources/webjars/tag2link/2020.10.18/index.json"));
+            Collections.singletonList("resource://META-INF/resources/webjars/tag2link/2026.3.21/index.json"));
 
     static final CachingProperty<List<String>> PREF_SEARCH_ENGINES = new ListProperty("tag2link.search",
             Arrays.asList("https://duckduckgo.com/?q=$1", "https://www.google.com/search?q=$1")).cached();
+    private static final Pattern PATTERN_DOLLAR_ONE = Pattern.compile("$1", Pattern.LITERAL);
 
     private Tag2Link() {
         // private constructor for utility class
@@ -142,11 +145,11 @@ public final class Tag2Link {
      */
     public static void getLinksForTag(String key, String value, LinkConsumer linkConsumer) {
 
-        if (value == null || value.isEmpty()) {
+        if (Utils.isEmpty(value)) {
             return;
         }
 
-        final HashMap<OsmPrimitiveType, Optional<ImageResource>> memoize = new HashMap<>();
+        final Map<OsmPrimitiveType, Optional<ImageResource>> memoize = new EnumMap<>(OsmPrimitiveType.class);
         final Supplier<ImageResource> imageResource = () -> memoize
                 .computeIfAbsent(OsmPrimitiveType.NODE, type -> OsmPrimitiveImageProvider.getResource(key, value, type))
                 .orElse(null);
@@ -159,22 +162,27 @@ public final class Tag2Link {
         }
 
         // Common
-        final String validURL = value.startsWith("http:") || value.startsWith("https:")
-                ? value
-                : value.startsWith("www.")
-                ? "http://" + value
-                : null;
-        if (key.matches("^(.+[:_])?website([:_].+)?$") && validURL != null) {
-            linkConsumer.acceptLink(getLinkName(validURL, key), validURL, imageResource.get());
+        final List<String> validURLs = value.startsWith("http:") || value.startsWith("https:") || value.startsWith("www.")
+                ? OsmUtils.splitMultipleValues(value)
+                .map(v -> v.startsWith("http:") || v.startsWith("https:")
+                        ? v
+                        : v.startsWith("www.")
+                        ? "http://" + v
+                        : null)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList())
+                : Collections.emptyList();
+        if (key.matches("^(.+[:_])?website([:_].+)?$") && !validURLs.isEmpty()) {
+            validURLs.forEach(validURL -> linkConsumer.acceptLink(getLinkName(validURL, key), validURL, imageResource.get()));
         }
-        if (key.matches("^(.+[:_])?source([:_].+)?$") && validURL != null) {
-            linkConsumer.acceptLink(getLinkName(validURL, key), validURL, imageResource.get());
+        if (key.matches("^(.+[:_])?source([:_].+)?$") && !validURLs.isEmpty()) {
+            validURLs.forEach(validURL -> linkConsumer.acceptLink(getLinkName(validURL, key), validURL, imageResource.get()));
         }
-        if (key.matches("^(.+[:_])?url([:_].+)?$") && validURL != null) {
-            linkConsumer.acceptLink(getLinkName(validURL, key), validURL, imageResource.get());
+        if (key.matches("^(.+[:_])?url([:_].+)?$") && !validURLs.isEmpty()) {
+            validURLs.forEach(validURL -> linkConsumer.acceptLink(getLinkName(validURL, key), validURL, imageResource.get()));
         }
-        if (key.matches("image") && validURL != null) {
-            linkConsumer.acceptLink(tr("View image"), validURL, imageResource.get());
+        if (key.matches("image") && !validURLs.isEmpty()) {
+            validURLs.forEach(validURL -> linkConsumer.acceptLink(tr("View image"), validURL, imageResource.get()));
         }
 
         // Wikimedia
@@ -195,18 +203,35 @@ public final class Tag2Link {
         }
         if (key.matches("wikimedia_commons|image") && value.matches("(?i:File):.*")) {
             OsmUtils.splitMultipleValues(value).forEach(i -> linkConsumer.acceptLink(
-                    tr("View image on Wikimedia Commons"), "https://commons.wikimedia.org/wiki/" + i, imageResource.get()));
+                    tr("View image on Wikimedia Commons"), getWikimediaCommonsUrl(i), imageResource.get()));
         }
         if (key.matches("wikimedia_commons|image") && value.matches("(?i:Category):.*")) {
             OsmUtils.splitMultipleValues(value).forEach(i -> linkConsumer.acceptLink(
-                    tr("View category on Wikimedia Commons"), "https://commons.wikimedia.org/wiki/" + i, imageResource.get()));
+                    tr("View category on Wikimedia Commons"), getWikimediaCommonsUrl(i), imageResource.get()));
         }
 
-        wikidataRules.getValues(key).forEach(urlFormatter -> {
+        final Set<String> formatterUrls = wikidataRules.getValues(key);
+        if (!formatterUrls.isEmpty()) {
             final String formattedValue = valueFormatter.getOrDefault(key, x -> x).apply(value);
-            final String url = urlFormatter.replace("$1", formattedValue);
-            linkConsumer.acceptLink(getLinkName(url, key), url, imageResource.get());
-        });
+
+            final String urlKey = formatterUrls.stream().map(urlFormatter -> PATTERN_DOLLAR_ONE.matcher(urlFormatter)
+                            .replaceAll(Matcher.quoteReplacement("(.*)"))).map(PatternUtils::compile)
+                            .map(pattern -> pattern.matcher(value)).filter(Matcher::matches)
+                            .map(matcher -> matcher.group(1)).findFirst().orElse(formattedValue);
+
+            formatterUrls.forEach(urlFormatter -> {
+                // Check if the current value matches the formatter pattern -- some keys can take a full url or a key for
+                // the formatter. Example: https://wiki.openstreetmap.org/wiki/Key:contact:facebook
+                final String url = PATTERN_DOLLAR_ONE.matcher(urlFormatter).replaceAll(urlKey);
+                linkConsumer.acceptLink(getLinkName(url, key), url, imageResource.get());
+            });
+        }
+    }
+
+    private static String getWikimediaCommonsUrl(String i) {
+        i = i.replace(' ', '_');
+        i = Utils.encodeUrl(i);
+        return "https://commons.wikimedia.org/wiki/" + i;
     }
 
     private static String getLinkName(String url, String fallback) {

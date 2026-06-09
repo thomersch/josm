@@ -1,13 +1,13 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.history;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.IOException;
 import java.io.InputStream;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmPrimitiveType;
@@ -21,28 +21,22 @@ import org.openstreetmap.josm.gui.progress.ProgressMonitor;
 import org.openstreetmap.josm.io.OsmHistoryReader;
 import org.openstreetmap.josm.io.OsmServerHistoryReader;
 import org.openstreetmap.josm.io.OsmTransferException;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
+import org.openstreetmap.josm.testutils.annotations.OsmApi;
 import org.xml.sax.SAXException;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
  * Unit tests of {@link HistoryLoadTask} class.
  */
-public class HistoryLoadTaskTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences().devAPI().timeout(20000);
-
+@BasicPreferences
+@OsmApi(OsmApi.APIType.DEV)
+@Timeout(20)
+class HistoryLoadTaskTest {
     /**
      * Unit test of {@link HistoryLoadTask#getLoadingMessage}
      */
     @Test
-    public void testGetLoadingMessage() {
+    void testGetLoadingMessage() {
         assertEquals("Loading history for node {0}", HistoryLoadTask.getLoadingMessage(new Node().getPrimitiveId()));
         assertEquals("Loading history for way {0}", HistoryLoadTask.getLoadingMessage(new Way().getPrimitiveId()));
         assertEquals("Loading history for relation {0}", HistoryLoadTask.getLoadingMessage(new Relation().getPrimitiveId()));
@@ -52,11 +46,11 @@ public class HistoryLoadTaskTest {
     }
 
     /**
-     * Unit test of {@link HistoryLoadTask#loadHistory}
+     * Unit test of {@link HistoryLoadTask#loadHistory(OsmServerHistoryReader, ProgressMonitor)}
      * @throws OsmTransferException if an error occurs
      */
     @Test
-    public void testLoadHistory() throws OsmTransferException {
+    void testLoadHistory() throws OsmTransferException {
         HistoryDataSet ds = HistoryLoadTask.loadHistory(new OsmServerHistoryReader(OsmPrimitiveType.NODE, 0) {
             @Override
             public HistoryDataSet parseHistory(ProgressMonitor progressMonitor) throws OsmTransferException {

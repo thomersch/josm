@@ -68,6 +68,7 @@ import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.widgets.PopupMenuLauncher;
 import org.openstreetmap.josm.io.OsmTransferException;
 import org.openstreetmap.josm.spi.preferences.Config;
+import org.openstreetmap.josm.spi.preferences.PreferenceChangeEvent;
 import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.InputMapUtils;
 import org.openstreetmap.josm.tools.JosmRuntimeException;
@@ -174,7 +175,7 @@ public class ValidatorDialog extends ToggleDialog
         fixAction.setEnabled(false);
         buttons.add(new SideButton(fixAction));
 
-        if (ValidatorPrefHelper.PREF_USE_IGNORE.get()) {
+        if (Boolean.TRUE.equals(ValidatorPrefHelper.PREF_USE_IGNORE.get())) {
             ignoreAction = new AbstractAction() {
                 {
                     putValue(NAME, tr("Ignore"));
@@ -428,7 +429,7 @@ public class ValidatorDialog extends ToggleDialog
     public void activeOrEditLayerChanged(ActiveLayerChangeEvent e) {
         OsmDataLayer editLayer = e.getSource().getEditLayer();
         if (editLayer == null) {
-            tree.setErrorList(new ArrayList<TestError>());
+            tree.setErrorList(new ArrayList<>());
         } else {
             tree.setErrorList(editLayer.validationErrors);
         }
@@ -561,7 +562,7 @@ public class ValidatorDialog extends ToggleDialog
 
         @Override
         public void visit(WaySegment ws) {
-            if (ws.lowerIndex < 0 || ws.lowerIndex + 1 >= ws.way.getNodesCount())
+            if (ws.getLowerIndex() < 0 || ws.getUpperIndex() >= ws.getWay().getNodesCount())
                 return;
             visit(ws.getFirstNode());
             visit(ws.getSecondNode());
@@ -587,12 +588,16 @@ public class ValidatorDialog extends ToggleDialog
      * @param newSelection The new selection
      */
     public void updateSelection(Collection<? extends OsmPrimitive> newSelection) {
-        if (!Config.getPref().getBoolean(ValidatorPrefHelper.PREF_FILTER_BY_SELECTION, false))
+        if (!Config.getPref().getBoolean(ValidatorPrefHelper.PREF_FILTER_BY_SELECTION, false)) {
+            if (tree.getFilter() != null)
+                tree.setFilter(null);
             return;
-        if (newSelection.isEmpty()) {
-            tree.setFilter(null);
         }
-        tree.setFilter(new HashSet<>(newSelection));
+
+        if (newSelection.isEmpty())
+            tree.setFilter(null);
+        else
+            tree.setFilter(new HashSet<>(newSelection));
     }
 
     @Override
@@ -627,13 +632,10 @@ public class ValidatorDialog extends ToggleDialog
         protected void fixError(TestError error) throws InterruptedException, InvocationTargetException {
             if (error.isFixable()) {
                 if (error.getPrimitives().stream().noneMatch(p -> p.isDeleted() || p.getDataSet() == null)) {
-                    TestError checked = error.doubleCheck();
-                    if (checked != null) {
-                        final Command fixCommand = checked.getFix();
-                        if (fixCommand != null) {
-                            SwingUtilities.invokeAndWait(fixCommand::executeCommand);
-                            fixCommands.add(fixCommand);
-                        }
+                    final Command fixCommand = error.getFix();
+                    if (fixCommand != null) {
+                        SwingUtilities.invokeAndWait(fixCommand::executeCommand);
+                        fixCommands.add(fixCommand);
                     }
                 }
                 // It is wanted to ignore an error if it said fixable, even if fixCommand was null
@@ -699,7 +701,10 @@ public class ValidatorDialog extends ToggleDialog
         }
     }
 
-    private static void invalidateValidatorLayers() {
+    /**
+     * Invalidate the error layer
+     */
+    public static void invalidateValidatorLayers() {
         MainApplication.getLayerManager().getLayersOfType(ValidatorLayer.class).forEach(ValidatorLayer::invalidate);
     }
 
@@ -733,4 +738,17 @@ public class ValidatorDialog extends ToggleDialog
             ignoreForNowAction.destroy();
         }
     }
+
+    @Override
+    public void preferenceChanged(PreferenceChangeEvent e) {
+        super.preferenceChanged(e);
+        // see #23430: update selection so that filters are applied
+        if (ValidatorPrefHelper.PREF_FILTER_BY_SELECTION.equals(e.getKey())) {
+            DataSet ds = MainApplication.getLayerManager().getActiveDataSet();
+            if (ds != null) {
+                updateSelection(ds.getAllSelected());
+            }
+        }
+    }
+
 }

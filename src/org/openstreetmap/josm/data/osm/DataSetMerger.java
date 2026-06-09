@@ -49,7 +49,7 @@ public class DataSetMerger {
 
     /**
      * constructor
-     *
+     * <p>
      * The visitor will merge <code>sourceDataSet</code> onto <code>targetDataSet</code>
      *
      * @param targetDataSet dataset with my primitives. Must not be null.
@@ -68,11 +68,11 @@ public class DataSetMerger {
 
     /**
      * Merges a primitive onto primitives dataset.
-     *
+     * <p>
      * If other.id != 0 it tries to merge it with an corresponding primitive from
      * my dataset with the same id. If this is not possible a conflict is remembered
      * in {@link #conflicts}.
-     *
+     * <p>
      * If other.id == 0 (new primitive) it tries to find a primitive in my dataset with id == 0 which
      * is semantically equal. If it finds one it merges its technical attributes onto
      * my primitive.
@@ -114,7 +114,7 @@ public class DataSetMerger {
         // the target dataset. Create a clone and add it to the target dataset.
         //
         OsmPrimitive target;
-        switch(source.getType()) {
+        switch (source.getType()) {
         case NODE: target = source.isNew() ? new Node() : new Node(source.getId()); break;
         case WAY: target = source.isNew() ? new Way() : new Way(source.getId()); break;
         case RELATION: target = source.isNew() ? new Relation() : new Relation(source.getId()); break;
@@ -142,6 +142,12 @@ public class DataSetMerger {
         addConflict(new Conflict<>(my, their));
     }
 
+    private void replaceConflict(Conflict<?> oldConflict, Conflict<?> newConflict) {
+        newConflict.setMergedMap(mergedMap);
+        conflicts.remove(oldConflict);
+        conflicts.add(newConflict);
+    }
+
     protected void fixIncomplete(Way other) {
         Way myWay = (Way) getMergeTarget(other);
         if (myWay == null)
@@ -149,8 +155,7 @@ public class DataSetMerger {
     }
 
     /**
-     * Postprocess the dataset and fix all merged references to point to the actual
-     * data.
+     * Postprocess the dataset and fix all merged references to point to the actual data.
      */
     public void fixReferences() {
         for (Way w : sourceDataSet.getWays()) {
@@ -186,7 +191,7 @@ public class DataSetMerger {
 
                 List<OsmPrimitive> referrers = target.getReferrers();
                 if (referrers.isEmpty()) {
-                    resetPrimitive(target);
+                    IPrimitive.resetPrimitiveChildren(target);
                     target.mergeFrom(source);
                     target.setDeleted(true);
                     it.remove();
@@ -211,20 +216,12 @@ public class DataSetMerger {
             // There are some more objects rest in the objectsToDelete set
             // This can be because of cross-referenced relations.
             for (OsmPrimitive osm: objectsToDelete) {
-                resetPrimitive(osm);
+                IPrimitive.resetPrimitiveChildren(osm);
             }
             for (OsmPrimitive osm: objectsToDelete) {
                 osm.setDeleted(true);
                 osm.mergeFrom(sourceDataSet.getPrimitiveById(osm.getPrimitiveId()));
             }
-        }
-    }
-
-    private static void resetPrimitive(OsmPrimitive osm) {
-        if (osm instanceof Way) {
-            ((Way) osm).setNodes(null);
-        } else if (osm instanceof Relation) {
-            ((Relation) osm).setMembers(null);
         }
     }
 
@@ -247,7 +244,7 @@ public class DataSetMerger {
             if (targetNode != null) {
                 newNodes.add(targetNode);
                 if (targetNode.isDeleted() && !conflicts.hasConflictForMy(targetNode)) {
-                    addConflict(new Conflict<OsmPrimitive>(targetNode, sourceNode, true));
+                    addConflict(new Conflict<>(targetNode, sourceNode, true));
                     targetNode.setDeleted(false);
                 }
             } else
@@ -301,73 +298,76 @@ public class DataSetMerger {
             // target.version > source.version => keep target version
             return true;
 
-        if (target.isIncomplete() && !source.isIncomplete()) {
-            // target is incomplete, source completes it
-            // => merge source into target
-            //
-            target.mergeFrom(source);
-            objectsWithChildrenToMerge.add(source.getPrimitiveId());
-        } else if (!target.isIncomplete() && source.isIncomplete()) {
-            // target is complete and source is incomplete
-            // => keep target, it has more information already
-            //
-        } else if (target.isIncomplete() && source.isIncomplete()) {
-            // target and source are incomplete. Doesn't matter which one to
-            // take. We take target.
-            //
-        } else if (!target.isModified() && !source.isModified() && target.isVisible() != source.isVisible()
-                && target.getVersion() == source.getVersion()) {
+        boolean mergeFromSource = false;
+        boolean haveSameVersion = target.getVersion() == source.getVersion();
+
+        if (haveSameVersion && !target.isModified() && !source.isModified()
+                && target.isVisible() != source.isVisible()) {
             // Same version, but different "visible" attribute and neither of them are modified.
             // It indicates a serious problem in datasets.
             // For example, datasets can be fetched from different OSM servers or badly hand-modified.
-            // We shouldn't merge that datasets.
+            // We should not merge these datasets.
             throw new DataIntegrityProblemException(tr("Conflict in ''visible'' attribute for object of type {0} with id {1}",
                     target.getType(), target.getId()));
-        } else if (target.isDeleted() && !source.isDeleted() && target.getVersion() == source.getVersion()) {
+        }
+
+        if (!target.isModified() && source.isDeleted()) {
+            // target not modified and source is deleted
+            // So mark it to be deleted. See #20091
+            //
+            objectsToDelete.add(target);
+        } else if (source.isIncomplete()) {
+            // source is incomplete. Nothing to do.
+            //
+        } else if (target.isIncomplete()) {
+            // target is incomplete, source completes it
+            // => merge source into target
+            //
+            mergeFromSource = true;
+        } else if (target.isDeleted() && source.isDeleted() && !haveSameVersion) {
+            // both deleted. Source is newer. Take source. See #19783
+            mergeFromSource = true;
+        } else if (target.isDeleted() && !source.isDeleted() && haveSameVersion) {
             // same version, but target is deleted. Assume target takes precedence
             // otherwise too many conflicts when refreshing from the server
             // but, if source is modified, there is a conflict
+            Conflict<?> currentConflict = null;
             if (source.isModified()) {
-                addConflict(new Conflict<>(target, source, true));
+                currentConflict = new Conflict<>(target, source, true);
+                addConflict(currentConflict);
             }
             // or, if source has a referrer that is not in the target dataset there is a conflict
             // If target dataset refers to the deleted primitive, conflict will be added in fixReferences method
             for (OsmPrimitive referrer: source.getReferrers()) {
                 if (targetDataSet.getPrimitiveById(referrer.getPrimitiveId()) == null) {
-                    addConflict(new Conflict<>(target, source, true));
+                    final Conflict<?> newConflict = new Conflict<>(target, source, true);
+                    if (currentConflict != null) { // See #23930
+                        replaceConflict(currentConflict, newConflict);
+                    } else {
+                        addConflict(newConflict);
+                    }
                     target.setDeleted(false);
                     break;
                 }
             }
-        } else if (!target.isModified() && source.isDeleted()) {
-            // target not modified. We can assume that source is the most recent version,
-            // so mark it to be deleted.
-            //
-            objectsToDelete.add(target);
         } else if (!target.isModified() && source.isModified()) {
             // target not modified. We can assume that source is the most recent version.
             // clone it into target.
-            target.mergeFrom(source);
-            objectsWithChildrenToMerge.add(source.getPrimitiveId());
-        } else if (!target.isModified() && !source.isModified() && target.getVersion() == source.getVersion()) {
-            // both not modified. Merge nevertheless.
+            mergeFromSource = true;
+        } else if (!target.isModified() && !source.isModified()) {
+            // both not modified. Merge nevertheless, even if versions are the same
             // This helps when updating "empty" relations, see #4295
-            target.mergeFrom(source);
-            objectsWithChildrenToMerge.add(source.getPrimitiveId());
-        } else if (!target.isModified() && !source.isModified() && target.getVersion() < source.getVersion()) {
-            // my not modified but other is newer. clone other onto mine.
-            //
-            target.mergeFrom(source);
-            objectsWithChildrenToMerge.add(source.getPrimitiveId());
-        } else if (target.isModified() && !source.isModified() && target.getVersion() == source.getVersion()) {
+            mergeFromSource = true;
+        } else if (target.isModified() && !source.isModified() && haveSameVersion) {
             // target is same as source but target is modified
             // => keep target and reset modified flag if target and source are semantically equal
             if (target.hasEqualSemanticAttributes(source, false)) {
                 target.setModified(false);
             }
+            target.setReferrersDownloaded(target.isReferrersDownloaded() || source.isReferrersDownloaded());
         } else if (source.isDeleted() != target.isDeleted()) {
             // target is modified and deleted state differs.
-            // this have to be resolved manually.
+            // this has to be resolved manually.
             //
             addConflict(target, source);
         } else if (!target.hasEqualSemanticAttributes(source)) {
@@ -380,7 +380,14 @@ public class DataSetMerger {
             // technical attributes like timestamp or user information. Semantic
             // attributes should already be equal if we get here.
             //
+            mergeFromSource = true;
+        }
+        if (mergeFromSource) {
+            boolean backupReferrersDownloadedStatus = target.isReferrersDownloaded() && haveSameVersion;
             target.mergeFrom(source);
+            if (backupReferrersDownloadedStatus && !target.isReferrersDownloaded()) {
+                target.setReferrersDownloaded(true);
+            }
             objectsWithChildrenToMerge.add(source.getPrimitiveId());
         }
         return true;
@@ -389,7 +396,7 @@ public class DataSetMerger {
     /**
      * Runs the merge operation. Successfully merged {@link OsmPrimitive}s are in
      * {@link #getTargetDataSet()}.
-     *
+     * <p>
      * See {@link #getConflicts()} for a map of conflicts after the merge operation.
      */
     public void merge() {
@@ -399,7 +406,7 @@ public class DataSetMerger {
     /**
      * Runs the merge operation. Successfully merged {@link OsmPrimitive}s are in
      * {@link #getTargetDataSet()}.
-     *
+     * <p>
      * See {@link #getConflicts()} for a map of conflicts after the merge operation.
      * @param progressMonitor The progress monitor
      */
@@ -410,7 +417,7 @@ public class DataSetMerger {
     /**
      * Runs the merge operation. Successfully merged {@link OsmPrimitive}s are in
      * {@link #getTargetDataSet()}.
-     *
+     * <p>
      * See {@link #getConflicts()} for a map of conflicts after the merge operation.
      * @param progressMonitor The progress monitor
      * @param mergeBounds Whether or not to merge the bounds of the new DataSet to

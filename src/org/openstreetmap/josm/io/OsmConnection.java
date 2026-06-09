@@ -5,23 +5,34 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.lang.reflect.InvocationTargetException;
 import java.net.Authenticator.RequestorType;
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
+import javax.swing.JOptionPane;
+
+import org.openstreetmap.josm.data.oauth.IOAuthParameters;
+import org.openstreetmap.josm.data.oauth.IOAuthToken;
+import org.openstreetmap.josm.data.oauth.OAuth20Authorization;
 import org.openstreetmap.josm.data.oauth.OAuthAccessTokenHolder;
 import org.openstreetmap.josm.data.oauth.OAuthParameters;
+import org.openstreetmap.josm.data.oauth.OAuthVersion;
+import org.openstreetmap.josm.data.oauth.osm.OsmScopes;
+import org.openstreetmap.josm.gui.ConditionalOptionPaneUtil;
+import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.io.auth.CredentialsAgentException;
 import org.openstreetmap.josm.io.auth.CredentialsAgentResponse;
 import org.openstreetmap.josm.io.auth.CredentialsManager;
+import org.openstreetmap.josm.io.remotecontrol.RemoteControl;
 import org.openstreetmap.josm.tools.HttpClient;
 import org.openstreetmap.josm.tools.JosmRuntimeException;
 import org.openstreetmap.josm.tools.Logging;
-
-import oauth.signpost.OAuthConsumer;
-import oauth.signpost.exception.OAuthException;
 
 /**
  * Base class that handles common things like authentication for the reader and writer
@@ -35,12 +46,13 @@ public class OsmConnection {
 
     protected boolean cancel;
     protected HttpClient activeConnection;
-    protected OAuthParameters oauthParameters;
+    protected IOAuthParameters oAuth20Parameters;
 
     /**
      * Retrieves OAuth access token.
      * @since 12803
      */
+    @FunctionalInterface
     public interface OAuthAccessTokenFetcher {
         /**
          * Obtains an OAuth access token for the connection. Afterwards, the token is accessible via {@link OAuthAccessTokenHolder}.
@@ -129,6 +141,56 @@ public class OsmConnection {
     }
 
     /**
+     * Obtains an OAuth access token for the connection.
+     * Afterwards, the token is accessible via {@link OAuthAccessTokenHolder} / {@link CredentialsManager}.
+     * @throws MissingOAuthAccessTokenException if the process cannot be completed successfully
+     */
+    private void obtainOAuth20Token() throws MissingOAuthAccessTokenException {
+        if (!Boolean.TRUE.equals(GuiHelper.runInEDTAndWaitAndReturn(() ->
+                ConditionalOptionPaneUtil.showConfirmationDialog("oauth.oauth20.obtain.automatically",
+                    MainApplication.getMainFrame(),
+                    tr("Obtain OAuth 2.0 token for authentication?"),
+                    tr("Obtain authentication to OSM servers"),
+                    JOptionPane.YES_NO_CANCEL_OPTION,
+                    JOptionPane.QUESTION_MESSAGE, JOptionPane.YES_OPTION)))) {
+            return; // User doesn't want to perform auth
+        }
+        final boolean remoteControlIsRunning = Boolean.TRUE.equals(RemoteControl.PROP_REMOTECONTROL_ENABLED.get());
+        if (!remoteControlIsRunning) {
+            RemoteControl.start();
+        }
+        CountDownLatch done = new CountDownLatch(1);
+        Consumer<Optional<IOAuthToken>> consumer = authToken -> {
+                    if (!remoteControlIsRunning) {
+                        RemoteControl.stop();
+                    }
+                    // Clean up old token/password
+                    OAuthAccessTokenHolder.getInstance().setAccessToken(OsmApi.getOsmApi().getServerUrl(), authToken.orElse(null));
+                    OAuthAccessTokenHolder.getInstance().save(CredentialsManager.getInstance());
+                    done.countDown();
+                };
+        new OAuth20Authorization().authorize(oAuth20Parameters,
+                consumer, OsmScopes.read_gpx, OsmScopes.write_gpx,
+                OsmScopes.read_prefs, OsmScopes.write_prefs,
+                OsmScopes.write_api, OsmScopes.write_notes);
+        // Only wait at most 5 minutes
+        int counter = 0;
+        while (done.getCount() >= 0 && counter < 5) {
+            try {
+                if (done.await(1, TimeUnit.MINUTES)) {
+                    break;
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                Logging.trace(e);
+                consumer.accept(null);
+                throw new MissingOAuthAccessTokenException(e);
+            }
+            counter++;
+        }
+    }
+
+    /**
      * Signs the connection with an OAuth authentication header
      *
      * @param connection the connection
@@ -136,56 +198,39 @@ public class OsmConnection {
      * @throws MissingOAuthAccessTokenException if there is currently no OAuth Access Token configured
      * @throws OsmTransferException if signing fails
      */
-    protected void addOAuthAuthorizationHeader(HttpClient connection) throws OsmTransferException {
-        if (oauthParameters == null) {
-            oauthParameters = OAuthParameters.createFromApiUrl(OsmApi.getOsmApi().getServerUrl());
+    protected void addOAuth20AuthorizationHeader(HttpClient connection) throws OsmTransferException {
+        if (this.oAuth20Parameters == null) {
+            this.oAuth20Parameters = OAuthParameters.createFromApiUrl(connection.getURL().getHost(), OAuthVersion.OAuth20);
         }
-        OAuthConsumer consumer = oauthParameters.buildConsumer();
         OAuthAccessTokenHolder holder = OAuthAccessTokenHolder.getInstance();
-        if (!holder.containsAccessToken()) {
-            obtainAccessToken(connection);
+        IOAuthToken token = holder.getAccessToken(connection.getURL().toExternalForm(), OAuthVersion.OAuth20);
+        if (token == null) {
+            obtainOAuth20Token();
+            token = holder.getAccessToken(connection.getURL().toExternalForm(), OAuthVersion.OAuth20);
         }
-        if (!holder.containsAccessToken()) { // check if wizard completed
+        if (token == null) { // check if wizard completed
             throw new MissingOAuthAccessTokenException();
         }
-        consumer.setTokenWithSecret(holder.getAccessTokenKey(), holder.getAccessTokenSecret());
         try {
-            consumer.sign(connection);
-        } catch (OAuthException e) {
+            token.sign(connection);
+        } catch (org.openstreetmap.josm.data.oauth.OAuthException e) {
             throw new OsmTransferException(tr("Failed to sign a HTTP connection with an OAuth Authentication header"), e);
-        }
-    }
-
-    /**
-     * Obtains an OAuth access token for the connection.
-     * Afterwards, the token is accessible via {@link OAuthAccessTokenHolder} / {@link CredentialsManager}.
-     * @param connection connection for which the access token should be obtained
-     * @throws MissingOAuthAccessTokenException if the process cannot be completed successfully
-     */
-    protected void obtainAccessToken(final HttpClient connection) throws MissingOAuthAccessTokenException {
-        try {
-            final URL apiUrl = new URL(OsmApi.getOsmApi().getServerUrl());
-            if (!Objects.equals(apiUrl.getHost(), connection.getURL().getHost())) {
-                throw new MissingOAuthAccessTokenException();
-            }
-            fetcher.obtainAccessToken(apiUrl);
-            OAuthAccessTokenHolder.getInstance().setSaveToPreferences(true);
-            OAuthAccessTokenHolder.getInstance().save(CredentialsManager.getInstance());
-        } catch (MalformedURLException | InterruptedException | InvocationTargetException e) {
-            throw new MissingOAuthAccessTokenException(e);
         }
     }
 
     protected void addAuth(HttpClient connection) throws OsmTransferException {
         final String authMethod = OsmApi.getAuthMethod();
-        if ("basic".equals(authMethod)) {
-            addBasicAuthorizationHeader(connection);
-        } else if ("oauth".equals(authMethod)) {
-            addOAuthAuthorizationHeader(connection);
-        } else {
-            String msg = tr("Unexpected value for preference ''{0}''. Got ''{1}''.", "osm-server.auth-method", authMethod);
-            Logging.warn(msg);
-            throw new OsmTransferException(msg);
+        switch (authMethod) {
+            case "basic":
+                addBasicAuthorizationHeader(connection);
+                return;
+            case "oauth20":
+                addOAuth20AuthorizationHeader(connection);
+                return;
+            default:
+                String msg = tr("Unexpected value for preference ''{0}''. Got ''{1}''.", "osm-server.auth-method", authMethod);
+                Logging.warn(msg);
+                throw new OsmTransferException(msg);
         }
     }
 

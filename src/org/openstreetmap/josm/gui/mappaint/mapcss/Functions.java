@@ -3,7 +3,9 @@ package org.openstreetmap.josm.gui.mappaint.mapcss;
 
 import java.awt.Color;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
@@ -14,12 +16,15 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.zip.CRC32;
 
+import org.openstreetmap.josm.data.coor.ILatLon;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.gpx.GpxDistance;
 import org.openstreetmap.josm.data.osm.IPrimitive;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
+import org.openstreetmap.josm.data.osm.PrimitiveId;
 import org.openstreetmap.josm.data.osm.Relation;
+import org.openstreetmap.josm.data.osm.SimplePrimitiveId;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.data.osm.search.SearchCompiler;
 import org.openstreetmap.josm.data.osm.search.SearchCompiler.Match;
@@ -37,13 +42,14 @@ import org.openstreetmap.josm.tools.Geometry;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.RightAndLefthandTraffic;
 import org.openstreetmap.josm.tools.RotationAngle;
+import org.openstreetmap.josm.tools.RotationAngle.WayDirectionRotationAngle;
 import org.openstreetmap.josm.tools.StreamUtils;
 import org.openstreetmap.josm.tools.Territories;
 import org.openstreetmap.josm.tools.Utils;
 
 /**
  * List of functions that can be used in MapCSS expressions.
- *
+ * <p>
  * First parameter can be of type {@link Environment} (if needed). This is
  * automatically filled in by JOSM and the user only sees the remaining arguments.
  * When one of the user supplied arguments cannot be converted the
@@ -53,7 +59,7 @@ import org.openstreetmap.josm.tools.Utils;
  *
  * @since 15245 (extracted from {@link ExpressionFactory})
  */
-@SuppressWarnings("UnusedDeclaration")
+@SuppressWarnings({"UnusedDeclaration", "squid:S100"})
 public final class Functions {
 
     private Functions() {
@@ -65,81 +71,69 @@ public final class Functions {
      * @param o any object
      * @return {@code o} unchanged
      */
-    public static Object eval(Object o) { // NO_UCD (unused code)
+    public static Object eval(Object o) {
         return o;
     }
 
     /**
      * Function associated to the numeric "+" operator.
-     * @param args arguments
+     * @param a the first operand
+     * @param b the second operand
      * @return Sum of arguments
+     * @see Float#sum
      */
-    public static float plus(float... args) { // NO_UCD (unused code)
-        float res = 0;
-        for (float f : args) {
-            res += f;
-        }
-        return res;
+    public static double plus(double a, double b) {
+        return a + b;
     }
 
     /**
      * Function associated to the numeric "-" operator.
-     * @param args arguments
-     * @return Substraction of arguments
+     * @param a the first operand
+     * @param b the second operand
+     * @return Subtraction of arguments
      */
-    public static Float minus(float... args) { // NO_UCD (unused code)
-        if (args.length == 0) {
-            return 0.0F;
-        }
-        if (args.length == 1) {
-            return -args[0];
-        }
-        float res = args[0];
-        for (int i = 1; i < args.length; ++i) {
-            res -= args[i];
-        }
-        return res;
+    public static double minus(double a, double b) {
+        return a - b;
     }
 
     /**
      * Function associated to the numeric "*" operator.
-     * @param args arguments
+     * @param a the first operand
+     * @param b the second operand
      * @return Multiplication of arguments
      */
-    public static float times(float... args) { // NO_UCD (unused code)
-        float res = 1;
-        for (float f : args) {
-            res *= f;
-        }
-        return res;
+    public static double times(double a, double b) {
+        return a * b;
     }
 
     /**
      * Function associated to the numeric "/" operator.
-     * @param args arguments
+     * @param a the first operand
+     * @param b the second operand
      * @return Division of arguments
      */
-    public static Float divided_by(float... args) { // NO_UCD (unused code)
-        if (args.length == 0) {
-            return 1.0F;
-        }
-        float res = args[0];
-        for (int i = 1; i < args.length; ++i) {
-            if (args[i] == 0) {
-                return null;
-            }
-            res /= args[i];
-        }
-        return res;
+    public static double divided_by(double a, double b) {
+        return a / b;
+    }
+
+    /**
+     * Function associated to the math modulo "%" operator.
+     * @param a first value
+     * @param b second value
+     * @return {@code a mod b}, e.g., {@code mod(7, 5) = 2}
+     */
+    public static float mod(float a, float b) {
+        return a % b;
     }
 
     /**
      * Creates a list of values, e.g., for the {@code dashes} property.
+     * @param ignored The environment (ignored)
      * @param args The values to put in a list
      * @return list of values
      * @see Arrays#asList(Object[])
      */
-    public static List<Object> list(Object... args) { // NO_UCD (unused code)
+    public static List<Object> list(Environment ignored, Object... args) {
         return Arrays.asList(args);
     }
 
@@ -148,19 +142,20 @@ public final class Functions {
      * @param lst the list
      * @return length of the list
      */
-    public static Integer count(List<?> lst) { // NO_UCD (unused code)
+    public static Integer count(List<?> lst) {
         return lst.size();
     }
 
     /**
      * Returns the first non-null object.
      * The name originates from <a href="http://wiki.openstreetmap.org/wiki/MapCSS/0.2/eval">MapCSS standard</a>.
+     * @param ignored The environment (ignored)
      * @param args arguments
      * @return the first non-null object
      * @see Utils#firstNonNull(Object[])
      */
     @NullableArguments
-    public static Object any(Object... args) { // NO_UCD (unused code)
+    public static Object any(Environment ignored, Object... args) {
         return Utils.firstNonNull(args);
     }
 
@@ -171,7 +166,7 @@ public final class Functions {
      * @return {@code n}th element of the list, or {@code null} if index out of range
      * @since 5699
      */
-    public static Object get(List<?> lst, float n) { // NO_UCD (unused code)
+    public static Object get(List<?> lst, float n) {
         int idx = Math.round(n);
         if (idx >= 0 && idx < lst.size()) {
             return lst.get(idx);
@@ -187,7 +182,7 @@ public final class Functions {
      * @see String#split(String)
      * @since 5699
      */
-    public static List<String> split(String sep, String toSplit) { // NO_UCD (unused code)
+    public static List<String> split(String sep, String toSplit) {
         return Arrays.asList(toSplit.split(Pattern.quote(sep), -1));
     }
 
@@ -199,7 +194,7 @@ public final class Functions {
      * @return color matching the given components
      * @see Color#Color(float, float, float)
      */
-    public static Color rgb(float r, float g, float b) { // NO_UCD (unused code)
+    public static Color rgb(float r, float g, float b) {
         try {
             return new Color(r, g, b);
         } catch (IllegalArgumentException e) {
@@ -218,7 +213,7 @@ public final class Functions {
      * @return color matching the given components
      * @see Color#Color(float, float, float, float)
      */
-    public static Color rgba(float r, float g, float b, float alpha) { // NO_UCD (unused code)
+    public static Color rgba(float r, float g, float b, float alpha) {
         try {
             return new Color(r, g, b, alpha);
         } catch (IllegalArgumentException e) {
@@ -234,7 +229,7 @@ public final class Functions {
      * @param b brightness
      * @return the corresponding color
      */
-    public static Color hsb_color(float h, float s, float b) { // NO_UCD (unused code)
+    public static Color hsb_color(float h, float s, float b) {
         try {
             return Color.getHSBColor(h, s, b);
         } catch (IllegalArgumentException e) {
@@ -248,7 +243,7 @@ public final class Functions {
      * @param html HTML notation
      * @return color matching the given notation
      */
-    public static Color html2color(String html) { // NO_UCD (unused code)
+    public static Color html2color(String html) {
         return ColorHelper.html2color(html);
     }
 
@@ -257,7 +252,7 @@ public final class Functions {
      * @param c color
      * @return HTML notation matching the given color
      */
-    public static String color2html(Color c) { // NO_UCD (unused code)
+    public static String color2html(Color c) {
         return ColorHelper.color2html(c);
     }
 
@@ -267,7 +262,7 @@ public final class Functions {
      * @return the red color channel in the range [0;1]
      * @see java.awt.Color#getRed()
      */
-    public static float red(Color c) { // NO_UCD (unused code)
+    public static float red(Color c) {
         return ColorHelper.int2float(c.getRed());
     }
 
@@ -277,7 +272,7 @@ public final class Functions {
      * @return the green color channel in the range [0;1]
      * @see java.awt.Color#getGreen()
      */
-    public static float green(Color c) { // NO_UCD (unused code)
+    public static float green(Color c) {
         return ColorHelper.int2float(c.getGreen());
     }
 
@@ -287,7 +282,7 @@ public final class Functions {
      * @return the blue color channel in the range [0;1]
      * @see java.awt.Color#getBlue()
      */
-    public static float blue(Color c) { // NO_UCD (unused code)
+    public static float blue(Color c) {
         return ColorHelper.int2float(c.getBlue());
     }
 
@@ -297,18 +292,19 @@ public final class Functions {
      * @return the alpha channel in the range [0;1]
      * @see java.awt.Color#getAlpha()
      */
-    public static float alpha(Color c) { // NO_UCD (unused code)
+    public static float alpha(Color c) {
         return ColorHelper.int2float(c.getAlpha());
     }
 
     /**
      * Assembles the strings to one.
+     * @param ignored The environment (ignored)
      * @param args arguments
      * @return assembled string
      * @see Collectors#joining
      */
     @NullableArguments
-    public static String concat(Object... args) { // NO_UCD (unused code)
+    public static String concat(Environment ignored, Object... args) {
         return Arrays.stream(args)
                 .filter(Objects::nonNull)
                 .map(String::valueOf)
@@ -317,12 +313,13 @@ public final class Functions {
 
     /**
      * Assembles the strings to one, where the first entry is used as separator.
+     * @param ignored The environment (ignored)
      * @param args arguments. First one is used as separator
      * @return assembled string
-     * @see String#join
+     * @see String#join(CharSequence, CharSequence...)
      */
     @NullableArguments
-    public static String join(String... args) { // NO_UCD (unused code)
+    public static String join(Environment ignored, String... args) {
         return String.join(args[0], Arrays.asList(args).subList(1, args.length));
     }
 
@@ -331,9 +328,9 @@ public final class Functions {
      * @param separator the separator
      * @param values collection of objects
      * @return assembled string
-     * @see String#join
+     * @see String#join(CharSequence, Iterable)
      */
-    public static String join_list(final String separator, final List<String> values) { // NO_UCD (unused code)
+    public static String join_list(final String separator, final List<String> values) {
         return String.join(separator, values);
     }
 
@@ -343,7 +340,7 @@ public final class Functions {
      * @param key the property key
      * @return the property value
      */
-    public static Object prop(final Environment env, String key) { // NO_UCD (unused code)
+    public static Object prop(final Environment env, String key) {
         return prop(env, key, null);
     }
 
@@ -364,7 +361,7 @@ public final class Functions {
      * @param key the property key
      * @return {@code true} if the property is set, {@code false} otherwise
      */
-    public static Boolean is_prop_set(final Environment env, String key) { // NO_UCD (unused code)
+    public static Boolean is_prop_set(final Environment env, String key) {
         return is_prop_set(env, key, null);
     }
 
@@ -385,7 +382,7 @@ public final class Functions {
      * @param key the OSM key
      * @return the value for given key
      */
-    public static String tag(final Environment env, String key) { // NO_UCD (unused code)
+    public static String tag(final Environment env, String key) {
         return env.osm == null ? null : env.osm.get(key);
     }
 
@@ -397,7 +394,7 @@ public final class Functions {
      * @see Functions#tag_regex(Environment, String, String)
      * @since 15315
      */
-    public static List<String> tag_regex(final Environment env, String keyRegex) { // NO_UCD (unused code)
+    public static List<String> tag_regex(final Environment env, String keyRegex) {
         return tag_regex(env, keyRegex, "");
     }
 
@@ -412,7 +409,10 @@ public final class Functions {
      * @see Pattern#MULTILINE
      * @since 15315
      */
-    public static List<String> tag_regex(final Environment env, String keyRegex, String flags) { // NO_UCD (unused code)
+    public static List<String> tag_regex(final Environment env, String keyRegex, String flags) {
+        if (env.osm == null) {
+            return Collections.emptyList();
+        }
         int f = parse_regex_flags(flags);
         Pattern compiled = Pattern.compile(keyRegex, f);
         return env.osm.getKeys().entrySet().stream()
@@ -448,7 +448,7 @@ public final class Functions {
      * @param key the OSM key
      * @return first non-null value of the key {@code key} from the object's parent(s)
      */
-    public static String parent_tag(final Environment env, String key) { // NO_UCD (unused code)
+    public static String parent_tag(final Environment env, String key) {
         if (env.parent == null) {
             if (env.osm != null) {
                 // we don't have a matched parent, so just search all referrers
@@ -464,13 +464,13 @@ public final class Functions {
 
     /**
      * Gets a list of all non-null values of the key {@code key} from the object's parent(s).
-     *
+     * <p>
      * The values are sorted according to {@link AlphanumComparator}.
      * @param env the environment
      * @param key the OSM key
      * @return a list of non-null values of the key {@code key} from the object's parent(s)
      */
-    public static List<String> parent_tags(final Environment env, String key) { // NO_UCD (unused code)
+    public static List<String> parent_tags(final Environment env, String key) {
         if (env.parent == null) {
             if (env.osm != null) {
                 // we don't have a matched parent, so just search all referrers
@@ -486,12 +486,30 @@ public final class Functions {
     }
 
     /**
+     * Get the rotation angle of the preceding parent way segment at the node location.
+     * If there is no preceding parent way segment, the following way segment is used instead.
+     * Requires a parent way object matched via
+     * <a href="https://josm.openstreetmap.de/wiki/Help/Styles/MapCSSImplementation#LinkSelector">child selector</a>.
+     * 
+     * @param env the environment
+     * @return the rotation angle of the parent way segment at the node in radians,
+     * otherwise null if there is no matching parent way or the object is not a node
+     * @since 18664
+     */
+    public static Double parent_way_angle(final Environment env) {
+        if (env.osm instanceof Node && env.parent instanceof Way) {
+            return WayDirectionRotationAngle.getRotationAngleForNodeOnWay((Node) env.osm, (Way) env.parent);
+        }
+        return null;
+    }
+
+    /**
      * Gets the value of the key {@code key} from the object's child.
      * @param env the environment
      * @param key the OSM key
      * @return the value of the key {@code key} from the object's child, or {@code null} if there is no child
      */
-    public static String child_tag(final Environment env, String key) { // NO_UCD (unused code)
+    public static String child_tag(final Environment env, String key) {
         return env.child == null ? null : env.child.get(key);
     }
 
@@ -503,8 +521,88 @@ public final class Functions {
      * @return the OSM id of the object's parent, if available, or {@code null}
      * @see IPrimitive#getUniqueId()
      */
-    public static Long parent_osm_id(final Environment env) { // NO_UCD (unused code)
+    public static Long parent_osm_id(final Environment env) {
         return env.parent == null ? null : env.parent.getUniqueId();
+    }
+
+    /**
+     * Gets a list of all OSM id's of the object's parent(s) with a specified key.
+     *
+     * @param env      the environment
+     * @param key      the OSM key
+     * @param keyValue the regex value of the OSM key
+     * @return a list of non-null values of the OSM id's from the object's parent(s)
+     * @since 18829
+     */
+    @NullableArguments
+    public static List<IPrimitive> parent_osm_primitives(final Environment env, String key, String keyValue) {
+         if (env.parent == null) {
+             if (env.osm != null) {
+                final ArrayList<IPrimitive> parents = new ArrayList<>();
+                for (IPrimitive parent : env.osm.getReferrers()) {
+                    if ((key == null || parent.get(key) != null)
+                            && (keyValue == null || regexp_test(keyValue, parent.get(key)))) {
+                        parents.add(parent);
+                    }
+                }
+                return Collections.unmodifiableList(parents);
+            }
+            return Collections.emptyList();
+         }
+         return Collections.singletonList(env.parent);
+     }
+
+     /**
+      * Gets a list of all OSM id's of the object's parent(s) with a specified key.
+      *
+      * @param env the environment
+      * @param key the OSM key
+      * @return a list of non-null values of the OSM id's from the object's parent(s)
+      * @since 18829
+      */
+     @NullableArguments
+     public static List<IPrimitive> parent_osm_primitives(final Environment env, String key) {
+         return parent_osm_primitives(env, key, null);
+     }
+
+    /**
+     * Gets a list of all OSM id's of the object's parent(s).
+     *
+     * @param env the environment
+     * @return a list of non-null values of the OSM id's from the object's parent(s)
+     * @since 18829
+     */
+    public static List<IPrimitive> parent_osm_primitives(final Environment env) {
+        return parent_osm_primitives(env, null, null);
+    }
+
+    /**
+     * Convert Primitives to a string
+     *
+     * @param primitives The primitives to convert
+     * @return A list of strings in the format type + id (in the list order)
+     * @see SimplePrimitiveId#toSimpleId
+     * @since 18829
+     */
+    public static List<String> convert_primitives_to_string(Iterable<PrimitiveId> primitives) {
+        final List<String> primitiveStrings = new ArrayList<>(primitives instanceof Collection ?
+                ((Collection<?>) primitives).size() : 0);
+        for (PrimitiveId primitive : primitives) {
+            primitiveStrings.add(convert_primitive_to_string(primitive));
+        }
+        return primitiveStrings;
+    }
+
+    /**
+     * Convert a primitive to a string
+     *
+     * @param primitive The primitive to convert
+     * @return A string in the format type + id
+     * @see SimplePrimitiveId#toSimpleId
+     * @since 18829
+     */
+    public static String convert_primitive_to_string(PrimitiveId primitive) {
+        return SimplePrimitiveId.toSimpleId(primitive);
     }
 
     /**
@@ -514,7 +612,7 @@ public final class Functions {
      * @return the distance between the object and the closest gpx point or {@code Double.MAX_VALUE}
      * @since 14802
      */
-    public static double gpx_distance(final Environment env) { // NO_UCD (unused code)
+    public static double gpx_distance(final Environment env) {
         if (env.osm instanceof OsmPrimitive) {
             return MainApplication.getLayerManager().getAllGpxData().stream()
                     .mapToDouble(gpx -> GpxDistance.getLowestDistance((OsmPrimitive) env.osm, gpx))
@@ -529,8 +627,8 @@ public final class Functions {
      * @param key the OSM key
      * @return {@code true} if the object has a tag with the given key, {@code false} otherwise
      */
-    public static boolean has_tag_key(final Environment env, String key) { // NO_UCD (unused code)
-        return env.osm.hasKey(key);
+    public static boolean has_tag_key(final Environment env, String key) {
+        return env.osm != null && env.osm.hasKey(key);
     }
 
     /**
@@ -538,20 +636,21 @@ public final class Functions {
      * @param env the environment
      * @return the index as float. Starts at 1
      */
-    public static Float index(final Environment env) { // NO_UCD (unused code)
+    public static Float index(final Environment env) {
         if (env.index == null) {
             return null;
         }
-        return Float.valueOf(env.index + 1f);
+        return env.index + 1f;
     }
 
     /**
      * Sort an array of strings
+     * @param ignored The environment (ignored)
      * @param sortables The array to sort
      * @return The sorted list
      * @since 15279
      */
-    public static List<String> sort(String... sortables) { // NO_UCD (unused code)
+    public static List<String> sort(Environment ignored, String... sortables) {
         Arrays.parallelSort(sortables);
         return Arrays.asList(sortables);
     }
@@ -562,18 +661,19 @@ public final class Functions {
      * @return The sorted list
      * @since 15279
      */
-    public static List<String> sort_list(List<String> sortables) { // NO_UCD (unused code)
+    public static List<String> sort_list(List<String> sortables) {
         Collections.sort(sortables);
         return sortables;
     }
 
     /**
      * Get unique values
+     * @param ignored The environment (ignored)
      * @param values A list of values that may have duplicates
      * @return A list with no duplicates
      * @since 15323
      */
-    public static List<String> uniq(String... values) { // NO_UCD (unused code)
+    public static List<String> uniq(Environment ignored, String... values) {
         return uniq_list(Arrays.asList(values));
     }
 
@@ -593,7 +693,7 @@ public final class Functions {
      * @return role of current object in parent relation, or role of child if current object is a relation
      * @see Environment#getRole()
      */
-    public static String role(final Environment env) { // NO_UCD (unused code)
+    public static String role(final Environment env) {
         return env.getRole();
     }
 
@@ -604,7 +704,7 @@ public final class Functions {
      * @return The number of relation members with the specified role
      * @since 15196
      */
-    public static int count_roles(final Environment env, String... roles) { // NO_UCD (unused code)
+    public static int count_roles(final Environment env, String... roles) {
         int rValue = 0;
         if (env.osm instanceof Relation) {
             List<String> roleList = Arrays.asList(roles);
@@ -622,7 +722,7 @@ public final class Functions {
      * @return the area of a closed way or multipolygon in square meters or {@code null}
      * @see Geometry#computeArea(IPrimitive)
      */
-    public static Float areasize(final Environment env) { // NO_UCD (unused code)
+    public static Float areasize(final Environment env) {
         final Double area = Geometry.computeArea(env.osm);
         return area == null ? null : area.floatValue();
     }
@@ -633,7 +733,7 @@ public final class Functions {
      * @return the length of the way in metres or {@code null}.
      * @see Way#getLength()
      */
-    public static Float waylength(final Environment env) { // NO_UCD (unused code)
+    public static Float waylength(final Environment env) {
         if (env.osm instanceof Way) {
             return (float) ((Way) env.osm).getLength();
         } else {
@@ -646,7 +746,7 @@ public final class Functions {
      * @param b boolean value
      * @return {@code true} if {@code !b}
      */
-    public static boolean not(boolean b) { // NO_UCD (unused code)
+    public static boolean not(boolean b) {
         return !b;
     }
 
@@ -656,7 +756,7 @@ public final class Functions {
      * @param b second value
      * @return {@code true} if {@code a >= b}
      */
-    public static boolean greater_equal(float a, float b) { // NO_UCD (unused code)
+    public static boolean greater_equal(float a, float b) {
         return a >= b;
     }
 
@@ -666,7 +766,7 @@ public final class Functions {
      * @param b second value
      * @return {@code true} if {@code a <= b}
      */
-    public static boolean less_equal(float a, float b) { // NO_UCD (unused code)
+    public static boolean less_equal(float a, float b) {
         return a <= b;
     }
 
@@ -676,7 +776,7 @@ public final class Functions {
      * @param b second value
      * @return {@code true} if {@code a > b}
      */
-    public static boolean greater(float a, float b) { // NO_UCD (unused code)
+    public static boolean greater(float a, float b) {
         return a > b;
     }
 
@@ -686,7 +786,7 @@ public final class Functions {
      * @param b second value
      * @return {@code true} if {@code a < b}
      */
-    public static boolean less(float a, float b) { // NO_UCD (unused code)
+    public static boolean less(float a, float b) {
         return a < b;
     }
 
@@ -696,7 +796,7 @@ public final class Functions {
      * @return the angle in radians
      * @see Math#toRadians(double)
      */
-    public static double degree_to_radians(double degree) { // NO_UCD (unused code)
+    public static double degree_to_radians(double degree) {
         return Utils.toRadians(degree);
     }
 
@@ -709,11 +809,11 @@ public final class Functions {
      * @return the angle in radians
      * @see RotationAngle#parseCardinalRotation(String)
      */
-    public static Double cardinal_to_radians(String cardinal) { // NO_UCD (unused code)
+    public static Double cardinal_to_radians(String cardinal) {
         try {
             return RotationAngle.parseCardinalRotation(cardinal);
-        } catch (IllegalArgumentException ignore) {
-            Logging.trace(ignore);
+        } catch (IllegalArgumentException illegalArgumentException) {
+            Logging.trace(illegalArgumentException);
             return null;
         }
     }
@@ -725,6 +825,7 @@ public final class Functions {
      * @return {@code true} if objects are equal, {@code false} otherwise
      * @see Object#equals(Object)
      */
+    @SuppressWarnings("squid:S1221")
     public static boolean equal(Object a, Object b) {
         if (a.getClass() == b.getClass()) return a.equals(b);
         if (a.equals(Cascade.convertTo(b, a.getClass()))) return true;
@@ -738,7 +839,7 @@ public final class Functions {
      * @return {@code false} if objects are equal, {@code true} otherwise
      * @see Object#equals(Object)
      */
-    public static boolean not_equal(Object a, Object b) { // NO_UCD (unused code)
+    public static boolean not_equal(Object a, Object b) {
         return !equal(a, b);
     }
 
@@ -749,7 +850,10 @@ public final class Functions {
      * @return {@code true} if the JOSM search with {@code searchStr} applies to the object
      * @see SearchCompiler
      */
-    public static Boolean JOSM_search(final Environment env, String searchStr) { // NO_UCD (unused code)
+    public static Boolean JOSM_search(final Environment env, String searchStr) {
+        if (env.osm == null) {
+            return null;
+        }
         Match m;
         try {
             m = SearchCompiler.compile(searchStr);
@@ -761,9 +865,9 @@ public final class Functions {
     }
 
     /**
-     * Obtains the JOSM'key {@link org.openstreetmap.josm.data.Preferences} string for key {@code key},
+     * Obtains the JOSM key {@link org.openstreetmap.josm.data.Preferences} string for key {@code key},
      * and defaults to {@code def} if that is null.
-     *
+     * <p>
      * If the default value can be {@linkplain Cascade#convertTo converted} to a {@link Color},
      * the {@link NamedColorProperty} is retrieved as string.
      *
@@ -772,7 +876,7 @@ public final class Functions {
      * @param def Default value
      * @return value for key, or default value if not found
      */
-    public static String JOSM_pref(Environment env, String key, String def) { // NO_UCD (unused code)
+    public static String JOSM_pref(Environment env, String key, String def) {
         return MapPaintStyles.getStyles().getPreferenceCached(env != null ? env.source : null, key, def);
     }
 
@@ -784,7 +888,7 @@ public final class Functions {
      * @see Pattern#matches(String, CharSequence)
      * @since 5699
      */
-    public static boolean regexp_test(String pattern, String target) { // NO_UCD (unused code)
+    public static boolean regexp_test(String pattern, String target) {
         return Pattern.matches(pattern, target);
     }
 
@@ -799,7 +903,7 @@ public final class Functions {
      * @see Pattern#MULTILINE
      * @since 5699
      */
-    public static boolean regexp_test(String pattern, String target, String flags) { // NO_UCD (unused code)
+    public static boolean regexp_test(String pattern, String target, String flags) {
         int f = parse_regex_flags(flags);
         return Pattern.compile(pattern, f).matcher(target).matches();
     }
@@ -817,7 +921,7 @@ public final class Functions {
      * @see Pattern#MULTILINE
      * @since 5701
      */
-    public static List<String> regexp_match(String pattern, String target, String flags) { // NO_UCD (unused code)
+    public static List<String> regexp_match(String pattern, String target, String flags) {
         int f = parse_regex_flags(flags);
         return Utils.getMatches(Pattern.compile(pattern, f).matcher(target));
     }
@@ -831,7 +935,7 @@ public final class Functions {
      * @return a list of capture groups if {@link Matcher#matches()}, or {@code null}.
      * @since 5701
      */
-    public static List<String> regexp_match(String pattern, String target) { // NO_UCD (unused code)
+    public static List<String> regexp_match(String pattern, String target) {
         return Utils.getMatches(Pattern.compile(pattern).matcher(target));
     }
 
@@ -841,8 +945,8 @@ public final class Functions {
      * @return the OSM id of the current object
      * @see IPrimitive#getUniqueId()
      */
-    public static long osm_id(final Environment env) { // NO_UCD (unused code)
-        return env.osm.getUniqueId();
+    public static long osm_id(final Environment env) {
+        return env.osm != null ? env.osm.getUniqueId() : 0;
     }
 
     /**
@@ -852,8 +956,8 @@ public final class Functions {
      * @see IPrimitive#getUser
      * @since 15246
      */
-    public static String osm_user_name(final Environment env) { // NO_UCD (unused code)
-        return env.osm.getUser().getName();
+    public static String osm_user_name(final Environment env) {
+        return env.osm != null ? env.osm.getUser().getName() : null;
     }
 
     /**
@@ -863,8 +967,8 @@ public final class Functions {
      * @see IPrimitive#getUser
      * @since 15246
      */
-    public static long osm_user_id(final Environment env) { // NO_UCD (unused code)
-        return env.osm.getUser().getId();
+    public static long osm_user_id(final Environment env) {
+        return env.osm != null ? env.osm.getUser().getId() : 0;
     }
 
     /**
@@ -874,8 +978,8 @@ public final class Functions {
      * @see IPrimitive#getVersion
      * @since 15246
      */
-    public static int osm_version(final Environment env) { // NO_UCD (unused code)
-        return env.osm.getVersion();
+    public static int osm_version(final Environment env) {
+        return env.osm != null ? env.osm.getVersion() : 0;
     }
 
     /**
@@ -885,8 +989,8 @@ public final class Functions {
      * @see IPrimitive#getChangesetId
      * @since 15246
      */
-    public static int osm_changeset_id(final Environment env) { // NO_UCD (unused code)
-        return env.osm.getChangesetId();
+    public static int osm_changeset_id(final Environment env) {
+        return env.osm != null ? env.osm.getChangesetId() : 0;
     }
 
     /**
@@ -896,18 +1000,19 @@ public final class Functions {
      * @see IPrimitive#getRawTimestamp
      * @since 15246
      */
-    public static int osm_timestamp(final Environment env) { // NO_UCD (unused code)
-        return env.osm.getRawTimestamp();
+    public static int osm_timestamp(final Environment env) {
+        return env.osm != null ? env.osm.getRawTimestamp() : 0;
     }
 
     /**
      * Translates some text for the current locale. The first argument is the text to translate,
      * and the subsequent arguments are parameters for the string indicated by <code>{0}</code>, <code>{1}</code>, …
+     * @param ignored The environment (ignored)
      * @param args arguments
      * @return the translated string
      */
     @NullableArguments
-    public static String tr(String... args) { // NO_UCD (unused code)
+    public static String tr(Environment ignored, String... args) {
         final String text = args[0];
         System.arraycopy(args, 1, args, 0, args.length - 1);
         return org.openstreetmap.josm.tools.I18n.tr(text, (Object[]) args);
@@ -920,7 +1025,7 @@ public final class Functions {
      * @return the substring
      * @see String#substring(int)
      */
-    public static String substring(String s, /* due to missing Cascade.convertTo for int*/ float begin) { // NO_UCD (unused code)
+    public static String substring(String s, /* due to missing Cascade.convertTo for int*/ float begin) {
         return s == null ? null : s.substring((int) begin);
     }
 
@@ -929,12 +1034,12 @@ public final class Functions {
      * and ending at index {@code end}, (exclusive, 0-indexed).
      * @param s The base string
      * @param begin The start index
-     * @param end The end index
+     * @param end The end index. If negative, it counts from the end of the string
      * @return the substring
      * @see String#substring(int, int)
      */
-    public static String substring(String s, float begin, float end) { // NO_UCD (unused code)
-        return s == null ? null : s.substring((int) begin, (int) end);
+    public static String substring(String s, float begin, float end) {
+        return s == null ? null : s.substring((int) begin, (int) (end >= 0 ? end : s.length() + end));
     }
 
     /**
@@ -945,7 +1050,7 @@ public final class Functions {
      * @return The resulting string
      * @see String#replace(CharSequence, CharSequence)
      */
-    public static String replace(String s, String target, String replacement) { // NO_UCD (unused code)
+    public static String replace(String s, String target, String replacement) {
         return s == null ? null : s.replace(target, replacement);
     }
 
@@ -969,6 +1074,36 @@ public final class Functions {
      */
     public static String lower(String s) {
         return s == null ? null : s.toLowerCase(Locale.ENGLISH);
+    }
+
+    /**
+     * Returns a title-cased version of the string where words start with an uppercase character and the remaining characters are lowercase
+     * <p>
+     * Also known as "capitalize".
+     * @param str The source string
+     * @return The resulting string
+     * @see Character#toTitleCase(char)
+     * @since 17613
+     */
+    public static String title(String str) {
+        // adapted from org.apache.commons.lang3.text.WordUtils.capitalize
+        if (str == null) {
+            return null;
+        }
+        final char[] buffer = str.toCharArray();
+        boolean capitalizeNext = true;
+        for (int i = 0; i < buffer.length; i++) {
+            final char ch = buffer[i];
+            if (Character.isWhitespace(ch)) {
+                capitalizeNext = true;
+            } else if (capitalizeNext) {
+                buffer[i] = Character.toTitleCase(ch);
+                capitalizeNext = false;
+            } else {
+                buffer[i] = Character.toLowerCase(ch);
+            }
+        }
+        return new String(buffer);
     }
 
     /**
@@ -1007,7 +1142,9 @@ public final class Functions {
     }
 
     /**
-     * Percent-decode a string. (See https://en.wikipedia.org/wiki/Percent-encoding)
+     * Percent-decode a string. (See
+     * <a href="https://en.wikipedia.org/wiki/Percent-encoding">https://en.wikipedia.org/wiki/Percent-encoding</a>)
+     * <p>
      * This is especially useful for wikipedia titles
      * @param s url-encoded string
      * @return the decoded string, or original in case of an error
@@ -1024,25 +1161,46 @@ public final class Functions {
     }
 
     /**
-     * Percent-encode a string. (See https://en.wikipedia.org/wiki/Percent-encoding)
+     * Percent-encode a string.
+     * (See <a href="https://en.wikipedia.org/wiki/Percent-encoding">https://en.wikipedia.org/wiki/Percent-encoding</a>)
+     * <p>
      * This is especially useful for data urls, e.g.
      * <code>concat("data:image/svg+xml,", URL_encode("&lt;svg&gt;...&lt;/svg&gt;"));</code>
      * @param s arbitrary string
      * @return the encoded string
      */
-    public static String URL_encode(String s) { // NO_UCD (unused code)
+    public static String URL_encode(String s) {
         return s == null ? null : Utils.encodeUrl(s);
     }
 
     /**
      * XML-encode a string.
-     *
+     * <p>
      * Escapes special characters in xml. Alternative to using &lt;![CDATA[ ... ]]&gt; blocks.
      * @param s arbitrary string
      * @return the encoded string
      */
-    public static String XML_encode(String s) { // NO_UCD (unused code)
+    public static String XML_encode(String s) {
         return s == null ? null : XmlWriter.encode(s);
+    }
+
+    /**
+     * Convert a length unit to meters
+     * <p>
+     * Tries to convert a length unit to meter value or returns {@code null} when impossible
+     * @param s arbitrary string representing a length
+     * @return the length converted to meters
+     * @since 19089
+     */
+    public static String siunit_length(String s) {
+        if (s == null)
+            return null;
+        try {
+            return Utils.unitToMeter(s).toString();
+        } catch (IllegalArgumentException e) {
+            Logging.debug(e);
+        }
+        return null;
     }
 
     /**
@@ -1050,7 +1208,7 @@ public final class Functions {
      * @param s the string
      * @return long value from 0 to 2^32-1
      */
-    public static long CRC32_checksum(String s) { // NO_UCD (unused code)
+    public static long CRC32_checksum(String s) {
         CRC32 cs = new CRC32();
         cs.update(s.getBytes(StandardCharsets.UTF_8));
         return cs.getValue();
@@ -1063,7 +1221,11 @@ public final class Functions {
      * @since 7193
      */
     public static boolean is_right_hand_traffic(Environment env) {
-        return RightAndLefthandTraffic.isRightHandTraffic(center(env));
+        final LatLon center = center(env);
+        if (center != null) {
+            return RightAndLefthandTraffic.isRightHandTraffic(center);
+        }
+        return false;
     }
 
     /**
@@ -1104,7 +1266,7 @@ public final class Functions {
      * @return the same object, unchanged
      */
     @NullableArguments
-    public static Object print(Object o) { // NO_UCD (unused code)
+    public static Object print(Object o) {
         System.out.print(o == null ? "none" : o.toString());
         return o;
     }
@@ -1116,7 +1278,7 @@ public final class Functions {
      * @return the same object, unchanged
      */
     @NullableArguments
-    public static Object println(Object o) { // NO_UCD (unused code)
+    public static Object println(Object o) {
         System.out.println(o == null ? "none" : o.toString());
         return o;
     }
@@ -1126,8 +1288,8 @@ public final class Functions {
      * @param env the environment
      * @return number of tags
      */
-    public static int number_of_tags(Environment env) { // NO_UCD (unused code)
-        return env.osm.getNumKeys();
+    public static int number_of_tags(Environment env) {
+        return env.osm != null ? env.osm.getNumKeys() : 0;
     }
 
     /**
@@ -1136,8 +1298,8 @@ public final class Functions {
      * @param key setting key (given as layer identifier, e.g. setting::mykey {...})
      * @return the value of the setting (calculated when the style is loaded)
      */
-    public static Object setting(Environment env, String key) { // NO_UCD (unused code)
-        return env.source.settingValues.get(key);
+    public static Object setting(Environment env, String key) {
+        return env.source != null ? env.source.settingValues.get(key) : null;
     }
 
     /**
@@ -1146,8 +1308,13 @@ public final class Functions {
      * @return the center of the environment OSM primitive
      * @since 11247
      */
-    public static LatLon center(Environment env) { // NO_UCD (unused code)
-        return env.osm instanceof Node ? ((Node) env.osm).getCoor() : env.osm.getBBox().getCenter();
+    public static LatLon center(Environment env) {
+        if (env.osm instanceof ILatLon) {
+            return new LatLon(((ILatLon) env.osm).lat(), ((ILatLon) env.osm).lon());
+        } else if (env.osm != null) {
+            return env.osm.getBBox().getCenter();
+        }
+        return null;
     }
 
     /**
@@ -1157,7 +1324,7 @@ public final class Functions {
      * @return {@code true} if the object is inside territory matching given ISO3166 codes
      * @since 11247
      */
-    public static boolean inside(Environment env, String codes) { // NO_UCD (unused code)
+    public static boolean inside(Environment env, String codes) {
         return Arrays.stream(codes.toUpperCase(Locale.ENGLISH).split(",", -1))
                 .anyMatch(code -> Territories.isIso3166Code(code.trim(), center(env)));
     }
@@ -1169,7 +1336,7 @@ public final class Functions {
      * @return {@code true} if the object is outside territory matching given ISO3166 codes
      * @since 11247
      */
-    public static boolean outside(Environment env, String codes) { // NO_UCD (unused code)
+    public static boolean outside(Environment env, String codes) {
         return !inside(env, codes);
     }
 
@@ -1181,8 +1348,12 @@ public final class Functions {
      * @return {@code true} if the object centroid lies at given lat/lon coordinates
      * @since 12514
      */
-    public static boolean at(Environment env, double lat, double lon) { // NO_UCD (unused code)
-        return new LatLon(lat, lon).equalsEpsilon(center(env));
+    public static boolean at(Environment env, double lat, double lon) {
+        final ILatLon center = center(env);
+        if (center != null) {
+            return new LatLon(lat, lon).equalsEpsilon(center, ILatLon.MAX_SERVER_PRECISION);
+        }
+        return false;
     }
 
     /**
@@ -1192,7 +1363,7 @@ public final class Functions {
      * @see Boolean#parseBoolean
      * @since 16110
      */
-    public static boolean to_boolean(String value) { // NO_UCD (unused code)
+    public static boolean to_boolean(String value) {
         return Boolean.parseBoolean(value);
     }
 
@@ -1203,7 +1374,7 @@ public final class Functions {
      * @see Byte#parseByte
      * @since 16110
      */
-    public static byte to_byte(String value) { // NO_UCD (unused code)
+    public static byte to_byte(String value) {
         return Byte.parseByte(value);
     }
 
@@ -1214,7 +1385,7 @@ public final class Functions {
      * @see Short#parseShort
      * @since 16110
      */
-    public static short to_short(String value) { // NO_UCD (unused code)
+    public static short to_short(String value) {
         return Short.parseShort(value);
     }
 
@@ -1225,7 +1396,7 @@ public final class Functions {
      * @see Integer#parseInt
      * @since 16110
      */
-    public static int to_int(String value) { // NO_UCD (unused code)
+    public static int to_int(String value) {
         return Integer.parseInt(value);
     }
 
@@ -1236,7 +1407,7 @@ public final class Functions {
      * @see Long#parseLong
      * @since 16110
      */
-    public static long to_long(String value) { // NO_UCD (unused code)
+    public static long to_long(String value) {
         return Long.parseLong(value);
     }
 
@@ -1247,7 +1418,7 @@ public final class Functions {
      * @see Float#parseFloat
      * @since 16110
      */
-    public static float to_float(String value) { // NO_UCD (unused code)
+    public static float to_float(String value) {
         return Float.parseFloat(value);
     }
 
@@ -1258,7 +1429,7 @@ public final class Functions {
      * @see Double#parseDouble
      * @since 16110
      */
-    public static double to_double(String value) { // NO_UCD (unused code)
+    public static double to_double(String value) {
         return Double.parseDouble(value);
     }
 }

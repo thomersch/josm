@@ -18,7 +18,7 @@ import org.openstreetmap.josm.gui.conflict.pair.AbstractListMergeModel;
 import org.openstreetmap.josm.gui.conflict.pair.ListRole;
 
 /**
- * The model for merging two lists of way nodess
+ * The model for merging two lists of way nodes
  * @since 1622
  */
 public class NodeListMergeModel extends AbstractListMergeModel<Node, WayNodesConflictResolverCommand> {
@@ -56,7 +56,7 @@ public class NodeListMergeModel extends AbstractListMergeModel<Node, WayNodesCon
     public WayNodesConflictResolverCommand buildResolveCommand(Conflict<? extends OsmPrimitive> conflict) {
         if (!isFrozen())
             throw new IllegalArgumentException(tr("Merged nodes not frozen yet. Cannot build resolution command."));
-        return new WayNodesConflictResolverCommand(conflict, getMergedEntries());
+        return new WayNodesConflictResolverCommand(conflict, new ArrayList<>(getMergedEntries()));
     }
 
     @Override

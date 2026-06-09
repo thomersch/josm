@@ -16,13 +16,13 @@
  */
 package org.openstreetmap.josm.data.validation.routines;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import org.junit.Before;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 
 /**
  * Performs Validation Test for e-mail validations.
@@ -30,7 +30,7 @@ import org.junit.Test;
  *
  * @version $Revision: 1741724 $
  */
-public class EmailValidatorTest {
+class EmailValidatorTest {
 
     /**
      * The key used to retrieve the set of validation
@@ -48,7 +48,7 @@ public class EmailValidatorTest {
     /**
      * Setup
      */
-    @Before
+    @BeforeEach
     public void setUp() {
         validator = EmailValidator.getInstance();
     }
@@ -57,7 +57,7 @@ public class EmailValidatorTest {
      * Tests the e-mail validation.
      */
     @Test
-    public void testEmail() {
+    void testEmail() {
         assertTrue(validator.isValid("jsmith@apache.org"));
         assertFalse(validator.isValid(null));
     }
@@ -66,7 +66,7 @@ public class EmailValidatorTest {
      * Tests the email validation with numeric domains.
      */
     @Test
-    public void testEmailWithNumericAddress() {
+    void testEmailWithNumericAddress() {
         assertTrue(validator.isValid("someone@[216.109.118.76]"));
         assertTrue(validator.isValid("someone@yahoo.com"));
     }
@@ -75,7 +75,7 @@ public class EmailValidatorTest {
      * Tests the e-mail validation.
      */
     @Test
-    public void testEmailExtension() {
+    void testEmailExtension() {
         assertTrue(validator.isValid("jsmith@apache.org"));
 
         assertTrue(validator.isValid("jsmith@apache.com"));
@@ -98,7 +98,7 @@ public class EmailValidatorTest {
      * the address.
      */
     @Test
-    public void testEmailWithDash() {
+    void testEmailWithDash() {
         assertTrue(validator.isValid("andy.noble@data-workshop.com"));
 
         assertFalse(validator.isValid("andy-noble@data-workshop.-com"));
@@ -113,7 +113,7 @@ public class EmailValidatorTest {
      * the address.
      */
     @Test
-    public void testEmailWithDotEnd() {
+    void testEmailWithDotEnd() {
         assertFalse(validator.isValid("andy.noble@data-workshop.com."));
     }
 
@@ -122,7 +122,7 @@ public class EmailValidatorTest {
      * the address.
      */
     @Test
-    public void testEmailWithBogusCharacter() {
+    void testEmailWithBogusCharacter() {
 
         assertFalse(validator.isValid("andy.noble@\u008fdata-workshop.com"));
 
@@ -147,7 +147,7 @@ public class EmailValidatorTest {
      * Non-regression test for VALIDATOR-315
      */
     @Test
-    public void testVALIDATOR_315() {
+    void testVALIDATOR_315() {
         assertFalse(validator.isValid("me@at&t.net"));
         assertTrue(validator.isValid("me@att.net")); // Make sure TLD is not the cause of the failure
     }
@@ -156,7 +156,7 @@ public class EmailValidatorTest {
      * Non-regression test for VALIDATOR-278
      */
     @Test
-    public void testVALIDATOR_278() {
+    void testVALIDATOR_278() {
         assertFalse(validator.isValid("someone@-test.com")); // hostname starts with dash/hyphen
         assertFalse(validator.isValid("someone@test-.com")); // hostname ends with dash/hyphen
     }
@@ -165,25 +165,25 @@ public class EmailValidatorTest {
      * Non-regression test for VALIDATOR-235
      */
     @Test
-    public void testValidator235() {
+    void testValidator235() {
         String version = System.getProperty("java.version");
         if (version.compareTo("1.6") < 0) {
             System.out.println("Cannot run Unicode IDN tests");
             return; // Cannot run the test
         }
-        assertTrue("xn--d1abbgf6aiiy.xn--p1ai should validate", validator.isValid("someone@xn--d1abbgf6aiiy.xn--p1ai"));
-        assertTrue("президент.рф should validate", validator.isValid("someone@президент.рф"));
-        assertTrue("www.b\u00fccher.ch should validate", validator.isValid("someone@www.b\u00fccher.ch"));
-        assertFalse("www.\uFFFD.ch FFFD should fail", validator.isValid("someone@www.\uFFFD.ch"));
-        assertTrue("www.b\u00fccher.ch should validate", validator.isValid("someone@www.b\u00fccher.ch"));
-        assertFalse("www.\uFFFD.ch FFFD should fail", validator.isValid("someone@www.\uFFFD.ch"));
+        assertTrue(validator.isValid("someone@xn--d1abbgf6aiiy.xn--p1ai"), "xn--d1abbgf6aiiy.xn--p1ai should validate");
+        assertTrue(validator.isValid("someone@президент.рф"), "президент.рф should validate");
+        assertTrue(validator.isValid("someone@www.b\u00fccher.ch"), "www.b\u00fccher.ch should validate");
+        assertFalse(validator.isValid("someone@www.\uFFFD.ch"), "www.\uFFFD.ch FFFD should fail");
+        assertTrue(validator.isValid("someone@www.b\u00fccher.ch"), "www.b\u00fccher.ch should validate");
+        assertFalse(validator.isValid("someone@www.\uFFFD.ch"), "www.\uFFFD.ch FFFD should fail");
     }
 
     /**
      * Tests the email validation with commas.
      */
     @Test
-    public void testEmailWithCommas() {
+    void testEmailWithCommas() {
         assertFalse(validator.isValid("joeblow@apa,che.org"));
 
         assertFalse(validator.isValid("joeblow@apache.o,rg"));
@@ -195,7 +195,7 @@ public class EmailValidatorTest {
      * Tests the email validation with spaces.
      */
     @Test
-    public void testEmailWithSpaces() {
+    void testEmailWithSpaces() {
         assertFalse(validator.isValid("joeblow @apache.org")); // TODO - this should be valid?
 
         assertFalse(validator.isValid("joeblow@ apache.org"));
@@ -214,11 +214,11 @@ public class EmailValidatorTest {
      * (i.e. Ascii chars 0 - 31 and 127)
      */
     @Test
-    public void testEmailWithControlChars() {
+    void testEmailWithControlChars() {
         for (char c = 0; c < 32; c++) {
-            assertFalse("Test control char " + ((int) c), validator.isValid("foo" + c + "bar@domain.com"));
+            assertFalse(validator.isValid("foo" + c + "bar@domain.com"), "Test control char " + ((int) c));
         }
-        assertFalse("Test control char 127", validator.isValid("foo" + ((char) 127) + "bar@domain.com"));
+        assertFalse(validator.isValid("foo" + ((char) 127) + "bar@domain.com"), "Test control char 127");
     }
 
     /**
@@ -226,30 +226,18 @@ public class EmailValidatorTest {
      *  addresses are declared as valid when requested.
      */
     @Test
-    public void testEmailLocalhost() {
+    void testEmailLocalhost() {
        // Check the default is not to allow
        EmailValidator noLocal = EmailValidator.getInstance(false);
        EmailValidator allowLocal = EmailValidator.getInstance(true);
        assertEquals(validator, noLocal);
 
        // Depends on the validator
-       assertTrue(
-             "@localhost.localdomain should be accepted but wasn't",
-             allowLocal.isValid("joe@localhost.localdomain")
-       );
-       assertTrue(
-             "@localhost should be accepted but wasn't",
-             allowLocal.isValid("joe@localhost")
-       );
+       assertTrue(allowLocal.isValid("joe@localhost.localdomain"), "@localhost.localdomain should be accepted but wasn't");
+       assertTrue(allowLocal.isValid("joe@localhost"), "@localhost should be accepted but wasn't");
 
-       assertFalse(
-             "@localhost.localdomain should be accepted but wasn't",
-             noLocal.isValid("joe@localhost.localdomain")
-       );
-       assertFalse(
-             "@localhost should be accepted but wasn't",
-             noLocal.isValid("joe@localhost")
-       );
+       assertFalse(noLocal.isValid("joe@localhost.localdomain"), "@localhost.localdomain should be accepted but wasn't");
+       assertFalse(noLocal.isValid("joe@localhost"), "@localhost should be accepted but wasn't");
     }
 
     /**
@@ -257,19 +245,10 @@ public class EmailValidatorTest {
      *  but not in the domain part
      */
     @Test
-    public void testEmailWithSlashes() {
-       assertTrue(
-             "/ and ! valid in username",
-             validator.isValid("joe!/blow@apache.org")
-       );
-       assertFalse(
-             "/ not valid in domain",
-             validator.isValid("joe@ap/ache.org")
-       );
-       assertFalse(
-             "! not valid in domain",
-             validator.isValid("joe@apac!he.org")
-       );
+    void testEmailWithSlashes() {
+       assertTrue(validator.isValid("joe!/blow@apache.org"), "/ and ! valid in username");
+       assertFalse(validator.isValid("joe@ap/ache.org"), "/ not valid in domain");
+       assertFalse(validator.isValid("joe@apac!he.org"), "! not valid in domain");
     }
 
     /**
@@ -277,7 +256,7 @@ public class EmailValidatorTest {
      * that is being tested.
      */
     @Test
-    public void testEmailUserName() {
+    void testEmailUserName() {
 
         assertTrue(validator.isValid("joe1blow@apache.org"));
 
@@ -489,15 +468,15 @@ public class EmailValidatorTest {
      * FIXME This test fails so disable it with a leading _ for 1.1.4 release.
      * The real solution is to fix the email parsing.
      */
-    @Ignore("This test fails so disable it for 1.1.4 release. The real solution is to fix the email parsing")
+    @Disabled("This test fails so disable it for 1.1.4 release. The real solution is to fix the email parsing")
     @Test
-    public void testEmailFromPerl() {
-        for (int index = 0; index < testEmailFromPerl.length; index++) {
-            String item = testEmailFromPerl[index].item;
-            if (testEmailFromPerl[index].valid) {
-                assertTrue("Should be OK: "+item, validator.isValid(item));
+    void testEmailFromPerl() {
+        for (ResultPair resultPair : testEmailFromPerl) {
+            String item = resultPair.item;
+            if (resultPair.valid) {
+                assertTrue(validator.isValid(item), "Should be OK: " + item);
             } else {
-                assertFalse("Should fail: "+item, validator.isValid(item));
+                assertFalse(validator.isValid(item), "Should fail: " + item);
             }
         }
     }
@@ -506,7 +485,7 @@ public class EmailValidatorTest {
      * Non-regression test for VALIDATOR-293
      */
     @Test
-    public void testValidator293() {
+    void testValidator293() {
         assertTrue(validator.isValid("abc-@abc.com"));
         assertTrue(validator.isValid("abc_@abc.com"));
         assertTrue(validator.isValid("abc-def@abc.com"));
@@ -518,7 +497,7 @@ public class EmailValidatorTest {
      * Non-regression test for VALIDATOR-365
      */
     @Test
-    public void testValidator365() {
+    void testValidator365() {
         assertFalse(validator.isValid(
                 "Loremipsumdolorsitametconsecteturadipiscingelit.Nullavitaeligulamattisrhoncusnuncegestasmattisleo."+
                 "Donecnonsapieninmagnatristiquedictumaacturpis.Fusceorciduifacilisisutsapieneuconsequatpharetralectus."+
@@ -553,7 +532,7 @@ public class EmailValidatorTest {
      * email address, a single string is used without any dots)
      */
     @Test
-    public void testEmailAtTLD() {
+    void testEmailAtTLD() {
         EmailValidator val = EmailValidator.getInstance(false, true);
         assertTrue(val.isValid("test@com"));
     }
@@ -562,7 +541,7 @@ public class EmailValidatorTest {
      * Non-regression test for VALIDATOR-359
      */
     @Test
-    public void testValidator359() {
+    void testValidator359() {
         EmailValidator val = EmailValidator.getInstance(false, true);
         assertFalse(val.isValid("test@.com"));
     }
@@ -571,7 +550,7 @@ public class EmailValidatorTest {
      * Non-regression test for VALIDATOR-374
      */
     @Test
-    public void testValidator374() {
+    void testValidator374() {
         assertTrue(validator.isValid("abc@school.school"));
     }
 
@@ -579,7 +558,7 @@ public class EmailValidatorTest {
      * Unit test of {@link EmailValidator#getValidatorName}.
      */
     @Test
-    public void testValidatorName() {
+    void testValidatorName() {
         assertEquals("Email validator", EmailValidator.getInstance().getValidatorName());
     }
 }

@@ -4,6 +4,7 @@ package org.openstreetmap.josm.gui.preferences.server;
 import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.awt.BorderLayout;
+import java.awt.FlowLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
@@ -16,12 +17,16 @@ import javax.swing.ButtonGroup;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
 
+import org.openstreetmap.josm.data.UserIdentityManager;
 import org.openstreetmap.josm.data.oauth.OAuthAccessTokenHolder;
+import org.openstreetmap.josm.data.oauth.OAuthVersion;
+import org.openstreetmap.josm.data.preferences.JosmUrls;
 import org.openstreetmap.josm.gui.help.HelpUtil;
 import org.openstreetmap.josm.gui.widgets.VerticallyScrollablePanel;
 import org.openstreetmap.josm.io.OsmApi;
 import org.openstreetmap.josm.io.auth.CredentialsManager;
 import org.openstreetmap.josm.spi.preferences.Config;
+import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.Logging;
 
 /**
@@ -32,14 +37,14 @@ public class AuthenticationPreferencesPanel extends VerticallyScrollablePanel im
 
     /** indicates whether we use basic authentication */
     private final JRadioButton rbBasicAuthentication = new JRadioButton();
-    /** indicates whether we use OAuth as authentication scheme */
-    private final JRadioButton rbOAuth = new JRadioButton();
+    /** indicates whether we use OAuth 2.0 as authentication scheme */
+    private final JRadioButton rbOAuth20 = new JRadioButton();
     /** the panel which contains the authentication parameters for the respective authentication scheme */
-    private final JPanel pnlAuthenticationParameteters = new JPanel(new BorderLayout());
+    private final JPanel pnlAuthenticationParameters = new JPanel(new BorderLayout());
     /** the panel for the basic authentication parameters */
     private BasicAuthenticationPreferencesPanel pnlBasicAuthPreferences;
-    /** the panel for the OAuth authentication parameters */
-    private OAuthAuthenticationPreferencesPanel pnlOAuthPreferences;
+    /** the panel for the OAuth 2.0 authentication parameters */
+    private OAuthAuthenticationPreferencesPanel pnlOAuth20Preferences;
 
     /**
      * Constructs a new {@code AuthenticationPreferencesPanel}.
@@ -55,49 +60,46 @@ public class AuthenticationPreferencesPanel extends VerticallyScrollablePanel im
      */
     protected final void build() {
         setLayout(new GridBagLayout());
-        GridBagConstraints gc = new GridBagConstraints();
 
         AuthenticationMethodChangeListener authChangeListener = new AuthenticationMethodChangeListener();
 
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEADING));
         // -- radio button for basic authentication
-        gc.anchor = GridBagConstraints.NORTHWEST;
-        gc.fill = GridBagConstraints.HORIZONTAL;
-        gc.gridx = 1;
-        gc.weightx = 1.0;
-        gc.insets = new Insets(0, 0, 0, 3);
-        add(rbBasicAuthentication, gc);
+        buttonPanel.add(rbBasicAuthentication);
         rbBasicAuthentication.setText(tr("Use Basic Authentication"));
         rbBasicAuthentication.setToolTipText(tr("Select to use HTTP basic authentication with your OSM username and password"));
         rbBasicAuthentication.addItemListener(authChangeListener);
+        //-- radio button for OAuth 2.0
+        buttonPanel.add(rbOAuth20);
+        rbOAuth20.setSelected(true); // This must before adding the listener; otherwise, saveToPreferences is called prior to initFromPreferences
+        rbOAuth20.setText(tr("Use OAuth {0}", "2.0"));
+        rbOAuth20.setToolTipText(tr("Select to use OAuth {0} as authentication mechanism", "2.0"));
+        rbOAuth20.addItemListener(authChangeListener);
 
-        //-- radio button for OAuth
-        gc.gridx = 0;
-        gc.weightx = 0.0;
-        add(rbOAuth, gc);
-        rbOAuth.setText(tr("Use OAuth"));
-        rbOAuth.setToolTipText(tr("Select to use OAuth as authentication mechanism"));
-        rbOAuth.addItemListener(authChangeListener);
-
+        add(buttonPanel, GBC.eol());
         //-- radio button for OAuth
         ButtonGroup bg = new ButtonGroup();
         bg.add(rbBasicAuthentication);
-        bg.add(rbOAuth);
+        bg.add(rbOAuth20);
 
         //-- add the panel which will hold the authentication parameters
+        GridBagConstraints gc = new GridBagConstraints();
+        gc.anchor = GridBagConstraints.NORTHWEST;
+        gc.insets = new Insets(0, 0, 0, 3);
         gc.gridx = 0;
         gc.gridy = 1;
         gc.gridwidth = 2;
         gc.fill = GridBagConstraints.BOTH;
         gc.weightx = 1.0;
         gc.weighty = 1.0;
-        add(pnlAuthenticationParameteters, gc);
+        add(pnlAuthenticationParameters, gc);
 
         //-- the two panels for authentication parameters
         pnlBasicAuthPreferences = new BasicAuthenticationPreferencesPanel();
-        pnlOAuthPreferences = new OAuthAuthenticationPreferencesPanel();
+        pnlOAuth20Preferences = new OAuthAuthenticationPreferencesPanel(OAuthVersion.OAuth20);
 
-        rbBasicAuthentication.setSelected(true);
-        pnlAuthenticationParameteters.add(pnlBasicAuthPreferences, BorderLayout.CENTER);
+        pnlAuthenticationParameters.add(pnlOAuth20Preferences, BorderLayout.CENTER);
+        this.updateAcceptableAuthenticationMethods(OsmApi.getOsmApi().getServerUrl());
     }
 
     /**
@@ -107,15 +109,16 @@ public class AuthenticationPreferencesPanel extends VerticallyScrollablePanel im
         final String authMethod = OsmApi.getAuthMethod();
         if ("basic".equals(authMethod)) {
             rbBasicAuthentication.setSelected(true);
-        } else if ("oauth".equals(authMethod)) {
-            rbOAuth.setSelected(true);
+        } else if ("oauth20".equals(authMethod)) {
+            rbOAuth20.setSelected(true);
         } else {
-            Logging.warn(tr("Unsupported value in preference ''{0}'', got ''{1}''. Using authentication method ''Basic Authentication''.",
-                    "osm-server.auth-method", authMethod));
-            rbBasicAuthentication.setSelected(true);
+            Logging.warn(
+                    tr("Unsupported value in preference ''{0}'', got ''{1}''. Using authentication method ''OAuth 2.0 Authentication''.",
+                            "osm-server.auth-method", authMethod));
+            rbOAuth20.setSelected(true);
         }
         pnlBasicAuthPreferences.initFromPreferences();
-        pnlOAuthPreferences.initFromPreferences();
+        pnlOAuth20Preferences.initFromPreferences();
     }
 
     /**
@@ -126,20 +129,31 @@ public class AuthenticationPreferencesPanel extends VerticallyScrollablePanel im
         String authMethod;
         if (rbBasicAuthentication.isSelected()) {
             authMethod = "basic";
+        } else if (rbOAuth20.isSelected()) {
+            authMethod = "oauth20";
         } else {
-            authMethod = "oauth";
+            throw new IllegalStateException("One of OAuth 2.0, OAuth 1.0a, or Basic authentication must be checked");
         }
-        Config.getPref().put("osm-server.auth-method", authMethod);
+        final boolean initUser = Config.getPref().put("osm-server.auth-method", authMethod);
         if ("basic".equals(authMethod)) {
             // save username and password and clear the OAuth token
             pnlBasicAuthPreferences.saveToPreferences();
             OAuthAccessTokenHolder.getInstance().clear();
             OAuthAccessTokenHolder.getInstance().save(CredentialsManager.getInstance());
-        } else if ("oauth".equals(authMethod)) {
+        } else if ("oauth20".equals(authMethod)) {
+            // oauth20
             // clear the password in the preferences
             pnlBasicAuthPreferences.clearPassword();
-            pnlBasicAuthPreferences.saveToPreferences();
-            pnlOAuthPreferences.saveToPreferences();
+            pnlOAuth20Preferences.saveToPreferences();
+        }
+        if (initUser) {
+            if ("basic".equals(authMethod)) {
+                UserIdentityManager.getInstance().initFromPreferences();
+            } else if (OsmApi.isUsingOAuthAndOAuthSetUp(OsmApi.getOsmApi())) {
+                UserIdentityManager.getInstance().initFromOAuth();
+            } else {
+                UserIdentityManager.getInstance().setAnonymous();
+            }
         }
     }
 
@@ -149,14 +163,15 @@ public class AuthenticationPreferencesPanel extends VerticallyScrollablePanel im
     class AuthenticationMethodChangeListener implements ItemListener {
         @Override
         public void itemStateChanged(ItemEvent e) {
+            pnlAuthenticationParameters.removeAll();
             if (rbBasicAuthentication.isSelected()) {
-                pnlAuthenticationParameteters.removeAll();
-                pnlAuthenticationParameteters.add(pnlBasicAuthPreferences, BorderLayout.CENTER);
+                pnlAuthenticationParameters.add(pnlBasicAuthPreferences, BorderLayout.CENTER);
                 pnlBasicAuthPreferences.revalidate();
-            } else {
-                pnlAuthenticationParameteters.removeAll();
-                pnlAuthenticationParameteters.add(pnlOAuthPreferences, BorderLayout.CENTER);
-                pnlOAuthPreferences.revalidate();
+            } else if (rbOAuth20.isSelected()) {
+                pnlAuthenticationParameters.add(pnlOAuth20Preferences, BorderLayout.CENTER);
+                pnlOAuth20Preferences.saveToPreferences();
+                pnlOAuth20Preferences.initFromPreferences();
+                pnlOAuth20Preferences.revalidate();
             }
             repaint();
         }
@@ -164,8 +179,22 @@ public class AuthenticationPreferencesPanel extends VerticallyScrollablePanel im
 
     @Override
     public void propertyChange(PropertyChangeEvent evt) {
-        if (pnlOAuthPreferences != null) {
-            pnlOAuthPreferences.propertyChange(evt);
+        if (pnlOAuth20Preferences != null) {
+            pnlOAuth20Preferences.propertyChange(evt);
+        }
+        if (OsmApiUrlInputPanel.API_URL_PROP.equals(evt.getPropertyName())) {
+            this.updateAcceptableAuthenticationMethods((String) evt.getNewValue());
         }
     }
+
+    /**
+     * Update the acceptable authentications methods
+     * @param apiUrl The API url to check
+     */
+    private void updateAcceptableAuthenticationMethods(String apiUrl) {
+        final String authMethod = OsmApi.getAuthMethod();
+        final boolean defaultApi = JosmUrls.getInstance().getDefaultOsmApiUrl().equals(apiUrl);
+        rbBasicAuthentication.setEnabled(rbBasicAuthentication.isSelected() || "basic".equals(authMethod) || !defaultApi);
+    }
+
 }

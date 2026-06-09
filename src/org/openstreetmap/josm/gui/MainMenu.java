@@ -39,6 +39,7 @@ import org.openstreetmap.josm.actions.CloseChangesetAction;
 import org.openstreetmap.josm.actions.CombineWayAction;
 import org.openstreetmap.josm.actions.CopyAction;
 import org.openstreetmap.josm.actions.CopyCoordinatesAction;
+import org.openstreetmap.josm.actions.CopyUrlAction;
 import org.openstreetmap.josm.actions.CreateCircleAction;
 import org.openstreetmap.josm.actions.CreateMultipolygonAction;
 import org.openstreetmap.josm.actions.DeleteAction;
@@ -75,6 +76,7 @@ import org.openstreetmap.josm.actions.MirrorAction;
 import org.openstreetmap.josm.actions.MoveAction;
 import org.openstreetmap.josm.actions.MoveNodeAction;
 import org.openstreetmap.josm.actions.NewAction;
+import org.openstreetmap.josm.actions.NewLocalAction;
 import org.openstreetmap.josm.actions.OpenFileAction;
 import org.openstreetmap.josm.actions.OpenLocationAction;
 import org.openstreetmap.josm.actions.OrthogonalizeAction;
@@ -95,11 +97,14 @@ import org.openstreetmap.josm.actions.SaveAsAction;
 import org.openstreetmap.josm.actions.SearchNotesDownloadAction;
 import org.openstreetmap.josm.actions.SelectAllAction;
 import org.openstreetmap.josm.actions.SelectNonBranchingWaySequencesAction;
+import org.openstreetmap.josm.actions.SelectSharedChildObjectsAction;
+import org.openstreetmap.josm.actions.SessionSaveAction;
 import org.openstreetmap.josm.actions.SessionSaveAsAction;
 import org.openstreetmap.josm.actions.ShowStatusReportAction;
 import org.openstreetmap.josm.actions.SimplifyWayAction;
 import org.openstreetmap.josm.actions.SplitWayAction;
 import org.openstreetmap.josm.actions.TaggingPresetSearchAction;
+import org.openstreetmap.josm.actions.TiledRenderToggleAction;
 import org.openstreetmap.josm.actions.UnGlueAction;
 import org.openstreetmap.josm.actions.UnJoinNodeWayAction;
 import org.openstreetmap.josm.actions.UndoAction;
@@ -128,6 +133,7 @@ import org.openstreetmap.josm.gui.io.OnlineResourceMenu;
 import org.openstreetmap.josm.gui.io.RecentlyOpenedFilesMenu;
 import org.openstreetmap.josm.gui.layer.MainLayerManager.ActiveLayerChangeEvent;
 import org.openstreetmap.josm.gui.layer.MainLayerManager.ActiveLayerChangeListener;
+import org.openstreetmap.josm.gui.layer.geoimage.WikimediaCommonsLoader.WikimediaCommonsLoadImagesAction;
 import org.openstreetmap.josm.gui.mappaint.MapPaintMenu;
 import org.openstreetmap.josm.gui.preferences.imagery.ImageryPreference;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetSearchPrimitiveDialog;
@@ -139,7 +145,7 @@ import org.openstreetmap.josm.tools.Shortcut;
 /**
  * This is the JOSM main menu bar. It is overwritten to initialize itself and provide all menu
  * entries as member variables (sort of collect them).
- *
+ * <p>
  * It also provides possibilities to attach new menu entries (used by plugins).
  *
  * @author Immanuel.Scholz
@@ -162,6 +168,8 @@ public class MainMenu extends JMenuBar {
     /* File menu */
     /** File / New Layer **/
     public final NewAction newAction = new NewAction();
+    /** File / New Local Layer **/
+    public final NewLocalAction newLocalAction = new NewLocalAction();
     /** File / Open... **/
     public final OpenFileAction openFile = new OpenFileAction();
     /** File / Open Recent &gt; **/
@@ -174,8 +182,10 @@ public class MainMenu extends JMenuBar {
     public final SaveAction save = SaveAction.getInstance();
     /** File / Save As... **/
     public final SaveAsAction saveAs = SaveAsAction.getInstance();
+    /** File / Session &gt; Save Session **/
+    public final SessionSaveAction sessionSave = SessionSaveAction.getInstance();
     /** File / Session &gt; Save Session As... **/
-    public SessionSaveAsAction sessionSaveAs;
+    public final SessionSaveAsAction sessionSaveAs = new SessionSaveAsAction();
     /** File / Export to GPX... **/
     public final GpxExportAction gpxExport = new GpxExportAction();
     /** File / Download from OSM... **/
@@ -214,6 +224,8 @@ public class MainMenu extends JMenuBar {
     public final RedoAction redo = new RedoAction();
     /** Edit / Copy */
     public final CopyAction copy = new CopyAction();
+    /** Edit / Copy URLs*/
+    public final CopyUrlAction copyUrl = new CopyUrlAction();
     /** Edit / Copy Coordinates */
     public final JosmAction copyCoordinates = new CopyCoordinatesAction();
     /** Edit / Paste */
@@ -240,6 +252,8 @@ public class MainMenu extends JMenuBar {
     /* View menu */
     /** View / Wireframe View */
     public final WireframeToggleAction wireFrameToggleAction = new WireframeToggleAction();
+    /** View / Tiled Rendering */
+    public final TiledRenderToggleAction tiledRenderToggleAction = new TiledRenderToggleAction();
     /** View / Hatch area outside download */
     public final DrawBoundariesOfDownloadedDataAction drawBoundariesOfDownloadedDataAction = new DrawBoundariesOfDownloadedDataAction();
     /** View / Advanced info */
@@ -312,6 +326,8 @@ public class MainMenu extends JMenuBar {
     public final InvertSelectionAction invertSelection = new InvertSelectionAction();
     /** Selection / Non-branching way sequences */
     public final SelectNonBranchingWaySequencesAction nonBranchingWaySequences = new SelectNonBranchingWaySequencesAction();
+    /** Selection / Shared Child Objects */
+    public final SelectSharedChildObjectsAction sharedChildObjects = new SelectSharedChildObjectsAction();
 
     /* Audio menu */
     /** Audio / Play/Pause */
@@ -405,7 +421,7 @@ public class MainMenu extends JMenuBar {
      * group is for currently open windows that cannot be toggled, e.g. relation editors. It's recommended
      * to use WINDOW_MENU_GROUP to determine the group integer.
      */
-    public final WindowMenu windowMenu = addMenu(new WindowMenu(), /* untranslated name */ "Windows", KeyEvent.VK_W, 11, ht("/Help/Menu/Windows"));
+    public final WindowMenu windowMenu = addMenu(new WindowMenu(), /* untranslated name */ "Windows", KeyEvent.VK_W, 11, ht("/Menu/Windows"));
     // CHECKSTYLE.ON: LineLength
 
     /**
@@ -463,13 +479,13 @@ public class MainMenu extends JMenuBar {
             final JPopupMenu m = ((JMenu) a.getSource()).getPopupMenu();
             for (int i = 0; i < m.getComponentCount()-1; i++) {
                 // hide separator if the next menu item is one as well
-                if (m.getComponent(i) instanceof JSeparator && m.getComponent(i+1) instanceof JSeparator) {
-                    ((JSeparator) m.getComponent(i)).setVisible(false);
+                if (m.getComponent(i) instanceof JSeparator && m.getComponent(i + 1) instanceof JSeparator) {
+                    m.getComponent(i).setVisible(false);
                 }
             }
             // hide separator at the end of the menu
-            if (m.getComponent(m.getComponentCount()-1) instanceof JSeparator) {
-                ((JSeparator) m.getComponent(m.getComponentCount()-1)).setVisible(false);
+            if (m.getComponent(m.getComponentCount() - 1) instanceof JSeparator) {
+                m.getComponent(m.getComponentCount() - 1).setVisible(false);
             }
         }
     };
@@ -485,7 +501,7 @@ public class MainMenu extends JMenuBar {
 
     /**
      * Add a JosmAction at the end of a menu.
-     *
+     * <p>
      * This method handles all the shortcut handling. It also makes sure that actions that are
      * handled by the OS are not duplicated on the menu.
      * @param menu the menu to add the action to
@@ -498,7 +514,7 @@ public class MainMenu extends JMenuBar {
 
     /**
      * Add a JosmAction at the end of a menu.
-     *
+     * <p>
      * This method handles all the shortcut handling. It also makes sure that actions that are
      * handled by the OS are not duplicated on the menu.
      * @param menu the menu to add the action to
@@ -512,7 +528,7 @@ public class MainMenu extends JMenuBar {
 
     /**
      * Add a JosmAction at the end of a menu.
-     *
+     * <p>
      * This method handles all the shortcut handling. It also makes sure that actions that are
      * handled by the OS are not duplicated on the menu.
      * @param menu the menu to add the action to
@@ -544,7 +560,7 @@ public class MainMenu extends JMenuBar {
 
     /**
      * Add the JosmAction {@code actionToBeInserted} directly below {@code existingMenuEntryAction}.
-     *
+     * <p>
      * This method handles all the shortcut handling. It also makes sure that actions that are
      * handled by the OS are not duplicated on the menu.
      * @param menu the menu to add the action to
@@ -567,7 +583,7 @@ public class MainMenu extends JMenuBar {
 
     /**
      * Add a JosmAction to a menu.
-     *
+     * <p>
      * This method handles all the shortcut handling. It also makes sure that actions that are
      * handled by the OS are not duplicated on the menu.
      * @param <E> group item enum type
@@ -727,6 +743,7 @@ public class MainMenu extends JMenuBar {
         gpsMenu.setVisible(false);
 
         add(fileMenu, newAction);
+        add(fileMenu, newLocalAction);
         add(fileMenu, openFile);
         fileMenu.add(recentlyOpened);
         add(fileMenu, openLocation);
@@ -734,8 +751,8 @@ public class MainMenu extends JMenuBar {
         fileMenu.addSeparator();
         add(fileMenu, save);
         add(fileMenu, saveAs);
-        sessionSaveAs = new SessionSaveAsAction();
-        ExpertToggleAction.addVisibilitySwitcher(fileMenu.add(sessionSaveAs));
+        add(fileMenu, sessionSave);
+        add(fileMenu, sessionSaveAs);
         add(fileMenu, gpxExport, true);
         fileMenu.addSeparator();
         add(fileMenu, download);
@@ -744,6 +761,7 @@ public class MainMenu extends JMenuBar {
         add(fileMenu, downloadPrimitive);
         add(fileMenu, searchNotes);
         add(fileMenu, downloadNotesInView);
+        add(fileMenu, new WikimediaCommonsLoadImagesAction());
         add(fileMenu, downloadReferrers);
         add(fileMenu, update);
         add(fileMenu, updateSelection);
@@ -767,6 +785,7 @@ public class MainMenu extends JMenuBar {
         editMenu.addSeparator();
         add(editMenu, copy);
         add(editMenu, copyCoordinates, true);
+        add(editMenu, copyUrl, true);
         add(editMenu, paste);
         add(editMenu, pasteAtSource, true);
         add(editMenu, pasteTags);
@@ -787,6 +806,12 @@ public class MainMenu extends JMenuBar {
         viewMenu.add(wireframe);
         wireframe.setAccelerator(wireFrameToggleAction.getShortcut().getKeyStroke());
         wireFrameToggleAction.addButtonModel(wireframe.getModel());
+        // -- tiled render toggle action -- not intended to be permanently an "Expert" mode option
+        final JCheckBoxMenuItem tiledRender = new JCheckBoxMenuItem(tiledRenderToggleAction);
+        viewMenu.add(tiledRender);
+        tiledRenderToggleAction.addButtonModel(tiledRender.getModel());
+        ExpertToggleAction.addVisibilitySwitcher(tiledRender);
+        // -- hatch toggle action
         final JCheckBoxMenuItem hatchAreaOutsideDownloadMenuItem = drawBoundariesOfDownloadedDataAction.getCheckbox();
         viewMenu.add(hatchAreaOutsideDownloadMenuItem);
         ExpertToggleAction.addVisibilitySwitcher(hatchAreaOutsideDownloadMenuItem);
@@ -854,6 +879,7 @@ public class MainMenu extends JMenuBar {
         add(selectionMenu, unselectAll);
         add(selectionMenu, invertSelection, true);
         add(selectionMenu, nonBranchingWaySequences);
+        add(selectionMenu, sharedChildObjects, true);
 
         add(toolsMenu, splitWay);
         add(toolsMenu, combineWay);
@@ -938,8 +964,8 @@ public class MainMenu extends JMenuBar {
      */
     public Optional<JCheckBoxMenuItem> findMapModeMenuItem(MapMode mode) {
         return Arrays.stream(modeMenu.getMenuComponents())
-                .filter(m -> m instanceof JCheckBoxMenuItem)
-                .map(m -> (JCheckBoxMenuItem) m)
+                .filter(JCheckBoxMenuItem.class::isInstance)
+                .map(JCheckBoxMenuItem.class::cast)
                 .filter(m -> Objects.equals(mode, m.getAction()))
                 .findFirst();
     }

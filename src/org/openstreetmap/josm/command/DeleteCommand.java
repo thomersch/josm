@@ -23,6 +23,7 @@ import javax.swing.Icon;
 
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.DefaultNameFormatter;
+import org.openstreetmap.josm.data.osm.IPrimitive;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.OsmPrimitiveType;
@@ -34,6 +35,7 @@ import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.data.osm.WaySegment;
 import org.openstreetmap.josm.tools.CheckParameterUtil;
 import org.openstreetmap.josm.tools.ImageProvider;
+import org.openstreetmap.josm.tools.Pair;
 import org.openstreetmap.josm.tools.Utils;
 
 /**
@@ -100,6 +102,22 @@ public class DeleteCommand extends Command {
          * @since 12763
          */
         boolean confirmDeletionFromRelation(Collection<RelationToChildReference> references);
+
+        /**
+         * Confirm before removing a collection of primitives from their parent relations, with the probability of
+         * deleting the parents as well.
+         * @param references the list of relation-to-child references
+         * @param parentsToDelete the list of parents to delete (the boolean part will be {@code true} if the user wants
+         *                        to delete the relation).
+         * @return {@code true} if the user confirms the deletion
+         * @since 18395
+         */
+        default boolean confirmDeletionFromRelation(Collection<RelationToChildReference> references,
+                Collection<Pair<Relation, Boolean>> parentsToDelete) {
+            // This is a default method. Ensure that all the booleans are false.
+            parentsToDelete.forEach(pair -> pair.b = false);
+            return confirmDeletionFromRelation(references);
+        }
     }
 
     private static volatile DeletionCallback callback;
@@ -192,12 +210,7 @@ public class DeleteCommand extends Command {
                 if (osm.isDeleted())
                     throw new IllegalArgumentException(osm + " is already deleted");
                 clonedPrimitives.put(osm, osm.save());
-
-                if (osm instanceof Way) {
-                    ((Way) osm).setNodes(null);
-                } else if (osm instanceof Relation) {
-                    ((Relation) osm).setMembers(null);
-                }
+                IPrimitive.resetPrimitiveChildren(osm);
             }
 
             for (OsmPrimitive osm : toDelete) {
@@ -236,7 +249,7 @@ public class DeleteCommand extends Command {
         if (toDelete.size() == 1) {
             OsmPrimitive primitive = toDelete.iterator().next();
             String msg;
-            switch(OsmPrimitiveType.from(primitive)) {
+            switch (OsmPrimitiveType.from(primitive)) {
             case NODE: msg = marktr("Delete node {0}"); break;
             case WAY: msg = marktr("Delete way {0}"); break;
             case RELATION:msg = marktr("Delete relation {0}"); break;
@@ -251,7 +264,7 @@ public class DeleteCommand extends Command {
                 msg = trn("Delete {0} object", "Delete {0} objects", toDelete.size(), toDelete.size());
             } else {
                 OsmPrimitiveType t = typesToDelete.iterator().next();
-                switch(t) {
+                switch (t) {
                 case NODE: msg = trn("Delete {0} node", "Delete {0} nodes", toDelete.size(), toDelete.size()); break;
                 case WAY: msg = trn("Delete {0} way", "Delete {0} ways", toDelete.size(), toDelete.size()); break;
                 case RELATION: msg = trn("Delete {0} relation", "Delete {0} relations", toDelete.size(), toDelete.size()); break;
@@ -299,7 +312,7 @@ public class DeleteCommand extends Command {
      * @since 12718
      */
     public static Command deleteWithReferences(Collection<? extends OsmPrimitive> selection, boolean silent) {
-        if (selection == null || selection.isEmpty()) return null;
+        if (Utils.isEmpty(selection)) return null;
         Set<OsmPrimitive> parents = OsmPrimitive.getReferrer(selection);
         parents.addAll(selection);
 
@@ -405,7 +418,7 @@ public class DeleteCommand extends Command {
      * @since 12718
      */
     public static Command delete(Collection<? extends OsmPrimitive> selection, boolean alsoDeleteNodesInWay, boolean silent) {
-        if (selection == null || selection.isEmpty())
+        if (Utils.isEmpty(selection))
             return null;
 
         Set<OsmPrimitive> primitivesToDelete = new HashSet<>(selection);
@@ -420,8 +433,7 @@ public class DeleteCommand extends Command {
             primitivesToDelete.addAll(nodesToDelete);
         }
 
-        if (!silent && !callback.checkAndConfirmOutlyingDelete(
-                primitivesToDelete, Utils.filteredCollection(primitivesToDelete, Way.class)))
+        if (!silent && !callback.checkAndConfirmOutlyingDelete(primitivesToDelete, null))
             return null;
 
         Collection<Way> waysToBeChanged = primitivesToDelete.stream()
@@ -441,25 +453,39 @@ public class DeleteCommand extends Command {
             }
         }
 
-        // get a confirmation that the objects to delete can be removed from their parent relations
-        //
-        if (!silent) {
-            Set<RelationToChildReference> references = RelationToChildReference.getRelationToChildReferences(primitivesToDelete);
-            references.removeIf(ref -> ref.getParent().isDeleted());
-            if (!references.isEmpty() && !callback.confirmDeletionFromRelation(references)) {
-                return null;
-            }
-        }
-
         // remove the objects from their parent relations
         //
         final Set<Relation> relationsToBeChanged = primitivesToDelete.stream()
                 .flatMap(p -> p.referrers(Relation.class))
                 .collect(Collectors.toSet());
+        final Set<Relation> additionalRelationsToDelete = new HashSet<>();
         for (Relation cur : relationsToBeChanged) {
             List<RelationMember> newMembers = cur.getMembers();
             cur.getMembersFor(primitivesToDelete).forEach(newMembers::remove);
             cmds.add(new ChangeMembersCommand(cur, newMembers));
+            // If we don't have any members, we probably ought to delete the relation as well.
+            if (newMembers.isEmpty()) {
+                additionalRelationsToDelete.add(cur);
+            }
+        }
+
+
+        // get a confirmation that the objects to delete can be removed from their parent relations
+        //
+        if (!silent) {
+            Set<RelationToChildReference> references = RelationToChildReference.getRelationToChildReferences(primitivesToDelete);
+            references.removeIf(ref -> ref.getParent().isDeleted());
+            final Collection<Pair<Relation, Boolean>> pairedRelations = additionalRelationsToDelete.stream()
+                    /*
+                     * Default to true, so that users have to make a choice to not delete.
+                     * Default implementation converts it to false, so this should be safe.
+                     */
+                    .map(relation -> new Pair<>(relation, true)).collect(Collectors.toSet());
+            if (!references.isEmpty() && !callback.confirmDeletionFromRelation(references, pairedRelations)) {
+                return null;
+            }
+            pairedRelations.stream().filter(pair -> Boolean.TRUE.equals(pair.b)).map(pair -> pair.a)
+                    .forEach(primitivesToDelete::add);
         }
 
         // build the delete command
@@ -478,32 +504,32 @@ public class DeleteCommand extends Command {
      * @since 12718
      */
     public static Command deleteWaySegment(WaySegment ws) {
-        if (ws.way.getNodesCount() < 3)
-            return delete(Collections.singleton(ws.way), false);
+        if (ws.getWay().getNodesCount() < 3)
+            return delete(Collections.singleton(ws.getWay()), false);
 
-        if (ws.way.isClosed()) {
-            // If the way is circular (first and last nodes are the same), the way shouldn't be splitted
+        if (ws.getWay().isClosed()) {
+            // If the way is circular (first and last nodes are the same), the way shouldn't be split
 
             List<Node> n = new ArrayList<>();
 
-            n.addAll(ws.way.getNodes().subList(ws.lowerIndex + 1, ws.way.getNodesCount() - 1));
-            n.addAll(ws.way.getNodes().subList(0, ws.lowerIndex + 1));
+            n.addAll(ws.getWay().getNodes().subList(ws.getUpperIndex(), ws.getWay().getNodesCount() - 1));
+            n.addAll(ws.getWay().getNodes().subList(0, ws.getUpperIndex()));
 
-            return new ChangeNodesCommand(ws.way, n);
+            return new ChangeNodesCommand(ws.getWay(), n);
         }
 
         List<Node> n1 = new ArrayList<>();
         List<Node> n2 = new ArrayList<>();
 
-        n1.addAll(ws.way.getNodes().subList(0, ws.lowerIndex + 1));
-        n2.addAll(ws.way.getNodes().subList(ws.lowerIndex + 1, ws.way.getNodesCount()));
+        n1.addAll(ws.getWay().getNodes().subList(0, ws.getUpperIndex()));
+        n2.addAll(ws.getWay().getNodes().subList(ws.getUpperIndex(), ws.getWay().getNodesCount()));
 
         if (n1.size() < 2) {
-            return new ChangeNodesCommand(ws.way, n2);
+            return new ChangeNodesCommand(ws.getWay(), n2);
         } else if (n2.size() < 2) {
-            return new ChangeNodesCommand(ws.way, n1);
+            return new ChangeNodesCommand(ws.getWay(), n1);
         } else {
-            return SplitWayCommand.splitWay(ws.way, Arrays.asList(n1, n2), Collections.<OsmPrimitive>emptyList());
+            return SplitWayCommand.splitWay(ws.getWay(), Arrays.asList(n1, n2), Collections.<OsmPrimitive>emptyList());
         }
     }
 

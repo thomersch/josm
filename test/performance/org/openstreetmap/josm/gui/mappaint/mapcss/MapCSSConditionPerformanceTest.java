@@ -3,20 +3,22 @@ package org.openstreetmap.josm.gui.mappaint.mapcss;
 
 import java.util.EnumSet;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.PerformanceTestUtils;
 import org.openstreetmap.josm.gui.mappaint.mapcss.ConditionFactory.Op;
+import org.openstreetmap.josm.testutils.annotations.PerformanceTest;
 
 /**
  * Performance test of MapCSS Condition objects.
  * @author Michael Zangl
  */
-public class MapCSSConditionPerformanceTest {
+@PerformanceTest
+class MapCSSConditionPerformanceTest {
     /**
      * Test the performance of all OP entries.
      */
     @Test
-    public void testAllOps() {
+    void testAllOps() {
         // The JIT does some really heavy optimisations if it notices that other values are not used.
         // If we want to simulate a real scenario, we need to invoke every op several times to let the compiler
         // build the jump tables.

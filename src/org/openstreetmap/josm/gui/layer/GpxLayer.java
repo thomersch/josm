@@ -9,11 +9,10 @@ import java.awt.Dimension;
 import java.awt.Graphics2D;
 import java.awt.event.ActionEvent;
 import java.io.File;
-import java.text.DateFormat;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.Date;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.stream.Collectors;
@@ -34,7 +33,9 @@ import org.openstreetmap.josm.data.Data;
 import org.openstreetmap.josm.data.SystemOfMeasurement;
 import org.openstreetmap.josm.data.gpx.GpxConstants;
 import org.openstreetmap.josm.data.gpx.GpxData;
+import org.openstreetmap.josm.data.gpx.GpxData.GpxDataChangeEvent;
 import org.openstreetmap.josm.data.gpx.GpxData.GpxDataChangeListener;
+import org.openstreetmap.josm.data.gpx.GpxDataContainer;
 import org.openstreetmap.josm.data.gpx.IGpxTrack;
 import org.openstreetmap.josm.data.gpx.IGpxTrackSegment;
 import org.openstreetmap.josm.data.osm.visitor.BoundingXYVisitor;
@@ -58,16 +59,17 @@ import org.openstreetmap.josm.gui.layer.gpx.ImportImagesAction;
 import org.openstreetmap.josm.gui.layer.gpx.MarkersFromNamedPointsAction;
 import org.openstreetmap.josm.gui.layer.markerlayer.MarkerLayer;
 import org.openstreetmap.josm.gui.preferences.display.GPXSettingsPanel;
+import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.widgets.HtmlPanel;
 import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.Utils;
-import org.openstreetmap.josm.tools.date.DateUtils;
+import org.openstreetmap.josm.tools.date.Interval;
 
 /**
  * A layer that displays data from a Gpx file / the OSM gpx downloads.
  */
-public class GpxLayer extends AbstractModifiableLayer implements ExpertModeChangeListener, JumpToMarkerLayer {
+public class GpxLayer extends AbstractModifiableLayer implements GpxDataContainer, ExpertModeChangeListener, JumpToMarkerLayer {
 
     /** GPX data */
     public GpxData data;
@@ -76,16 +78,26 @@ public class GpxLayer extends AbstractModifiableLayer implements ExpertModeChang
 
     /**
      * used by {@link ChooseTrackVisibilityAction} to determine which tracks to show/hide
-     *
+     * <p>
      * Call {@link #invalidate()} after each change!
-     *
+     * <p>
      * TODO: Make it private, make it respond to track changes.
      */
     public boolean[] trackVisibility = new boolean[0];
     /**
      * Added as field to be kept as reference.
      */
-    private final GpxDataChangeListener dataChangeListener = e -> this.invalidate();
+    private final GpxDataChangeListener dataChangeListener = new GpxDataChangeListener() {
+        @Override
+        public void gpxDataChanged(GpxDataChangeEvent e) {
+            invalidate();
+        }
+
+        @Override
+        public void modifiedStateChanged(boolean modified) {
+            GuiHelper.runInEDT(() -> propertyChangeSupport.firePropertyChange(REQUIRES_SAVE_TO_DISK_PROP, !modified, modified));
+        }
+    };
     /**
      * The MarkerLayer imported from the same file.
      */
@@ -131,7 +143,9 @@ public class GpxLayer extends AbstractModifiableLayer implements ExpertModeChang
 
     @Override
     public Color getColor() {
-        Color[] c = data.getTracks().stream().map(t -> t.getColor()).distinct().toArray(Color[]::new);
+        if (data == null)
+            return null;
+        Color[] c = data.getTracks().stream().map(IGpxTrack::getColor).distinct().toArray(Color[]::new);
         return c.length == 1 ? c[0] : null; //only return if exactly one distinct color present
     }
 
@@ -147,7 +161,7 @@ public class GpxLayer extends AbstractModifiableLayer implements ExpertModeChang
 
     @Override
     public boolean hasColor() {
-        return true;
+        return data != null;
     }
 
     /**
@@ -156,33 +170,7 @@ public class GpxLayer extends AbstractModifiableLayer implements ExpertModeChang
      * @return The timespan as a string
      */
     public static String getTimespanForTrack(IGpxTrack trk) {
-        Date[] bounds = GpxData.getMinMaxTimeForTrack(trk);
-        return bounds != null ? formatTimespan(bounds) : "";
-    }
-
-    /**
-     * Formats the timespan of the given track as a human readable string
-     * @param bounds The bounds to format, i.e., an array containing the min/max date
-     * @return The timespan as a string
-     */
-    public static String formatTimespan(Date[] bounds) {
-        String ts = "";
-        DateFormat df = DateUtils.getDateFormat(DateFormat.SHORT);
-        String earliestDate = df.format(bounds[0]);
-        String latestDate = df.format(bounds[1]);
-
-        if (earliestDate.equals(latestDate)) {
-            DateFormat tf = DateUtils.getTimeFormat(DateFormat.SHORT);
-            ts += earliestDate + ' ';
-            ts += tf.format(bounds[0]) + " - " + tf.format(bounds[1]);
-        } else {
-            DateFormat dtf = DateUtils.getDateTimeFormat(DateFormat.SHORT, DateFormat.MEDIUM);
-            ts += dtf.format(bounds[0]) + " - " + dtf.format(bounds[1]);
-        }
-
-        int diff = (int) (bounds[1].getTime() - bounds[0].getTime()) / 1000;
-        ts += String.format(" (%d:%02d)", diff / 3600, (diff % 3600) / 60);
-        return ts;
+        return GpxData.getMinMaxTimeForTrack(trk).map(Interval::format).orElse("");
     }
 
     @Override
@@ -195,6 +183,19 @@ public class GpxLayer extends AbstractModifiableLayer implements ExpertModeChang
         StringBuilder info = new StringBuilder(128)
                 .append("<html><head><style>td { padding: 4px 16px; }</style></head><body>");
 
+        if (data != null) {
+            fillDataInfoComponent(info);
+        }
+
+        info.append("<br></body></html>");
+
+        final JScrollPane sp = new JScrollPane(new HtmlPanel(info.toString()));
+        sp.setPreferredSize(new Dimension(sp.getPreferredSize().width+20, 370));
+        SwingUtilities.invokeLater(() -> sp.getVerticalScrollBar().setValue(0));
+        return sp;
+    }
+
+    private void fillDataInfoComponent(StringBuilder info) {
         if (data.attr.containsKey("name")) {
             info.append(tr("Name: {0}", data.get(GpxConstants.META_NAME))).append("<br>");
         }
@@ -208,30 +209,31 @@ public class GpxLayer extends AbstractModifiableLayer implements ExpertModeChang
         }
 
         if (!data.getTracks().isEmpty()) {
+            String tdSep = "</td><td>";
             info.append("<table><thead align='center'><tr><td colspan='5'>")
                 .append(trn("{0} track, {1} track segments", "{0} tracks, {1} track segments",
                         data.getTrackCount(), data.getTrackCount(),
                         data.getTrackSegsCount(), data.getTrackSegsCount()))
                 .append("</td></tr><tr align='center'><td>").append(tr("Name"))
-                .append("</td><td>").append(tr("Description"))
-                .append("</td><td>").append(tr("Timespan"))
-                .append("</td><td>").append(tr("Length"))
-                .append("</td><td>").append(tr("Number of<br/>Segments"))
-                .append("</td><td>").append(tr("URL"))
+                .append(tdSep).append(tr("Description"))
+                .append(tdSep).append(tr("Timespan"))
+                .append(tdSep).append(tr("Length"))
+                .append(tdSep).append(tr("Number of<br/>Segments"))
+                .append(tdSep).append(tr("URL"))
                 .append("</td></tr></thead>");
 
             for (IGpxTrack trk : data.getTracks()) {
-                info.append("<tr><td>");
-                info.append(trk.getAttributes().getOrDefault(GpxConstants.GPX_NAME, ""));
-                info.append("</td><td>");
-                info.append(trk.getAttributes().getOrDefault(GpxConstants.GPX_DESC, ""));
-                info.append("</td><td>");
-                info.append(getTimespanForTrack(trk));
-                info.append("</td><td>");
-                info.append(SystemOfMeasurement.getSystemOfMeasurement().getDistText(trk.length()));
-                info.append("</td><td>");
-                info.append(trk.getSegments().size());
-                info.append("</td><td>");
+                info.append("<tr><td>")
+                    .append(trk.getAttributes().getOrDefault(GpxConstants.GPX_NAME, ""))
+                    .append(tdSep)
+                    .append(trk.getAttributes().getOrDefault(GpxConstants.GPX_DESC, ""))
+                    .append(tdSep)
+                    .append(getTimespanForTrack(trk))
+                    .append(tdSep)
+                    .append(SystemOfMeasurement.getSystemOfMeasurement().getDistText(trk.length()))
+                    .append(tdSep)
+                    .append(trk.getSegments().size())
+                    .append(tdSep);
                 if (trk.getAttributes().containsKey("url")) {
                     info.append(trk.get("url"));
                 }
@@ -242,13 +244,7 @@ public class GpxLayer extends AbstractModifiableLayer implements ExpertModeChang
 
         info.append(tr("Length: {0}", SystemOfMeasurement.getSystemOfMeasurement().getDistText(data.length()))).append("<br>")
             .append(trn("{0} route, ", "{0} routes, ", data.getRoutes().size(), data.getRoutes().size()))
-            .append(trn("{0} waypoint", "{0} waypoints", data.getWaypoints().size(), data.getWaypoints().size()))
-            .append("<br></body></html>");
-
-        final JScrollPane sp = new JScrollPane(new HtmlPanel(info.toString()));
-        sp.setPreferredSize(new Dimension(sp.getPreferredSize().width+20, 370));
-        SwingUtilities.invokeLater(() -> sp.getVerticalScrollBar().setValue(0));
-        return sp;
+            .append(trn("{0} waypoint", "{0} waypoints", data.getWaypoints().size(), data.getWaypoints().size()));
     }
 
     @Override
@@ -291,7 +287,7 @@ public class GpxLayer extends AbstractModifiableLayer implements ExpertModeChang
 
         if (isExpertMode && expert.stream().anyMatch(Action::isEnabled)) {
             entries.add(SeparatorLayerAction.INSTANCE);
-            expert.stream().filter(Action::isEnabled).forEach(entries::add);
+            entries.addAll(expert.stream().filter(Action::isEnabled).collect(Collectors.toList()));
         }
 
         entries.add(SeparatorLayerAction.INSTANCE);
@@ -311,6 +307,16 @@ public class GpxLayer extends AbstractModifiableLayer implements ExpertModeChang
     public String getToolTipText() {
         StringBuilder info = new StringBuilder(48).append("<html>");
 
+        if (data != null) {
+            fillDataToolTipText(info);
+        }
+
+        info.append("<br></html>");
+
+        return info.toString();
+    }
+
+    private void fillDataToolTipText(StringBuilder info) {
         if (data.attr.containsKey(GpxConstants.META_NAME)) {
             info.append(tr("Name: {0}", data.get(GpxConstants.META_NAME))).append("<br>");
         }
@@ -332,15 +338,11 @@ public class GpxLayer extends AbstractModifiableLayer implements ExpertModeChang
                         .map(e -> e.getKey() + "=" + e.getValue())
                         .collect(Collectors.joining("<br>")));
         }
-
-        info.append("<br></html>");
-
-        return info.toString();
     }
 
     @Override
     public boolean isMergable(Layer other) {
-        return other instanceof GpxLayer;
+        return data != null && other instanceof GpxLayer;
     }
 
     /**
@@ -349,15 +351,17 @@ public class GpxLayer extends AbstractModifiableLayer implements ExpertModeChang
      * @param toDate The max date
      * @param showWithoutDate Include tracks that don't have any date set..
      */
-    public void filterTracksByDate(Date fromDate, Date toDate, boolean showWithoutDate) {
+    public void filterTracksByDate(Instant fromDate, Instant toDate, boolean showWithoutDate) {
+        if (data == null)
+            return;
         int i = 0;
-        long from = fromDate.getTime();
-        long to = toDate.getTime();
+        long from = fromDate.toEpochMilli();
+        long to = toDate.toEpochMilli();
         for (IGpxTrack trk : data.getTracks()) {
-            Date[] t = GpxData.getMinMaxTimeForTrack(trk);
+            Interval t = GpxData.getMinMaxTimeForTrack(trk).orElse(null);
 
             if (t == null) continue;
-            long tm = t[1].getTime();
+            long tm = t.getEnd().toEpochMilli();
             trackVisibility[i] = (tm == 0 && showWithoutDate) || (from <= tm && tm <= to);
             i++;
         }
@@ -384,13 +388,20 @@ public class GpxLayer extends AbstractModifiableLayer implements ExpertModeChang
     }
 
     @Override
+    public String getLabel() {
+        return isDirty() ? super.getLabel() + ' ' + IS_DIRTY_SYMBOL : super.getLabel();
+    }
+
+    @Override
     public void visitBoundingBox(BoundingXYVisitor v) {
-        v.visit(data.recalculateBounds());
+        if (data != null) {
+            v.visit(data.recalculateBounds());
+        }
     }
 
     @Override
     public File getAssociatedFile() {
-        return data.storageFile;
+        return data != null ? data.storageFile : null;
     }
 
     @Override
@@ -418,13 +429,13 @@ public class GpxLayer extends AbstractModifiableLayer implements ExpertModeChang
 
     @Override
     public void projectionChanged(Projection oldValue, Projection newValue) {
-        if (newValue == null) return;
+        if (newValue == null || data == null) return;
         data.resetEastNorthCache();
     }
 
     @Override
     public boolean isSavable() {
-        return true; // With GpxExporter
+        return data != null; // With GpxExporter
     }
 
     @Override
@@ -556,12 +567,12 @@ public class GpxLayer extends AbstractModifiableLayer implements ExpertModeChang
 
     @Override
     public boolean isModified() {
-        return data.isModified();
+        return data != null && data.isModified();
     }
 
     @Override
     public boolean requiresSaveToFile() {
-        return isModified() && isLocalFile();
+        return data != null && isModified() && (isLocalFile() || data.fromSession);
     }
 
     @Override
@@ -582,13 +593,19 @@ public class GpxLayer extends AbstractModifiableLayer implements ExpertModeChang
         return data;
     }
 
+    @Override
+    public GpxData getGpxData() {
+        return data;
+    }
+
     /**
      * Jump (move the viewport) to the next track segment.
      */
     @Override
     public void jumpToNextMarker() {
-        List<IGpxTrackSegment> segments = data.getTrackSegmentsStream().collect(Collectors.toList());
-        jumpToNext(segments);
+        if (data != null) {
+            jumpToNext(data.getTrackSegmentsStream().collect(Collectors.toList()));
+        }
     }
 
     /**
@@ -596,25 +613,35 @@ public class GpxLayer extends AbstractModifiableLayer implements ExpertModeChang
      */
     @Override
     public void jumpToPreviousMarker() {
-        List<IGpxTrackSegment> segments = data.getTrackSegmentsStream().collect(Collectors.toList());
-        Collections.reverse(segments);
-        jumpToNext(segments);
+        if (data != null) {
+            List<IGpxTrackSegment> segments = data.getTrackSegmentsStream().collect(Collectors.toList());
+            Collections.reverse(segments);
+            jumpToNext(segments);
+        }
     }
 
     private void jumpToNext(List<IGpxTrackSegment> segments) {
-        if (segments.isEmpty()) {
-            return;
-        } else if (currentSegment == null) {
+        if (!segments.isEmpty() && currentSegment == null) {
             currentSegment = segments.get(0);
             MainApplication.getMap().mapView.zoomTo(currentSegment.getBounds());
-        } else {
+        } else if (!segments.isEmpty()) {
             try {
                 int index = segments.indexOf(currentSegment);
                 currentSegment = segments.listIterator(index + 1).next();
                 MainApplication.getMap().mapView.zoomTo(currentSegment.getBounds());
-            } catch (IndexOutOfBoundsException | NoSuchElementException ignore) {
-                Logging.trace(ignore);
+            } catch (IndexOutOfBoundsException | NoSuchElementException exception) {
+                Logging.trace(exception);
             }
         }
+    }
+
+    @Override
+    public synchronized void destroy() {
+        if (linkedMarkerLayer != null && MainApplication.getLayerManager().containsLayer(linkedMarkerLayer)) {
+            linkedMarkerLayer.data.transferLayerPrefs(data.getLayerPrefs());
+        }
+        data.clear();
+        data = null;
+        super.destroy();
     }
 }

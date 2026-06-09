@@ -1,31 +1,19 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.osm.event;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests of {@link TagsChangedEvent} class.
  */
-public class TagsChangedEventTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+class TagsChangedEventTest {
     /**
      * Unit test of {@link TagsChangedEvent#toString}.
      */
     @Test
-    public void testToString() {
+    void testToString() {
         assertEquals("TAGS_CHANGED", new TagsChangedEvent(null, null, null).toString());
     }
 }

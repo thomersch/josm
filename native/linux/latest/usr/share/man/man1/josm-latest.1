@@ -1,4 +1,4 @@
-.TH JOSM 1 "July 21, 2016"
+.TH JOSM 1 "March 22, 2021"
 .\" Please adjust this date whenever revising the manpage.
 .SH NAME
 josm \- Java OpenStreetMap Editor
@@ -56,6 +56,9 @@ Set the language
 .B \-\-version
 Display the JOSM version
 .TP
+.B \-\-status-report
+Show status report with useful information that can be attached to bugs
+.TP
 .B \-\-debug
 Print debugging messages to console
 .TP
@@ -90,7 +93,7 @@ Set the JOSM cache directory.
 .B josm.home=<homedir>
 Relocate all 3 directories to homedir. Cache directory will be in <homedir>/cache.
 .TP
-.B josm.name=<JOSM-latest>
+.B josm.dir.name=<JOSM-latest>
 Change the JOSM directory name.
 .SH ENVIRONMENT
 .IP JAVA_HOME

@@ -35,16 +35,16 @@ public enum OnlineResource {
      * Replies the localized name.
      * @return the localized name
      */
-    public final String getLocName() {
+    public String getLocName() {
         return locName;
     }
-    
+
     /**
      * Replies the offline icon.
      * @return the offline icon
      * @since 17041
      */
-    public final String getOfflineIcon() {
+    public String getOfflineIcon() {
         switch (this) {
             case OSM_API:
                 return /* ICON() */ "offline_osm_api";
@@ -56,9 +56,8 @@ public enum OnlineResource {
                 return /* ICON() */ "offline_certificates";
             case ALL:
                 return /* ICON() */ "offline_all";
-            default:
-                return null;
         }
+        return null;
     }
 
     /**
@@ -66,7 +65,7 @@ public enum OnlineResource {
      * @param url the URL to check
      * @return whether the given URL matches this online resource
      */
-    public final boolean matches(String url) {
+    public boolean matches(String url) {
         final String baseUrl;
         switch (this) {
             case ALL:
@@ -81,19 +80,5 @@ public enum OnlineResource {
                 return false;
         }
         return url.startsWith(baseUrl.substring(baseUrl.indexOf("://")), url.indexOf("://"));
-    }
-
-    /**
-     * Ensures resource is not accessed in offline mode.
-     * @param downloadString The attempted download string
-     * @param ignore ignored
-     * @throws OfflineAccessException if resource is accessed in offline mode, in any protocol
-     * @deprecated use {@link NetworkManager#isOffline(String)}
-     */
-    @Deprecated
-    public final void checkOfflineAccess(String downloadString, String ignore) {
-        if (NetworkManager.isOffline(downloadString)) {
-            throw OfflineAccessException.forResource(downloadString);
-        }
     }
 }

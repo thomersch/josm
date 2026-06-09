@@ -1,13 +1,15 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.osm;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.openstreetmap.josm.data.Data;
 import org.openstreetmap.josm.data.DataSource;
@@ -18,6 +20,7 @@ import org.openstreetmap.josm.data.notes.Note.State;
 import org.openstreetmap.josm.data.notes.NoteComment;
 import org.openstreetmap.josm.tools.ListenerList;
 import org.openstreetmap.josm.tools.Logging;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * Class to hold and perform operations on a set of notes
@@ -50,6 +53,8 @@ public class NoteData implements Data {
     private Comparator<Note> comparator = Note.DEFAULT_COMPARATOR;
 
     private final ListenerList<NoteDataUpdateListener> listeners = ListenerList.create();
+
+    private final Set<DataSource> dataSourceSet = new HashSet<>();
 
     /**
      * Construct a new note container without notes
@@ -138,6 +143,7 @@ public class NoteData implements Data {
     public synchronized void mergeFrom(NoteData from) {
         if (this != from) {
             addNotes(from.noteList);
+            from.getDataSources().forEach(this::addDataSource);
         }
     }
 
@@ -172,14 +178,14 @@ public class NoteData implements Data {
      * @param text Required comment with which to open the note
      */
     public synchronized void createNote(LatLon location, String text) {
-        if (text == null || text.isEmpty()) {
+        if (Utils.isEmpty(text)) {
             throw new IllegalArgumentException("Comment can not be blank when creating a note");
         }
         Note note = new Note(location);
-        note.setCreatedAt(new Date());
+        note.setCreatedAt(Instant.now());
         note.setState(State.OPEN);
         note.setId(newNoteId--);
-        NoteComment comment = new NoteComment(new Date(), getCurrentUser(), text, NoteComment.Action.OPENED, true);
+        NoteComment comment = new NoteComment(Instant.now(), getCurrentUser(), text, NoteComment.Action.OPENED, true);
         note.addComment(comment);
         if (Logging.isDebugEnabled()) {
             Logging.debug("Created note {0} with comment: {1}", note.getId(), text);
@@ -203,7 +209,7 @@ public class NoteData implements Data {
         if (Logging.isDebugEnabled()) {
             Logging.debug("Adding comment to note {0}: {1}", note.getId(), text);
         }
-        NoteComment comment = new NoteComment(new Date(), getCurrentUser(), text, NoteComment.Action.COMMENTED, true);
+        NoteComment comment = new NoteComment(Instant.now(), getCurrentUser(), text, NoteComment.Action.COMMENTED, true);
         note.addComment(comment);
         dataUpdated();
     }
@@ -223,10 +229,10 @@ public class NoteData implements Data {
         if (Logging.isDebugEnabled()) {
             Logging.debug("closing note {0} with comment: {1}", note.getId(), text);
         }
-        NoteComment comment = new NoteComment(new Date(), getCurrentUser(), text, NoteComment.Action.CLOSED, true);
-        note.addComment(comment);
+        Instant now = Instant.now();
+        note.addComment(new NoteComment(now, getCurrentUser(), text, NoteComment.Action.CLOSED, true));
         note.setState(State.CLOSED);
-        note.setClosedAt(new Date());
+        note.setClosedAt(now);
         dataUpdated();
     }
 
@@ -243,7 +249,7 @@ public class NoteData implements Data {
             throw new IllegalStateException("Cannot reopen a note that isn't closed");
         }
         Logging.debug("reopening note {0} with comment: {1}", note.getId(), text);
-        NoteComment comment = new NoteComment(new Date(), getCurrentUser(), text, NoteComment.Action.REOPENED, true);
+        NoteComment comment = new NoteComment(Instant.now(), getCurrentUser(), text, NoteComment.Action.REOPENED, true);
         note.addComment(comment);
         note.setState(State.OPEN);
         dataUpdated();
@@ -254,8 +260,7 @@ public class NoteData implements Data {
     }
 
     private static User getCurrentUser() {
-        UserIdentityManager userMgr = UserIdentityManager.getInstance();
-        return User.createOsmUser(userMgr.getUserId(), userMgr.getUserName());
+        return UserIdentityManager.getInstance().asUser();
     }
 
     /**
@@ -314,6 +319,16 @@ public class NoteData implements Data {
 
     @Override
     public Collection<DataSource> getDataSources() {
-        return Collections.emptyList(); // Notes don't currently store data sources
+        return Collections.unmodifiableSet(this.dataSourceSet);
+    }
+
+    /**
+     * Adds a new data source.
+     * @param source data source to add
+     * @return {@code true} if the collection changed as a result of the call
+     * @since 18868
+     */
+    public synchronized boolean addDataSource(DataSource source) {
+        return this.dataSourceSet.add(source);
     }
 }

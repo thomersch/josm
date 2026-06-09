@@ -11,7 +11,7 @@ import java.util.Queue;
  */
 public abstract class AbstractProgressMonitor implements ProgressMonitor {
 
-    private static class Request {
+    private static final class Request {
         private AbstractProgressMonitor originator;
         private int childTicks;
         private double currentValue;
@@ -233,6 +233,10 @@ public abstract class AbstractProgressMonitor implements ProgressMonitor {
      * Ticks handling
     ==================*/
 
+    /**
+     * Update progress message
+     * @param value The percentage of completion (this and child progress)
+     */
     protected abstract void updateProgress(double value);
 
     @Override

@@ -13,12 +13,12 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-import javax.swing.AbstractAction;
 import javax.swing.AbstractListModel;
 import javax.swing.DefaultListSelectionModel;
 import javax.swing.FocusManager;
@@ -35,6 +35,7 @@ import javax.swing.event.PopupMenuListener;
 
 import org.openstreetmap.josm.actions.ExpertToggleAction;
 import org.openstreetmap.josm.actions.HistoryInfoAction;
+import org.openstreetmap.josm.actions.JosmAction;
 import org.openstreetmap.josm.actions.relation.AddSelectionToRelations;
 import org.openstreetmap.josm.actions.relation.DeleteRelationsAction;
 import org.openstreetmap.josm.actions.relation.DuplicateRelationAction;
@@ -84,10 +85,10 @@ import org.openstreetmap.josm.gui.util.HighlightHelper;
 import org.openstreetmap.josm.gui.util.TableHelper;
 import org.openstreetmap.josm.gui.widgets.CompileSearchTextDecorator;
 import org.openstreetmap.josm.gui.widgets.DisableShortcutsOnFocusGainedTextField;
+import org.openstreetmap.josm.gui.widgets.FilterField;
 import org.openstreetmap.josm.gui.widgets.JosmTextField;
 import org.openstreetmap.josm.gui.widgets.PopupMenuLauncher;
 import org.openstreetmap.josm.spi.preferences.Config;
-import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.InputMapUtils;
 import org.openstreetmap.josm.tools.PlatformManager;
 import org.openstreetmap.josm.tools.Shortcut;
@@ -211,6 +212,7 @@ public class RelationListDialog extends ToggleDialog
     public void destroy() {
         recentRelationsAction.destroy();
         popupMenuHandler.setPrimitives(Collections.emptyList());
+        selectRelationAction.setPrimitives(Collections.emptyList());
         model.clear();
         super.destroy();
     }
@@ -305,7 +307,7 @@ public class RelationListDialog extends ToggleDialog
      * @since 13957 (signature)
      */
     public void selectRelations(Collection<? extends IRelation<?>> relations) {
-        if (relations == null || relations.isEmpty()) {
+        if (Utils.isEmpty(relations)) {
             model.setSelectedRelations(null);
         } else {
             model.setSelectedRelations(relations);
@@ -320,6 +322,7 @@ public class RelationListDialog extends ToggleDialog
 
     private JosmTextField setupFilter() {
         final JosmTextField f = new DisableShortcutsOnFocusGainedTextField();
+        FilterField.setSearchIcon(f);
         f.setToolTipText(tr("Relation list filter"));
         final CompileSearchTextDecorator decorator = CompileSearchTextDecorator.decorate(f);
         f.addPropertyChangeListener("filter", evt -> model.setFilter(decorator.getMatch()));
@@ -372,14 +375,17 @@ public class RelationListDialog extends ToggleDialog
     /**
      * The action for creating a new relation.
      */
-    static class NewAction extends AbstractAction implements LayerChangeListener, ActiveLayerChangeListener {
+    static class NewAction extends JosmAction implements LayerChangeListener, ActiveLayerChangeListener {
         NewAction() {
-            putValue(SHORT_DESCRIPTION, tr("Create a new relation"));
-            putValue(NAME, tr("New"));
-            new ImageProvider("dialogs", "add").getResource().attachImageIcon(this, true);
+            super(tr("New"), "dialogs/add", tr("Create a new relation"),
+                    Shortcut.registerShortcut("relation:new", tr("Create a new relation"), KeyEvent.VK_UNDEFINED, Shortcut.NONE),
+                    false, false);
             updateEnabledState();
         }
 
+        /**
+         * Make a new relation
+         */
         public void run() {
             RelationEditor.getEditor(MainApplication.getLayerManager().getEditLayer(), null, null).setVisible(true);
         }
@@ -389,6 +395,7 @@ public class RelationListDialog extends ToggleDialog
             run();
         }
 
+        @Override
         protected void updateEnabledState() {
             setEnabled(MainApplication.getLayerManager().getEditLayer() != null);
         }
@@ -510,7 +517,7 @@ public class RelationListDialog extends ToggleDialog
             if (removedPrimitives == null) return;
             // extract the removed relations
             Set<Relation> removedRelations = removedPrimitives.stream()
-                    .filter(p -> p instanceof Relation).map(p -> (Relation) p)
+                    .filter(Relation.class::isInstance).map(Relation.class::cast)
                     .collect(Collectors.toSet());
             if (removedRelations.isEmpty())
                 return;
@@ -584,8 +591,8 @@ public class RelationListDialog extends ToggleDialog
          * @since 13957 (signature)
          */
         public void setSelectedRelations(Collection<? extends IRelation<?>> sel) {
-            if (sel != null && !sel.isEmpty()) {
-                if (!getVisibleRelations().containsAll(sel)) {
+            if (!Utils.isEmpty(sel)) {
+                if (!new HashSet<>(getVisibleRelations()).containsAll(sel)) {
                     resetFilter();
                 }
                 TableHelper.setSelectedIndices(selectionModel, sel.stream().mapToInt(getVisibleRelations()::indexOf));
@@ -594,6 +601,9 @@ public class RelationListDialog extends ToggleDialog
             }
         }
 
+        /**
+         * Update the title for the relation list dialog
+         */
         public void updateTitle() {
             if (!relations.isEmpty() && relations.size() != getSize()) {
                 RelationListDialog.this.setTitle(tr("Relations: {0}/{1}", getSize(), relations.size()));
@@ -726,7 +736,13 @@ public class RelationListDialog extends ToggleDialog
 
     @Override
     public void dataChanged(DataChangedEvent event) {
-        initFromData(MainApplication.getLayerManager().getActiveData());
+        // I have no clue how it would be empty, but just in case use the original code.
+        // {@code null} is used during initialization
+        if (event == null || Utils.isEmpty(event.getEvents())) {
+            initFromData(MainApplication.getLayerManager().getActiveData());
+        } else {
+            dataChangedIndividualEvents(event);
+        }
     }
 
     @Override

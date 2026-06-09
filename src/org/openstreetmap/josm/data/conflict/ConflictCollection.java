@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import org.openstreetmap.josm.data.osm.Node;
@@ -136,17 +137,6 @@ public class ConflictCollection implements Iterable<Conflict<? extends OsmPrimit
     }
 
     /**
-     * removes the conflict registered for {@link OsmPrimitive} <code>my</code> if any
-     *
-     * @param my  the primitive
-     * @deprecated use {@link #removeForMy(OsmPrimitive)}
-     */
-    @Deprecated
-    public void remove(OsmPrimitive my) {
-        removeForMy(my);
-    }
-
-    /**
      * Replies the conflict for the {@link OsmPrimitive} <code>my</code>, null
      * if no such conflict exists.
      *
@@ -155,6 +145,9 @@ public class ConflictCollection implements Iterable<Conflict<? extends OsmPrimit
      * if no such conflict exists.
      */
     public Conflict<?> getConflictForMy(OsmPrimitive my) {
+        if (conflicts.isEmpty()) {
+            return null;
+        }
         return conflicts.stream()
                 .filter(c -> c.isMatchingMy(my))
                 .findFirst()
@@ -170,6 +163,9 @@ public class ConflictCollection implements Iterable<Conflict<? extends OsmPrimit
      * if no such conflict exists.
      */
     public Conflict<?> getConflictForTheir(OsmPrimitive their) {
+        if (conflicts.isEmpty()) {
+            return null;
+        }
         return conflicts.stream()
                 .filter(c -> c.isMatchingTheir(their))
                 .findFirst()
@@ -326,8 +322,8 @@ public class ConflictCollection implements Iterable<Conflict<? extends OsmPrimit
     }
 
     /**
-     * Returns the list of conflicts involving nodes.
-     * @return The list of conflicts involving nodes.
+     * Returns the list of conflicts involving ways.
+     * @return The list of conflicts involving ways.
      * @since 6555
      */
     public final Collection<Conflict<? extends OsmPrimitive>> getWayConflicts() {
@@ -335,12 +331,43 @@ public class ConflictCollection implements Iterable<Conflict<? extends OsmPrimit
     }
 
     /**
-     * Returns the list of conflicts involving nodes.
-     * @return The list of conflicts involving nodes.
+     * Returns the list of conflicts involving relations.
+     * @return The list of conflicts involving relations.
      * @since 6555
      */
     public final Collection<Conflict<? extends OsmPrimitive>> getRelationConflicts() {
         return SubclassFilteredCollection.filter(conflicts, c -> c != null && c.getMy() instanceof Relation);
+    }
+
+    /**
+     * Returns the number of conflicts involving nodes.
+     * @return The number of conflicts involving nodes.
+     * @since 17524
+     */
+    public final long getNumberOfNodeConflicts() {
+        return getNumberOfConflicts(c -> c.getMy() instanceof Node);
+    }
+
+    /**
+     * Returns the number of conflicts involving nodes.
+     * @return The number of conflicts involving nodes.
+     * @since 17524
+     */
+    public final long getNumberOfWayConflicts() {
+        return getNumberOfConflicts(c -> c.getMy() instanceof Way);
+    }
+
+    /**
+     * Returns the number of conflicts involving nodes.
+     * @return The number of conflicts involving nodes.
+     * @since 17524
+     */
+    public final long getNumberOfRelationConflicts() {
+        return getNumberOfConflicts(c -> c.getMy() instanceof Relation);
+    }
+
+    private long getNumberOfConflicts(Predicate<Conflict<?>> predicate) {
+        return conflicts.isEmpty() ? 0 : conflicts.stream().filter(Objects::nonNull).filter(predicate).count();
     }
 
     @Override

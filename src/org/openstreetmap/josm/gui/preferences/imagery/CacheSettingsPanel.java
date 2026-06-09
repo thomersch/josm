@@ -3,17 +3,18 @@ package org.openstreetmap.josm.gui.preferences.imagery;
 
 import static org.openstreetmap.josm.tools.I18n.tr;
 
+import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.event.ActionEvent;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 import javax.swing.AbstractAction;
 import javax.swing.JLabel;
@@ -27,6 +28,7 @@ import javax.swing.table.TableColumn;
 import javax.swing.table.TableModel;
 
 import org.apache.commons.jcs3.access.CacheAccess;
+import org.apache.commons.jcs3.engine.behavior.ICache;
 import org.apache.commons.jcs3.engine.stats.behavior.ICacheStats;
 import org.apache.commons.jcs3.engine.stats.behavior.IStatElement;
 import org.apache.commons.jcs3.engine.stats.behavior.IStats;
@@ -38,6 +40,7 @@ import org.openstreetmap.josm.gui.layer.AbstractCachedTileSourceLayer;
 import org.openstreetmap.josm.gui.layer.TMSLayer;
 import org.openstreetmap.josm.gui.layer.WMSLayer;
 import org.openstreetmap.josm.gui.layer.WMTSLayer;
+import org.openstreetmap.josm.gui.layer.imagery.MVTLayer;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.util.TableHelper;
 import org.openstreetmap.josm.gui.widgets.ButtonColumn;
@@ -57,7 +60,7 @@ public class CacheSettingsPanel extends JPanel {
 
     private final JosmTextField cacheDir = new JosmTextField(11);
     private final JSpinner maxElementsOnDisk = new JSpinner(new SpinnerNumberModel(
-            AbstractCachedTileSourceLayer.MAX_DISK_CACHE_SIZE.get().intValue(), 0, Integer.MAX_VALUE, 1));
+            (int) AbstractCachedTileSourceLayer.MAX_DISK_CACHE_SIZE.get(), 0, Integer.MAX_VALUE, 1));
 
     /**
      * Creates cache content panel
@@ -67,7 +70,7 @@ public class CacheSettingsPanel extends JPanel {
 
         add(new JLabel(tr("Tile cache directory: ")), GBC.std());
         add(GBC.glue(5, 0), GBC.std());
-        add(cacheDir, GBC.eol().fill(GBC.HORIZONTAL));
+        add(cacheDir, GBC.eol().fill(GridBagConstraints.HORIZONTAL));
 
         add(new JLabel(tr("Maximum size of disk cache (per imagery) in MB: ")), GBC.std());
         add(GBC.glue(5, 0), GBC.std());
@@ -77,6 +80,7 @@ public class CacheSettingsPanel extends JPanel {
             addToPanel(TMSLayer.getCache(), "TMS");
             addToPanel(WMSLayer.getCache(), "WMS");
             addToPanel(WMTSLayer.getCache(), "WMTS");
+            addToPanel(MVTLayer.getCache(), "MVT");
         });
     }
 
@@ -90,7 +94,7 @@ public class CacheSettingsPanel extends JPanel {
             add(new JLabel(tr("{0} cache, total cache size: {1}", name, sizeString)),
                 GBC.eol().insets(5, 5, 0, 0));
             add(new JScrollPane(getTableForCache(cache, tableModel)),
-                GBC.eol().fill(GBC.BOTH));
+                GBC.eol().fill(GridBagConstraints.BOTH));
         });
     }
 
@@ -116,7 +120,7 @@ public class CacheSettingsPanel extends JPanel {
      */
     public static String[][] getCacheStats(CacheAccess<String, BufferedImageCacheEntry> cache) {
         Set<String> keySet = cache.getCacheControl().getKeySet();
-        Map<String, int[]> temp = new ConcurrentHashMap<>(); // use int[] as a Object reference to int, gives better performance
+        Map<String, int[]> temp = new HashMap<>(); // use int[] as a Object reference to int, gives better performance
         for (String key: keySet) {
             String[] keyParts = key.split(":", 2);
             if (keyParts.length == 2) {
@@ -155,7 +159,7 @@ public class CacheSettingsPanel extends JPanel {
                     public void actionPerformed(ActionEvent e) {
                         int row = ret.convertRowIndexToModel(ret.getEditingRow());
                         tableModel.setValueAt("0", row, 1);
-                        cache.remove(ret.getValueAt(row, 0).toString() + ':');
+                        cache.remove(ret.getValueAt(row, 0).toString() + ICache.NAME_COMPONENT_DELIMITER);
                     }
                 });
         TableColumn tableColumn = ret.getColumnModel().getColumn(2);
@@ -208,7 +212,9 @@ public class CacheSettingsPanel extends JPanel {
 
     private static boolean removeCacheFiles(String path, long maxSize) {
         File directory = new File(path);
-        File[] cacheFiles = directory.listFiles((dir, name) -> name.endsWith(".data") || name.endsWith(".key"));
+        final String data = ".data";
+        final String key = ".key";
+        File[] cacheFiles = directory.listFiles((dir, name) -> name.endsWith(data) || name.endsWith(key));
         boolean restartRequired = false;
         if (cacheFiles != null) {
             for (File cacheFile: cacheFiles) {
@@ -219,10 +225,10 @@ public class CacheSettingsPanel extends JPanel {
                     }
                     Utils.deleteFile(cacheFile);
                     File otherFile = null;
-                    if (cacheFile.getName().endsWith(".data")) {
-                        otherFile = new File(cacheFile.getPath().replaceAll("\\.data$", ".key"));
-                    } else if (cacheFile.getName().endsWith(".key")) {
-                        otherFile = new File(cacheFile.getPath().replaceAll("\\.key$", ".data"));
+                    if (cacheFile.getName().endsWith(data)) {
+                        otherFile = new File(cacheFile.getPath().replaceAll("\\.data$", key));
+                    } else if (cacheFile.getName().endsWith(key)) {
+                        otherFile = new File(cacheFile.getPath().replaceAll("\\.key$", data));
                     }
                     if (otherFile != null) {
                         Utils.deleteFileIfExists(otherFile);

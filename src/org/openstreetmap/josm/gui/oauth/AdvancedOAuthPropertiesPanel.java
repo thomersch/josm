@@ -15,10 +15,15 @@ import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 
+import org.openstreetmap.josm.data.oauth.IOAuthParameters;
+import org.openstreetmap.josm.data.oauth.OAuth20Parameters;
 import org.openstreetmap.josm.data.oauth.OAuthParameters;
+import org.openstreetmap.josm.data.oauth.OAuthVersion;
 import org.openstreetmap.josm.gui.HelpAwareOptionPane;
 import org.openstreetmap.josm.gui.HelpAwareOptionPane.ButtonSpec;
+import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.help.HelpUtil;
+import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.widgets.JosmTextField;
 import org.openstreetmap.josm.gui.widgets.SelectAllOnFocusGainedDecorator;
 import org.openstreetmap.josm.gui.widgets.VerticallyScrollablePanel;
@@ -49,15 +54,16 @@ public class AdvancedOAuthPropertiesPanel extends VerticallyScrollablePanel {
     private final JosmTextField tfRequestTokenURL = new JosmTextField();
     private final JosmTextField tfAccessTokenURL = new JosmTextField();
     private final JosmTextField tfAuthoriseURL = new JosmTextField();
-    private final JosmTextField tfOsmLoginURL = new JosmTextField();
-    private final JosmTextField tfOsmLogoutURL = new JosmTextField();
+    private final OAuthVersion oauthVersion;
     private transient UseDefaultItemListener ilUseDefault;
     private String apiUrl;
 
     /**
      * Constructs a new {@code AdvancedOAuthPropertiesPanel}.
+     * @param oauthVersion The OAuth version to make the panel for
      */
-    public AdvancedOAuthPropertiesPanel() {
+    public AdvancedOAuthPropertiesPanel(OAuthVersion oauthVersion) {
+        this.oauthVersion = oauthVersion;
         build();
     }
 
@@ -70,14 +76,14 @@ public class AdvancedOAuthPropertiesPanel extends VerticallyScrollablePanel {
         gc.fill = GridBagConstraints.HORIZONTAL;
         gc.weightx = 1.0;
         gc.insets = new Insets(0, 0, 3, 3);
-        gc.gridwidth = 2;
+        gc.gridwidth = 3;
         add(cbUseDefaults, gc);
 
         // -- consumer key
         gc.gridy = 1;
         gc.weightx = 0.0;
         gc.gridwidth = 1;
-        add(new JLabel(tr("Consumer Key:")), gc);
+        add(new JLabel(tr("Client ID:")), gc);
 
         gc.gridx = 1;
         gc.weightx = 1.0;
@@ -85,10 +91,10 @@ public class AdvancedOAuthPropertiesPanel extends VerticallyScrollablePanel {
         SelectAllOnFocusGainedDecorator.decorate(tfConsumerKey);
 
         // -- consumer secret
-        gc.gridy = 2;
+        gc.gridy++;
         gc.gridx = 0;
         gc.weightx = 0.0;
-        add(new JLabel(tr("Consumer Secret:")), gc);
+        add(new JLabel(tr("Client Secret:")), gc);
 
         gc.gridx = 1;
         gc.weightx = 1.0;
@@ -96,10 +102,10 @@ public class AdvancedOAuthPropertiesPanel extends VerticallyScrollablePanel {
         SelectAllOnFocusGainedDecorator.decorate(tfConsumerSecret);
 
         // -- request token URL
-        gc.gridy = 3;
+        gc.gridy++;
         gc.gridx = 0;
         gc.weightx = 0.0;
-        add(new JLabel(tr("Request Token URL:")), gc);
+        add(new JLabel(tr("Redirect URL:")), gc);
 
         gc.gridx = 1;
         gc.weightx = 1.0;
@@ -107,7 +113,7 @@ public class AdvancedOAuthPropertiesPanel extends VerticallyScrollablePanel {
         SelectAllOnFocusGainedDecorator.decorate(tfRequestTokenURL);
 
         // -- access token URL
-        gc.gridy = 4;
+        gc.gridy++;
         gc.gridx = 0;
         gc.weightx = 0.0;
         add(new JLabel(tr("Access Token URL:")), gc);
@@ -118,7 +124,7 @@ public class AdvancedOAuthPropertiesPanel extends VerticallyScrollablePanel {
         SelectAllOnFocusGainedDecorator.decorate(tfAccessTokenURL);
 
         // -- authorise URL
-        gc.gridy = 5;
+        gc.gridy++;
         gc.gridx = 0;
         gc.weightx = 0.0;
         add(new JLabel(tr("Authorize URL:")), gc);
@@ -128,34 +134,13 @@ public class AdvancedOAuthPropertiesPanel extends VerticallyScrollablePanel {
         add(tfAuthoriseURL, gc);
         SelectAllOnFocusGainedDecorator.decorate(tfAuthoriseURL);
 
-        // -- OSM login URL
-        gc.gridy = 6;
-        gc.gridx = 0;
-        gc.weightx = 0.0;
-        add(new JLabel(tr("OSM login URL:")), gc);
-
-        gc.gridx = 1;
-        gc.weightx = 1.0;
-        add(tfOsmLoginURL, gc);
-        SelectAllOnFocusGainedDecorator.decorate(tfOsmLoginURL);
-
-        // -- OSM logout URL
-        gc.gridy = 7;
-        gc.gridx = 0;
-        gc.weightx = 0.0;
-        add(new JLabel(tr("OSM logout URL:")), gc);
-
-        gc.gridx = 1;
-        gc.weightx = 1.0;
-        add(tfOsmLogoutURL, gc);
-        SelectAllOnFocusGainedDecorator.decorate(tfOsmLogoutURL);
-
         ilUseDefault = new UseDefaultItemListener();
         cbUseDefaults.addItemListener(ilUseDefault);
+        cbUseDefaults.setSelected(Config.getPref().getBoolean("oauth.settings.use-default", true));
     }
 
     protected boolean hasCustomSettings() {
-        OAuthParameters params = OAuthParameters.createDefault(apiUrl);
+        IOAuthParameters params = OAuthParameters.createDefault(apiUrl, OAuthVersion.OAuth20);
         return !params.equals(getAdvancedParameters());
     }
 
@@ -190,17 +175,24 @@ public class AdvancedOAuthPropertiesPanel extends VerticallyScrollablePanel {
     }
 
     protected void resetToDefaultSettings() {
-        cbUseDefaults.setSelected(true);
-        OAuthParameters params = OAuthParameters.createDefault(apiUrl);
-        tfConsumerKey.setText(params.getConsumerKey());
-        tfConsumerSecret.setText(params.getConsumerSecret());
-        tfRequestTokenURL.setText(params.getRequestTokenUrl());
-        tfAccessTokenURL.setText(params.getAccessTokenUrl());
-        tfAuthoriseURL.setText(params.getAuthoriseUrl());
-        tfOsmLoginURL.setText(params.getOsmLoginUrl());
-        tfOsmLogoutURL.setText(params.getOsmLogoutUrl());
-
-        setChildComponentsEnabled(false);
+        IOAuthParameters iParams = OAuthParameters.createDefault(apiUrl, this.oauthVersion);
+        GuiHelper.runInEDTAndWaitWithException(() -> {
+                    cbUseDefaults.setSelected(true);
+                    switch (this.oauthVersion) {
+                        case OAuth20:
+                        case OAuth21:
+                            OAuth20Parameters params20 = (OAuth20Parameters) iParams;
+                            tfConsumerKey.setText(params20.getClientId());
+                            tfConsumerSecret.setText(params20.getClientSecret());
+                            tfAccessTokenURL.setText(params20.getAccessTokenUrl());
+                            tfAuthoriseURL.setText(params20.getAuthorizationUrl());
+                            tfRequestTokenURL.setText(params20.getRedirectUri());
+                            break;
+                        default:
+                            throw new UnsupportedOperationException("Unsupported OAuth version: " + this.oauthVersion);
+                    }
+                    setChildComponentsEnabled(false);
+                });
     }
 
     protected void setChildComponentsEnabled(boolean enabled) {
@@ -216,17 +208,17 @@ public class AdvancedOAuthPropertiesPanel extends VerticallyScrollablePanel {
      *
      * @return the OAuth parameters
      */
-    public OAuthParameters getAdvancedParameters() {
+    public IOAuthParameters getAdvancedParameters() {
         if (cbUseDefaults.isSelected())
-            return OAuthParameters.createDefault(apiUrl);
-        return new OAuthParameters(
-            tfConsumerKey.getText(),
-            tfConsumerSecret.getText(),
-            tfRequestTokenURL.getText(),
-            tfAccessTokenURL.getText(),
-            tfAuthoriseURL.getText(),
-            tfOsmLoginURL.getText(),
-            tfOsmLogoutURL.getText());
+            return OAuthParameters.createDefault(apiUrl, this.oauthVersion);
+        return new OAuth20Parameters(
+                tfConsumerKey.getText(),
+                tfConsumerSecret.getText(),
+                tfAccessTokenURL.getText(),
+                tfAuthoriseURL.getText(),
+                apiUrl,
+                tfRequestTokenURL.getText()
+                );
     }
 
     /**
@@ -235,21 +227,22 @@ public class AdvancedOAuthPropertiesPanel extends VerticallyScrollablePanel {
      * @param parameters the advanced parameters. Must not be null.
      * @throws IllegalArgumentException if parameters is null.
      */
-    public void setAdvancedParameters(OAuthParameters parameters) {
+    public void setAdvancedParameters(IOAuthParameters parameters) {
         CheckParameterUtil.ensureParameterNotNull(parameters, "parameters");
-        if (parameters.equals(OAuthParameters.createDefault(apiUrl))) {
+        if (parameters.equals(OAuthParameters.createDefault(apiUrl, parameters.getOAuthVersion()))) {
             cbUseDefaults.setSelected(true);
             setChildComponentsEnabled(false);
         } else {
             cbUseDefaults.setSelected(false);
             setChildComponentsEnabled(true);
-            tfConsumerKey.setText(parameters.getConsumerKey() == null ? "" : parameters.getConsumerKey());
-            tfConsumerSecret.setText(parameters.getConsumerSecret() == null ? "" : parameters.getConsumerSecret());
-            tfRequestTokenURL.setText(parameters.getRequestTokenUrl() == null ? "" : parameters.getRequestTokenUrl());
-            tfAccessTokenURL.setText(parameters.getAccessTokenUrl() == null ? "" : parameters.getAccessTokenUrl());
-            tfAuthoriseURL.setText(parameters.getAuthoriseUrl() == null ? "" : parameters.getAuthoriseUrl());
-            tfOsmLoginURL.setText(parameters.getOsmLoginUrl() == null ? "" : parameters.getOsmLoginUrl());
-            tfOsmLogoutURL.setText(parameters.getOsmLogoutUrl() == null ? "" : parameters.getOsmLogoutUrl());
+            if (parameters instanceof OAuth20Parameters) {
+                OAuth20Parameters parameters20 = (OAuth20Parameters) parameters;
+                tfConsumerKey.setText(parameters20.getClientId());
+                tfConsumerSecret.setText(parameters20.getClientSecret());
+                tfAccessTokenURL.setText(parameters20.getAccessTokenUrl());
+                tfAuthoriseURL.setText(parameters20.getAuthorizationUrl());
+                tfRequestTokenURL.setText(parameters20.getRedirectUri());
+            }
         }
     }
 
@@ -264,12 +257,16 @@ public class AdvancedOAuthPropertiesPanel extends VerticallyScrollablePanel {
         setApiUrl(paramApiUrl);
         boolean useDefault = Config.getPref().getBoolean("oauth.settings.use-default", true);
         ilUseDefault.setEnabled(false);
-        if (useDefault) {
-            resetToDefaultSettings();
-        } else {
-            setAdvancedParameters(OAuthParameters.createFromApiUrl(paramApiUrl));
-        }
-        ilUseDefault.setEnabled(true);
+        MainApplication.worker.execute(() -> {
+            if (useDefault) {
+                this.resetToDefaultSettings();
+            } else {
+                // createFromApiUrl may make a network request
+                final IOAuthParameters parameters = OAuthParameters.createFromApiUrl(paramApiUrl, OAuthVersion.OAuth20);
+                GuiHelper.runInEDT(() -> setAdvancedParameters(parameters));
+            }
+            GuiHelper.runInEDT(() -> ilUseDefault.setEnabled(true));
+        });
     }
 
     /**
@@ -278,7 +275,7 @@ public class AdvancedOAuthPropertiesPanel extends VerticallyScrollablePanel {
     public void rememberPreferences() {
         Config.getPref().putBoolean("oauth.settings.use-default", cbUseDefaults.isSelected());
         if (cbUseDefaults.isSelected()) {
-            new OAuthParameters(null, null, null, null, null, null, null).rememberPreferences();
+            MainApplication.worker.execute(() -> OAuthParameters.createDefault().rememberPreferences());
         } else {
             getAdvancedParameters().rememberPreferences();
         }
@@ -296,7 +293,7 @@ public class AdvancedOAuthPropertiesPanel extends VerticallyScrollablePanel {
                     cbUseDefaults.setSelected(false);
                     return;
                 }
-                resetToDefaultSettings();
+                MainApplication.worker.execute(AdvancedOAuthPropertiesPanel.this::resetToDefaultSettings);
                 break;
             case ItemEvent.DESELECTED:
                 setChildComponentsEnabled(true);
@@ -319,7 +316,7 @@ public class AdvancedOAuthPropertiesPanel extends VerticallyScrollablePanel {
     public void setApiUrl(String apiUrl) {
         this.apiUrl = apiUrl;
         if (cbUseDefaults.isSelected()) {
-            resetToDefaultSettings();
+            MainApplication.worker.execute(this::resetToDefaultSettings);
         }
     }
 }

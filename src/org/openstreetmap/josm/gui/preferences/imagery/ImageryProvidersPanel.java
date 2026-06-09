@@ -72,6 +72,7 @@ import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.ImageProvider.ImageSizes;
 import org.openstreetmap.josm.tools.LanguageInfo;
 import org.openstreetmap.josm.tools.Logging;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * A panel displaying imagery providers.
@@ -312,6 +313,7 @@ public class ImageryProvidersPanel extends JPanel {
         activeToolbar.add(new NewEntryAction(ImageryInfo.ImageryType.WMS));
         activeToolbar.add(new NewEntryAction(ImageryInfo.ImageryType.TMS));
         activeToolbar.add(new NewEntryAction(ImageryInfo.ImageryType.WMTS));
+        activeToolbar.add(new NewEntryAction(ImageryInfo.ImageryType.MVT));
         activeToolbar.add(remove);
         activePanel.add(activeToolbar, BorderLayout.EAST);
         add(activePanel, GBC.eol().fill(GridBagConstraints.BOTH).weight(2.0, 0.4).insets(5, 0, 0, 5));
@@ -366,7 +368,7 @@ public class ImageryProvidersPanel extends JPanel {
             if (bounds != null) {
                 int viewIndex = defaultTable.convertRowIndexToView(i);
                 List<Shape> shapes = bounds.getShapes();
-                if (shapes != null && !shapes.isEmpty()) {
+                if (!Utils.isEmpty(shapes)) {
                     if (defaultTable.getSelectionModel().isSelectedIndex(viewIndex)) {
                         if (!mapPolygons.containsKey(i)) {
                             List<MapPolygon> list = new ArrayList<>();
@@ -440,6 +442,9 @@ public class ImageryProvidersPanel extends JPanel {
             case WMTS:
                 icon = /* ICON(dialogs/) */ "add_wmts";
                 break;
+            case MVT:
+                icon = /* ICON(dialogs/) */ "add_mvt";
+                break;
             default:
                 break;
             }
@@ -460,6 +465,9 @@ public class ImageryProvidersPanel extends JPanel {
             case WMTS:
                 p = new AddWMTSLayerPanel();
                 break;
+            case MVT:
+                p = new AddMVTLayerPanel();
+                break;
             default:
                 throw new IllegalStateException("Type " + type + " not supported");
             }
@@ -471,7 +479,7 @@ public class ImageryProvidersPanel extends JPanel {
                 try {
                     activeModel.addRow(p.getImageryInfo());
                 } catch (IllegalArgumentException ex) {
-                    if (ex.getMessage() == null || ex.getMessage().isEmpty())
+                    if (Utils.isEmpty(ex.getMessage()))
                         throw ex;
                     else {
                         JOptionPane.showMessageDialog(MainApplication.getMainFrame(),
@@ -506,7 +514,7 @@ public class ImageryProvidersPanel extends JPanel {
 
         @Override
         public void actionPerformed(ActionEvent e) {
-            Integer i;
+            int i;
             while ((i = activeTable.getSelectedRow()) != -1) {
                 activeModel.removeRow(i);
             }
@@ -593,6 +601,12 @@ public class ImageryProvidersPanel extends JPanel {
         @Override
         public void actionPerformed(ActionEvent evt) {
             layerInfo.loadDefaults(true, MainApplication.worker, false);
+            this.updateTableArea();
+            // Ensure that the table is updated properly if someone cancels the download. See JOSM #21797.
+            MainApplication.worker.execute(() -> GuiHelper.runInEDTAndWait(this::updateTableArea));
+        }
+
+        private void updateTableArea() {
             defaultModel.fireTableDataChanged();
             defaultTable.getSelectionModel().clearSelection();
             defaultTableListener.clearMap();
@@ -741,7 +755,7 @@ public class ImageryProvidersPanel extends JPanel {
     private static boolean confirmEulaAcceptance(PreferenceTabbedPane gui, String eulaUrl) {
         URL url;
         try {
-            url = new URL(eulaUrl.replaceAll("\\{lang\\}", LanguageInfo.getWikiLanguagePrefix()));
+            url = new URL(eulaUrl.replaceAll("\\{lang}", LanguageInfo.getWikiLanguagePrefix()));
             JosmEditorPane htmlPane;
             try {
                 htmlPane = new JosmEditorPane(url);
@@ -749,7 +763,7 @@ public class ImageryProvidersPanel extends JPanel {
                 Logging.trace(e1);
                 // give a second chance with a default Locale 'en'
                 try {
-                    url = new URL(eulaUrl.replaceAll("\\{lang\\}", ""));
+                    url = new URL(eulaUrl.replaceAll("\\{lang}", ""));
                     htmlPane = new JosmEditorPane(url);
                 } catch (IOException e2) {
                     Logging.debug(e2);

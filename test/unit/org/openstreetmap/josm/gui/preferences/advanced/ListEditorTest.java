@@ -1,38 +1,27 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.preferences.advanced;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.util.Arrays;
+import java.util.Collections;
 
-import org.junit.BeforeClass;
-import org.junit.Test;
-import org.openstreetmap.josm.JOSMFixture;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.gui.preferences.advanced.ListEditor.ListSettingTableModel;
 
 /**
  * Unit tests of {@link ListEditor} class.
  */
-public class ListEditorTest {
-
-    /**
-     * Setup test.
-     */
-    @BeforeClass
-    public static void setUpBeforeClass() {
-        JOSMFixture.createUnitTestFixture().init();
-    }
-
+class ListEditorTest {
     /**
      * Unit test of {@link ListSettingTableModel} class.
      */
     @Test
-    public void testListSettingTableModel() {
+    void testListSettingTableModel() {
         ListSettingTableModel model = new ListSettingTableModel(null);
         assertNotNull(model.getData());
-        model = new ListSettingTableModel(Arrays.asList("foo"));
+        model = new ListSettingTableModel(Collections.singletonList("foo"));
         assertTrue(model.getData().contains("foo"));
         assertEquals(2, model.getRowCount());
         assertEquals(1, model.getColumnCount());

@@ -31,6 +31,7 @@ import org.openstreetmap.josm.gui.mappaint.mapcss.LiteralExpression;
 import org.openstreetmap.josm.gui.mappaint.mapcss.MapCSSException;
 import org.openstreetmap.josm.gui.mappaint.mapcss.MapCSSRule;
 import org.openstreetmap.josm.gui.mappaint.mapcss.MapCSSStyleSource;
+import org.openstreetmap.josm.gui.mappaint.mapcss.PlaceholderExpression;
 import org.openstreetmap.josm.gui.mappaint.mapcss.Selector;
 import org.openstreetmap.josm.gui.mappaint.mapcss.Selector.ChildOrParentSelector;
 import org.openstreetmap.josm.gui.mappaint.mapcss.Selector.GeneralSelector;
@@ -165,7 +166,7 @@ TOKEN:
     < IDENT: ["a"-"z","A"-"Z","_"] ( ["a"-"z","A"-"Z","_","-","0"-"9"] )* >
 |   < UINT: ( ["0"-"9"] )+ >
 |   < STRING: "\"" ( [" ","!","#"-"[","]"-"~","\u0080"-"\uFFFF"] | "\\\"" | "\\\\" )*  "\"" >
-|   < #PREDEFINED: "\\" ["d","D","s","S","w","W","b","B","A","G","Z","z"] >
+|   < #PREDEFINED: "\\" ["a","A","b","B","d","D","e","E","f","G","h","H","n","Q","r","R","s","S","t","v","V","w","W","Z","z"] >
 |   < #REGEX_CHAR_WITHOUT_STAR: [" "-")","+"-".","0"-"[","]"-"~","\u0080"-"\uFFFF"] | "\\/" | "\\\\" | "\\[" | "\\]" | "\\+" | "\\." | "\\'" | "\\\"" |  "\\(" | "\\)" | "\\{" | "\\}" | "\\?" | "\\*" | "\\^" | "\\$" | "\\|" | "\\p" |<PREDEFINED> >
 |   < REGEX: "/" <REGEX_CHAR_WITHOUT_STAR> ( <REGEX_CHAR_WITHOUT_STAR> | "*" )*  "/" >
 |   < LBRACE: "{" >
@@ -710,7 +711,7 @@ String tag_key() :
 Condition simple_key_condition(Context context) :
 {
     boolean not = false;
-    KeyMatchType matchType = null;;
+    KeyMatchType matchType = null;
     String key;
 }
 {
@@ -731,7 +732,7 @@ Condition simple_key_value_condition(Context context) :
     String val;
     float f;
     int i;
-    KeyMatchType matchType = null;;
+    KeyMatchType matchType = null;
     Op op;
     boolean considerValAsKey = false;
 }
@@ -1052,6 +1053,9 @@ Expression primary() :
         { 
             if (lit == null)
                 return NullExpression.INSTANCE;
+            else if (lit instanceof String && PlaceholderExpression.PATTERN_PLACEHOLDER.matcher((String) lit).find()) {
+                return new PlaceholderExpression((String) lit);
+            }
             return new LiteralExpression(lit);
         }
     |
@@ -1162,8 +1166,7 @@ void error_skipto(int kind, MapCSSException me) {
         e = new ParseException(pe.getMessage()); // prevent memory leak
     }
     
-    Logging.error("Skipping to the next rule, because of an error:");
-    Logging.error(e);
+    Logging.error("Skipping to the next rule, because of an error: " + e);
     if (sheet != null) {
         sheet.logError(e);
     }

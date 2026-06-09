@@ -1,8 +1,8 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.preferences;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.Color;
 import java.util.Arrays;
@@ -10,32 +10,26 @@ import java.util.Collections;
 
 import javax.swing.UIManager;
 
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
 import org.openstreetmap.josm.data.Preferences;
 import org.openstreetmap.josm.spi.preferences.Config;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * Test {@link NamedColorProperty}
  * @author Michael Zangl
  */
-public class NamedColorPropertyTest {
-    /**
-     * This is a preference test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences();
+// This is a preference test
+@BasicPreferences
+class NamedColorPropertyTest {
     private NamedColorProperty base;
 
     /**
      * Set up test case
      */
-    @Before
+    @BeforeEach
     public void createTestProperty() {
         base = new NamedColorProperty("test", Color.RED);
     }
@@ -44,7 +38,7 @@ public class NamedColorPropertyTest {
      * Test {@link NamedColorProperty#get()}
      */
     @Test
-    public void testGet() {
+    void testGet() {
         assertEquals(Color.RED, base.get());
 
         UIManager.put("JOSM.clr.general.test", Color.GRAY);
@@ -64,7 +58,7 @@ public class NamedColorPropertyTest {
      * Test {@link NamedColorProperty#put}
      */
     @Test
-    public void testPut() {
+    void testPut() {
         assertEquals(Color.RED, base.get());
 
         base.put(new Color(0xff00af00));
@@ -79,7 +73,7 @@ public class NamedColorPropertyTest {
      * Test color alpha.
      */
     @Test
-    public void testColorAlpha() {
+    void testColorAlpha() {
         assertEquals(0x12, new NamedColorProperty("foo", new Color(0x12345678, true)).get().getAlpha());
         assertTrue(Preferences.main().putList("clr.general.bar", Arrays.asList("#34567812", "general", "", "bar")));
         assertEquals(0x12, new NamedColorProperty("bar", Color.RED).get().getAlpha());
@@ -89,7 +83,7 @@ public class NamedColorPropertyTest {
      * Test color name and alpha.
      */
     @Test
-    public void testColorNameAlpha() {
+    void testColorNameAlpha() {
         assertEquals(0x12, new NamedColorProperty("foo", new Color(0x12345678, true)).get().getAlpha());
     }
 
@@ -97,7 +91,7 @@ public class NamedColorPropertyTest {
      * Test {@link NamedColorProperty#getChildColor(String)}
      */
     @Test
-    public void testGetChildColor() {
+    void testGetChildColor() {
         AbstractProperty<Color> child = base.getChildColor("test2");
 
         assertEquals(Color.RED, child.get());

@@ -61,6 +61,11 @@ public interface IWay<N extends INode> extends IPrimitive {
      */
     List<N> getNodes();
 
+    @Override
+    default List<N> getChildren() {
+        return this.getNodes();
+    }
+
     /**
      * Returns the list of node ids in this way.
      * @return the list of node ids in this way
@@ -132,4 +137,13 @@ public interface IWay<N extends INode> extends IPrimitive {
      * @since 13922
      */
     boolean isInnerNode(INode n);
+
+    /**
+     * Replies true if this way has incomplete nodes, false otherwise.
+     * @return true if this way has incomplete nodes, false otherwise.
+     * @since 18019
+     */
+    default boolean hasIncompleteNodes() {
+        return false;
+    }
 }

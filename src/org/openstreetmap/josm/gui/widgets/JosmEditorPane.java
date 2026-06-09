@@ -3,6 +3,9 @@ package org.openstreetmap.josm.gui.widgets;
 
 import java.awt.Color;
 import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
@@ -86,6 +89,15 @@ public class JosmEditorPane extends JEditorPane implements Destroyable {
         return conn.getContent();
     }
 
+    @Override
+    public void paintComponent(Graphics g) {
+        // Force antialiasing within the JosmEditorPane for antialiased bullet points
+        Graphics2D g2d = (Graphics2D) g.create();
+        g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        super.paintComponent(g2d);
+        g2d.dispose();
+    }
+
     /**
      * Adapts a {@link JEditorPane} to be used as a powerful replacement of {@link javax.swing.JLabel}.
      * @param pane The editor pane to adapt
@@ -101,7 +113,7 @@ public class JosmEditorPane extends JEditorPane implements Destroyable {
         final Font f = UIManager.getFont("Label.font");
         final StyleSheet ss = new StyleSheet();
         ss.addRule((allBold ? "html" : "strong, b") + " {" + getFontRule(f) + '}');
-        ss.addRule("a {text-decoration: underline; color: " + getLinkColor("blue") + "}");
+        ss.addRule("a {text-decoration: underline; color: " + getLinkColor() + "}");
         ss.addRule("h1 {" + getFontRule(GuiHelper.getTitleFont()) + '}');
         ss.addRule("ol {margin-left: 1cm; margin-top: 0.1cm; margin-bottom: 0.2cm; list-style-type: decimal}");
         ss.addRule("ul {margin-left: 1cm; margin-top: 0.1cm; margin-bottom: 0.2cm; list-style-type: disc}");
@@ -143,13 +155,12 @@ public class JosmEditorPane extends JEditorPane implements Destroyable {
 
     /**
      * Returns the color (in CSS format) that should be used for links.
-     * If the current look and feel does not provide a link color, the passed default color is used.
-     * @param defaultColor the default color
+     * If the current look and feel does not provide a link color, the JOSM blue {@code #316ed9} is returned.
      * @return link color
      */
-    public static String getLinkColor(String defaultColor) {
+    public static String getLinkColor() {
         Color color = UIManager.getColor("Component.linkColor");
-        return color != null ? ColorHelper.color2html(color) : defaultColor;
+        return color != null ? ColorHelper.color2html(color) : "#316ed9";
     }
 
     @Override

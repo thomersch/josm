@@ -4,6 +4,7 @@ package org.openstreetmap.josm.gui.preferences.server;
 import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.awt.Font;
+import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -82,11 +83,11 @@ public class OsmApiUrlInputPanel extends JPanel {
         setLayout(new GridBagLayout());
 
         // the checkbox for the default UL
-        add(buildDefaultServerUrlPanel(), GBC.eop().fill(GBC.HORIZONTAL));
+        add(buildDefaultServerUrlPanel(), GBC.eop().fill(GridBagConstraints.HORIZONTAL));
 
         // the input field for the URL
         add(lblApiUrl, GBC.std().insets(0, 0, 3, 0));
-        add(tfOsmServerUrl, GBC.std().fill(GBC.HORIZONTAL).insets(0, 0, 3, 0));
+        add(tfOsmServerUrl, GBC.std().fill(GridBagConstraints.HORIZONTAL).insets(0, 0, 3, 0));
         lblApiUrl.setLabelFor(tfOsmServerUrl);
         SelectAllOnFocusGainedDecorator.decorate(tfOsmServerUrl.getEditorComponent());
         valOsmServerUrl = new ApiUrlValidator(tfOsmServerUrl.getEditorComponent());
@@ -108,7 +109,7 @@ public class OsmApiUrlInputPanel extends JPanel {
      */
     public void initFromPreferences() {
         String url = OsmApi.getOsmApi().getServerUrl();
-        tfOsmServerUrl.setPossibleItems(SERVER_URL_HISTORY.get());
+        tfOsmServerUrl.getModel().prefs().load(SERVER_URL_HISTORY);
         if (Config.getUrls().getDefaultOsmApiUrl().equals(url.trim())) {
             cbUseDefaultServerUrl.setSelected(true);
             propagator.propagate(Config.getUrls().getDefaultOsmApiUrl());
@@ -130,7 +131,7 @@ public class OsmApiUrlInputPanel extends JPanel {
         } else {
             Config.getPref().put("osm-server.url", hmiUrl);
             tfOsmServerUrl.addCurrentItemToHistory();
-            SERVER_URL_HISTORY.put(tfOsmServerUrl.getHistory());
+            tfOsmServerUrl.getModel().prefs().save(SERVER_URL_HISTORY);
         }
         String newUrl = OsmApi.getOsmApi().getServerUrl();
 
@@ -256,7 +257,7 @@ public class OsmApiUrlInputPanel extends JPanel {
     class UseDefaultServerUrlChangeHandler implements ItemListener {
         @Override
         public void itemStateChanged(ItemEvent e) {
-            switch(e.getStateChange()) {
+            switch (e.getStateChange()) {
             case ItemEvent.SELECTED:
                 setApiUrlInputEnabled(false);
                 propagator.propagate(Config.getUrls().getDefaultOsmApiUrl());

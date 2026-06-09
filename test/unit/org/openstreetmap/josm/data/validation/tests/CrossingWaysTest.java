@@ -1,40 +1,41 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.validation.tests;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.List;
+import java.util.stream.Collectors;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.coor.EastNorth;
 import org.openstreetmap.josm.data.coor.LatLon;
+import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Node;
+import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.data.osm.WaySegment;
+import org.openstreetmap.josm.data.validation.TestError;
 import org.openstreetmap.josm.data.validation.tests.CrossingWays.Boundaries;
 import org.openstreetmap.josm.data.validation.tests.CrossingWays.SelfCrossing;
 import org.openstreetmap.josm.data.validation.tests.CrossingWays.Ways;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.layer.OsmDataLayer;
+import org.openstreetmap.josm.io.OsmReader;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
+import org.openstreetmap.josm.testutils.annotations.Projection;
 
 /**
  * Unit test of {@link CrossingWays}.
  */
-public class CrossingWaysTest {
-
-    /**
-     * Setup test
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules rule = new JOSMTestRules().preferences();
-
+@BasicPreferences
+@Projection
+class CrossingWaysTest {
     private static Way newUsableWay(String tags) {
         return TestUtils.newWay(tags, new Node(LatLon.NORTH_POLE), new Node(LatLon.ZERO));
     }
@@ -43,11 +44,17 @@ public class CrossingWaysTest {
         assertEquals(code, test.createMessage(TestUtils.newWay(tags1), TestUtils.newWay(tags2)).code);
     }
 
+    private static void testIgnore(boolean expected, CrossingWays test, String tags1, String tags2) {
+        // test both possible combinations
+        assertEquals(expected, test.ignoreWaySegmentCombination(TestUtils.newWay(tags1), TestUtils.newWay(tags2)));
+        assertEquals(expected, test.ignoreWaySegmentCombination(TestUtils.newWay(tags2), TestUtils.newWay(tags1)));
+    }
+
     /**
      * Unit test of {@link CrossingWays#getSegments}
      */
     @Test
-    public void testGetSegments() {
+    void testGetSegments() {
         List<List<WaySegment>> list = CrossingWays.getSegments(new HashMap<>(), EastNorth.ZERO, EastNorth.ZERO);
         assertEquals(1, list.size());
         assertTrue(list.get(0).isEmpty());
@@ -57,7 +64,7 @@ public class CrossingWaysTest {
      * Unit test of {@link CrossingWays#isCoastline}
      */
     @Test
-    public void testIsCoastline() {
+    void testIsCoastline() {
         assertTrue(CrossingWays.isCoastline(TestUtils.newWay("natural=water")));
         assertTrue(CrossingWays.isCoastline(TestUtils.newWay("natural=coastline")));
         assertTrue(CrossingWays.isCoastline(TestUtils.newWay("landuse=reservoir")));
@@ -68,7 +75,7 @@ public class CrossingWaysTest {
      * Unit test of {@link CrossingWays#isHighway}
      */
     @Test
-    public void testIsHighway() {
+    void testIsHighway() {
         assertTrue(CrossingWays.isHighway(TestUtils.newWay("highway=motorway")));
         assertFalse(CrossingWays.isHighway(TestUtils.newWay("highway=rest_area")));
     }
@@ -77,7 +84,7 @@ public class CrossingWaysTest {
      * Unit test of {@link CrossingWays#isRailway}
      */
     @Test
-    public void testIsRailway() {
+    void testIsRailway() {
         assertTrue(CrossingWays.isRailway(TestUtils.newWay("railway=rail")));
         assertFalse(CrossingWays.isRailway(TestUtils.newWay("railway=subway")));
         assertFalse(CrossingWays.isRailway(TestUtils.newWay("highway=motorway")));
@@ -87,7 +94,7 @@ public class CrossingWaysTest {
      * Unit test of {@link CrossingWays#isSubwayOrTramOrRazed}
      */
     @Test
-    public void testIsSubwayOrTramOrRazed() {
+    void testIsSubwayOrTramOrRazed() {
         assertTrue(CrossingWays.isSubwayOrTramOrRazed(TestUtils.newWay("railway=subway")));
         assertTrue(CrossingWays.isSubwayOrTramOrRazed(TestUtils.newWay("railway=construction construction=tram")));
         assertTrue(CrossingWays.isSubwayOrTramOrRazed(TestUtils.newWay("railway=disused disused=tram")));
@@ -100,7 +107,7 @@ public class CrossingWaysTest {
      * Unit test of {@link CrossingWays#isProposedOrAbandoned}
      */
     @Test
-    public void testIsProposedOrAbandoned() {
+    void testIsProposedOrAbandoned() {
         assertTrue(CrossingWays.isProposedOrAbandoned(TestUtils.newWay("highway=proposed")));
         assertTrue(CrossingWays.isProposedOrAbandoned(TestUtils.newWay("railway=proposed")));
         assertTrue(CrossingWays.isProposedOrAbandoned(TestUtils.newWay("railway=abandoned")));
@@ -111,7 +118,7 @@ public class CrossingWaysTest {
      * Unit test of {@link CrossingWays.Ways}
      */
     @Test
-    public void testWays() {
+    void testWays() {
         Ways test = new CrossingWays.Ways();
         // isPrimitiveUsable
         assertFalse(test.isPrimitiveUsable(newUsableWay("amenity=restaurant")));
@@ -126,16 +133,19 @@ public class CrossingWaysTest {
         // createMessage
         testMessage(601, test, "amenity=restaurant", "amenity=restaurant");
         testMessage(611, test, "building=yes", "amenity=restaurant");
+        testMessage(611, test, "building=yes", "natural=water");
         testMessage(612, test, "building=yes", "highway=road");
         testMessage(613, test, "building=yes", "railway=rail");
         testMessage(614, test, "building=yes", "landuse=residential");
         testMessage(615, test, "building=yes", "waterway=river");
         testMessage(620, test, "highway=road", "highway=road");
         testMessage(621, test, "highway=road", "amenity=restaurant");
+        testMessage(621, test, "highway=road", "natural=water");
         testMessage(622, test, "highway=road", "railway=rail");
         testMessage(623, test, "highway=road", "waterway=river");
         testMessage(630, test, "railway=rail", "railway=rail");
         testMessage(631, test, "railway=rail", "amenity=restaurant");
+        testMessage(631, test, "railway=rail", "natural=water");
         testMessage(632, test, "railway=rail", "waterway=river");
         testMessage(641, test, "landuse=residential", "amenity=restaurant");
         testMessage(650, test, "waterway=river", "waterway=river");
@@ -145,6 +155,10 @@ public class CrossingWaysTest {
         testMessage(662, test, "barrier=hedge", "highway=road");
         testMessage(663, test, "barrier=hedge", "railway=rail");
         testMessage(664, test, "barrier=hedge", "waterway=river");
+        testMessage(665, test, "barrier=hedge", "natural=water");
+
+        testIgnore(true, test, "landuse=residential", "natural=water");
+        testIgnore(false, test, "landuse=residential", "building=yes");
 
         assertFalse(test.isPrimitiveUsable(newUsableWay("amenity=restaurant")));
         assertFalse(test.isPrimitiveUsable(TestUtils.newWay("barrier=yes"))); // Unusable (0 node)
@@ -156,7 +170,7 @@ public class CrossingWaysTest {
      * Unit test of {@link CrossingWays.Boundaries}
      */
     @Test
-    public void testBoundaries() {
+    void testBoundaries() {
         Boundaries test = new CrossingWays.Boundaries();
         // isPrimitiveUsable
         assertFalse(test.isPrimitiveUsable(newUsableWay("amenity=restaurant")));
@@ -170,13 +184,79 @@ public class CrossingWaysTest {
      * Unit test of {@link CrossingWays.SelfCrossing}
      */
     @Test
-    public void testSelfCrossing() {
+    void testSelfCrossing() {
         SelfCrossing test = new CrossingWays.SelfCrossing();
         // isPrimitiveUsable
-        assertFalse(test.isPrimitiveUsable(newUsableWay("highway=motorway")));
-        assertFalse(test.isPrimitiveUsable(newUsableWay("barrier=yes")));
-        assertFalse(test.isPrimitiveUsable(newUsableWay("boundary=administrative")));
         assertFalse(test.isPrimitiveUsable(TestUtils.newWay("amenity=restaurant"))); // Unusable (0 node)
-        assertTrue(test.isPrimitiveUsable(newUsableWay("amenity=restaurant"))); // Usable (2 nodes)
+    }
+
+    /**
+     * Various cases of crossing linear ways and areas, mainly for coverage
+     * @throws Exception if an error occurs
+     */
+    @Test
+    void testCoverage() throws Exception {
+        DataSet ds = OsmReader.parseDataSet(
+                Files.newInputStream(Paths.get(TestUtils.getTestDataRoot(), "crossingWays.osm")), null);
+        CrossingWays crossingWays = new CrossingWays.Ways();
+        crossingWays.startTest(null);
+        crossingWays.visit(ds.allPrimitives());
+        crossingWays.endTest();
+
+        assertEquals(109, crossingWays.getErrors().size());
+        for (TestError e : crossingWays.getErrors()) {
+            // we don't report self crossing ways in this test
+            assertEquals(2, e.getPrimitives().size(), e.getPrimitives().toString());
+            // see #20121: crossing water areas should not be reported
+            assertFalse(e.getPrimitives().stream().filter(Way.class::isInstance).allMatch(CrossingWays::isWaterArea));
+        }
+
+        CrossingWays selfCrossing = new CrossingWays.SelfCrossing();
+        selfCrossing.startTest(null);
+        selfCrossing.visit(ds.allPrimitives());
+        selfCrossing.endTest();
+        assertEquals(1, selfCrossing.getErrors().size());
+
+        CrossingWays crossingBoundaries = new CrossingWays.Boundaries();
+        crossingBoundaries.startTest(null);
+        crossingBoundaries.visit(ds.allPrimitives());
+        crossingBoundaries.endTest();
+        assertEquals(2, crossingBoundaries.getErrors().size());
+    }
+
+    /**
+     * Check if partial selection find crossings with unselected objects.
+     * @throws Exception if an error occurs
+     */
+    @Test
+    void testPartial() throws Exception {
+
+        DataSet ds = OsmReader.parseDataSet(
+                Files.newInputStream(Paths.get(TestUtils.getTestDataRoot(), "crossingWays.osm")), null);
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(ds, null, null));
+
+        CrossingWays crossingWays = new CrossingWays.Ways();
+        List<OsmPrimitive> partialSelection = ds.getWays().stream().filter(w -> w.hasTag("testsel", "horizontal"))
+                .collect(Collectors.toList());
+
+        crossingWays.setPartialSelection(true);
+        crossingWays.startTest(null);
+        crossingWays.visit(partialSelection);
+        crossingWays.endTest();
+
+        assertEquals(109, crossingWays.getErrors().size());
+        for (TestError e : crossingWays.getErrors()) {
+            // we don't report self crossing ways in this test
+            assertEquals(2, e.getPrimitives().size(), e.getPrimitives().toString());
+            // see #20121: crossing water areas should not be reported
+            assertFalse(e.getPrimitives().stream().filter(Way.class::isInstance).allMatch(CrossingWays::isWaterArea));
+        }
+
+        CrossingWays crossingBoundaries = new CrossingWays.Boundaries();
+        crossingBoundaries.setPartialSelection(true);
+        crossingBoundaries.startTest(null);
+        crossingBoundaries.visit(ds.allPrimitives());
+        crossingBoundaries.endTest();
+        assertEquals(2, crossingBoundaries.getErrors().size());
     }
 }

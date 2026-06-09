@@ -95,7 +95,14 @@ public class UnclosedWays extends Test {
         public final TestError getTestError(Way w, UnclosedWays test) {
             String value = w.get(key);
             if (isValueErroneous(value)) {
-                return TestError.builder(test, Severity.WARNING, code)
+                final Severity severity;
+                // see #20455: raise severity to error when we are sure that tag key must describe an area
+                if ((ignore && !specialValues.isEmpty()) || "boundary".equals(key)) {
+                    severity = Severity.WARNING;
+                } else {
+                    severity = Severity.ERROR;
+                }
+                return TestError.builder(test, severity, code)
                         .message(tr("Unclosed way"), engMessage, engMessage.contains("{0}") ? new Object[]{value} : new Object[]{})
                         .primitives(w)
                         .highlight(Arrays.asList(w.firstNode(), w.lastNode()))
@@ -138,15 +145,15 @@ public class UnclosedWays extends Test {
         // list contains natural tag allowed on unclosed ways as well as those only allowed on nodes to avoid
         // duplicate warnings
         new UnclosedWaysCheck(1101, "natural", marktr("natural type {0}"),
-            new HashSet<>(Arrays.asList("arete", "bay", "cave", "cliff", "coastline", "gorge", "gully", "peak",
-                            "ridge", "saddle", "strait", "tree", "tree_row", "valley", "volcano"))),
+            new HashSet<>(Arrays.asList("arete", "bay", "cave", "cliff", "coastline", "earth_bank", "gorge", "gully",
+                    "mountain_range", "peak", "ridge", "saddle", "strait", "tree", "tree_row", "valley", "volcano"))),
 
         new UnclosedWaysCheck(1102, "landuse", marktr("landuse type {0}")),
         new UnclosedWaysCheck(1103, "amenity", marktr("amenity type {0}"),
-                new HashSet<>(Arrays.asList("bench", "bicycle_parking"))),
+                new HashSet<>(Arrays.asList("bench", "bicycle_parking", "weighbridge"))),
         new UnclosedWaysCheck(1104, "sport",     marktr("sport type {0}"),
                 new HashSet<>(Arrays.asList("water_slide", "climbing", "skiing", "toboggan", "bobsleigh", "karting", "motor", "motocross",
-                            "cycling"))),
+                            "cycling", "running"))),
         new UnclosedWaysCheck(1105, "tourism",   marktr("tourism type {0}"),
                 new HashSet<>(Arrays.asList("attraction", "artwork"))),
         new UnclosedWaysCheck(1106, "shop",      marktr("shop type {0}")),

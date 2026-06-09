@@ -1,14 +1,16 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.history;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import org.junit.Rule;
-import org.junit.Test;
+import java.awt.Color;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmPrimitiveType;
 import org.openstreetmap.josm.data.osm.SimplePrimitiveId;
@@ -16,27 +18,21 @@ import org.openstreetmap.josm.data.osm.User;
 import org.openstreetmap.josm.data.osm.history.History;
 import org.openstreetmap.josm.data.osm.history.HistoryDataSet;
 import org.openstreetmap.josm.data.osm.history.HistoryNode;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
+import org.openstreetmap.josm.testutils.annotations.OsmApi;
 
 /**
  * Unit tests of {@link HistoryBrowserModel} class.
  */
-public class HistoryBrowserModelTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences().devAPI().timeout(30000);
-
+@BasicPreferences
+@OsmApi(OsmApi.APIType.DEV)
+@Timeout(30)
+class HistoryBrowserModelTest {
     /**
      * Test for {@link HistoryBrowserModel#HistoryBrowserModel}.
      */
     @Test
-    public void testHistoryBrowserModel() {
+    void testHistoryBrowserModel() {
         HistoryBrowserModel model = new HistoryBrowserModel();
         assertNotNull(model.getVersionTableModel());
         assertNull(model.getHistory());
@@ -56,7 +52,7 @@ public class HistoryBrowserModelTest {
      * Unit test of {@link HistoryBrowserModel#getTagTableModel}.
      */
     @Test
-    public void testGetTagTableModel() {
+    void testGetTagTableModel() {
         HistoryBrowserModel model = new HistoryBrowserModel();
         TagTableModel t1 = model.getTagTableModel(PointInTimeType.CURRENT_POINT_IN_TIME);
         TagTableModel t2 = model.getTagTableModel(PointInTimeType.REFERENCE_POINT_IN_TIME);
@@ -69,7 +65,7 @@ public class HistoryBrowserModelTest {
      * Unit test of {@link HistoryBrowserModel#getNodeListTableModel}.
      */
     @Test
-    public void testGetNodeListTableModel() {
+    void testGetNodeListTableModel() {
         HistoryBrowserModel model = new HistoryBrowserModel();
         DiffTableModel t1 = model.getNodeListTableModel(PointInTimeType.CURRENT_POINT_IN_TIME);
         DiffTableModel t2 = model.getNodeListTableModel(PointInTimeType.REFERENCE_POINT_IN_TIME);
@@ -82,7 +78,7 @@ public class HistoryBrowserModelTest {
      * Unit test of {@link HistoryBrowserModel#getRelationMemberTableModel}.
      */
     @Test
-    public void testGetRelationMemberTableModel() {
+    void testGetRelationMemberTableModel() {
         HistoryBrowserModel model = new HistoryBrowserModel();
         DiffTableModel t1 = model.getRelationMemberTableModel(PointInTimeType.CURRENT_POINT_IN_TIME);
         DiffTableModel t2 = model.getRelationMemberTableModel(PointInTimeType.REFERENCE_POINT_IN_TIME);
@@ -95,7 +91,7 @@ public class HistoryBrowserModelTest {
      * Unit test of {@link HistoryBrowserModel#setCurrentPointInTime} and {@link HistoryBrowserModel#setReferencePointInTime} - null history.
      */
     @Test
-    public void testSetPointsInTimeNullHistory() {
+    void testSetPointsInTimeNullHistory() {
         HistoryBrowserModel model = new HistoryBrowserModel();
         VersionTableModel tableModel = model.getVersionTableModel();
         tableModel.setValueAt(false, 0, 0); // code coverage
@@ -108,7 +104,7 @@ public class HistoryBrowserModelTest {
      * Unit test of {@link HistoryBrowserModel#setCurrentPointInTime} and {@link HistoryBrowserModel#setReferencePointInTime} - node history.
      */
     @Test
-    public void testSetPointsInTimeNodeHistory() {
+    void testSetPointsInTimeNodeHistory() {
         SimplePrimitiveId id = new SimplePrimitiveId(2, OsmPrimitiveType.NODE);
         new HistoryLoadTask().add(id).run();
         History history = HistoryDataSet.getInstance().getHistory(id);
@@ -131,7 +127,7 @@ public class HistoryBrowserModelTest {
      * Unit test of {@link HistoryBrowserModel#setCurrentPointInTime} and {@link HistoryBrowserModel#setReferencePointInTime} - way history.
      */
     @Test
-    public void testSetPointsInTimeWayHistory() {
+    void testSetPointsInTimeWayHistory() {
         SimplePrimitiveId id = new SimplePrimitiveId(2, OsmPrimitiveType.WAY);
         new HistoryLoadTask().add(id).run();
         History history = HistoryDataSet.getInstance().getHistory(id);
@@ -154,7 +150,7 @@ public class HistoryBrowserModelTest {
      * Unit test of {@link HistoryBrowserModel#setCurrentPointInTime} and {@link HistoryBrowserModel#setReferencePointInTime} - relation history.
      */
     @Test
-    public void testSetPointsInTimeRelationHistory() {
+    void testSetPointsInTimeRelationHistory() {
         SimplePrimitiveId id = new SimplePrimitiveId(2, OsmPrimitiveType.RELATION);
         new HistoryLoadTask().add(id).run();
         History history = HistoryDataSet.getInstance().getHistory(id);
@@ -171,5 +167,8 @@ public class HistoryBrowserModelTest {
         // members only for relations
         assertEquals(1, model.getRelationMemberTableModel(PointInTimeType.REFERENCE_POINT_IN_TIME).getRowCount());
         assertEquals(1, model.getRelationMemberTableModel(PointInTimeType.CURRENT_POINT_IN_TIME).getRowCount());
+        assertEquals(new Color(0xff0000), model.getVersionColor(0));
+        assertEquals(new Color(0xff00e5), model.getVersionColor(1));
+        assertNull(model.getVersionColor(2));
     }
 }

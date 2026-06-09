@@ -51,13 +51,11 @@ public class TagCellRenderer extends JLabel implements TableCellRenderer {
      * @param tag  the  tag
      */
     protected void renderTagValue(TagModel tag) {
-        if (tag.getValueCount() == 0) {
-            setText("");
-        } else if (tag.getValueCount() == 1) {
-            setText(tag.getValues().get(0));
-        } else if (tag.getValueCount() > 1) {
+        if (tag.getValueCount() > 1) {
             setText(tr("multiple"));
             setFont(fontItalic);
+        } else {
+            setText(tag.getValue());
         }
     }
 
@@ -99,7 +97,7 @@ public class TagCellRenderer extends JLabel implements TableCellRenderer {
             setForeground(UIManager.getColor("Table.foreground"));
         }
 
-        switch(vColIndex) {
+        switch (vColIndex) {
             case 0: renderTagName((TagModel) value); break;
             case 1: renderTagValue((TagModel) value); break;
             default: throw new JosmRuntimeException("unexpected index in switch statement");

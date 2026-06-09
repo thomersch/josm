@@ -4,6 +4,7 @@ package org.openstreetmap.josm.gui.mappaint.mapcss;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -15,7 +16,6 @@ import org.openstreetmap.josm.data.osm.IPrimitive;
 import org.openstreetmap.josm.data.osm.KeyValueVisitor;
 import org.openstreetmap.josm.data.osm.Tagged;
 import org.openstreetmap.josm.gui.mappaint.mapcss.ConditionFactory.KeyCondition;
-import org.openstreetmap.josm.gui.mappaint.mapcss.ConditionFactory.KeyMatchType;
 import org.openstreetmap.josm.gui.mappaint.mapcss.ConditionFactory.KeyValueCondition;
 import org.openstreetmap.josm.gui.mappaint.mapcss.ConditionFactory.SimpleKeyValueCondition;
 import org.openstreetmap.josm.tools.Utils;
@@ -121,6 +121,10 @@ public class MapCSSRuleIndex {
         }
     }
 
+    /** Valid key types for indexing (see {@link ConditionFactory.KeyMatchType}) */
+    private static final EnumSet<ConditionFactory.KeyMatchType> VALID_INDEX_KEY_TYPES = EnumSet.of(
+            ConditionFactory.KeyMatchType.EQ, ConditionFactory.KeyMatchType.TRUE, ConditionFactory.KeyMatchType.FALSE);
+
     /**
      * All rules this index is for. Once this index is built, this list is sorted.
      */
@@ -157,7 +161,7 @@ public class MapCSSRuleIndex {
                     selRightmost = ((Selector.ChildOrParentSelector) selRightmost).right;
                 }
                 final List<Condition> conditions = selRightmost.getConditions();
-                if (conditions == null || conditions.isEmpty()) {
+                if (Utils.isEmpty(conditions)) {
                     remaining.set(ruleIndex);
                     continue;
                 }
@@ -187,9 +191,9 @@ public class MapCSSRuleIndex {
     private static String findAnyRequiredKey(List<Condition> conds) {
         String key = null;
         for (Condition c : conds) {
-            if (c instanceof KeyCondition) {
+            if (c instanceof KeyCondition && VALID_INDEX_KEY_TYPES.contains(((KeyCondition) c).matchType)) {
                 KeyCondition keyCondition = (KeyCondition) c;
-                if (!keyCondition.negateResult && conditionRequiresKeyPresence(keyCondition.matchType)) {
+                if (!keyCondition.negateResult) {
                     key = keyCondition.label;
                 }
             } else if (c instanceof KeyValueCondition) {
@@ -200,10 +204,6 @@ public class MapCSSRuleIndex {
             }
         }
         return key;
-    }
-
-    private static boolean conditionRequiresKeyPresence(KeyMatchType matchType) {
-        return matchType != KeyMatchType.REGEX;
     }
 
     private MapCSSKeyRules getEntryInIndex(String key) {

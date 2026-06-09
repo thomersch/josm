@@ -31,6 +31,7 @@ import org.openstreetmap.josm.gui.layer.SaveToFile;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.widgets.JosmTextField;
 import org.openstreetmap.josm.io.session.SessionWriter.ExportSupport;
+import org.openstreetmap.josm.plugins.PluginHandler;
 import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.ImageProvider;
 import org.w3c.dom.Element;
@@ -95,7 +96,7 @@ public abstract class GenericSessionExporter<T extends Layer> extends AbstractSe
         final JPanel p = new JPanel(new GridBagLayout());
         JPanel topRow = new JPanel(new GridBagLayout());
         export.setSelected(true);
-        final JLabel lbl = new JLabel(layer.getName(), layer.getIcon(), SwingConstants.LEFT);
+        final JLabel lbl = new JLabel(layer.getName(), layer.getIcon(), SwingConstants.LEADING);
         lbl.setToolTipText(layer.getToolTipText());
         lbl.setLabelFor(export);
         JLabel lblData = new JLabel(tr("Data:"));
@@ -191,6 +192,10 @@ public abstract class GenericSessionExporter<T extends Layer> extends AbstractSe
             String zipPath = "layers/" + String.format("%02d", support.getLayerIndex()) + "/data." + extension;
             file.appendChild(support.createTextNode(zipPath));
             addDataFile(support.getOutputStreamZip(zipPath));
+            layer.setAssociatedFile(null);
+            if (layer instanceof AbstractModifiableLayer) {
+                ((AbstractModifiableLayer) layer).onPostSaveToFile();
+            }
         } else {
             try {
                 File f = layer.getAssociatedFile();
@@ -206,7 +211,15 @@ public abstract class GenericSessionExporter<T extends Layer> extends AbstractSe
 
     @Override
     public boolean requiresZip() {
-        return include.isSelected();
+        if (include.isSelected()) {
+            return true;
+        }
+        for (PluginSessionExporter exporter : PluginHandler.load(PluginSessionExporter.class)) {
+            if (exporter.requiresSaving()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     protected abstract void addDataFile(OutputStream out) throws IOException;

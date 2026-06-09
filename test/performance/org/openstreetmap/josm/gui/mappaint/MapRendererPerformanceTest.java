@@ -1,13 +1,16 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.mappaint;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.Point;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -15,16 +18,15 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import javax.imageio.ImageIO;
 
-import org.junit.AfterClass;
-import org.junit.Assert;
-import org.junit.BeforeClass;
-import org.junit.Rule;
-import org.junit.Test;
-import org.openstreetmap.josm.JOSMFixture;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.openstreetmap.josm.PerformanceTestUtils;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.Bounds;
@@ -41,18 +43,23 @@ import org.openstreetmap.josm.gui.mappaint.loader.MapPaintStyleLoader;
 import org.openstreetmap.josm.gui.mappaint.mapcss.MapCSSStyleSource;
 import org.openstreetmap.josm.gui.mappaint.mapcss.Selector;
 import org.openstreetmap.josm.gui.mappaint.styleelement.StyleElement;
-import org.openstreetmap.josm.gui.progress.NullProgressMonitor;
-import org.openstreetmap.josm.io.Compression;
-import org.openstreetmap.josm.io.OsmReader;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
+import org.openstreetmap.josm.testutils.annotations.Main;
+import org.openstreetmap.josm.testutils.annotations.PerformanceTest;
+import org.openstreetmap.josm.testutils.annotations.Projection;
+import org.openstreetmap.josm.testutils.annotations.Territories;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-
-import static org.junit.Assert.assertEquals;
 
 /**
  * Performance test of map renderer.
  */
+@BasicPreferences
+@Main
+@PerformanceTest
+@Projection
+@Territories
+@Timeout(value = 15, unit = TimeUnit.MINUTES)
 public class MapRendererPerformanceTest {
 
     private static final boolean DUMP_IMAGE = false; // dump images to file for debugging purpose
@@ -84,20 +91,11 @@ public class MapRendererPerformanceTest {
     private static final EnumMap<Feature, BooleanStyleSetting> filters = new EnumMap<>(Feature.class);
 
     /**
-     * Setup tests
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules josmTestRules = new JOSMTestRules().main().projection().preferences().timeout(15 * 60 * 1000);
-
-    /**
      * Initializes test environment.
      * @throws Exception if any error occurs
      */
-    @BeforeClass
+    @BeforeAll
     public static void load() throws Exception {
-        JOSMFixture.createPerformanceTestFixture().init(true);
-
         img = new BufferedImage(IMG_WIDTH, IMG_HEIGHT, BufferedImage.TYPE_INT_ARGB);
         g = (Graphics2D) img.getGraphics();
         g.setClip(0, 0, IMG_WIDTH, IMG_HEIGHT);
@@ -128,9 +126,9 @@ public class MapRendererPerformanceTest {
         filterStyle = MapPaintStyles.addStyle(se);
         List<StyleSource> sources = MapPaintStyles.getStyles().getStyleSources();
         filterStyleIdx = sources.indexOf(filterStyle);
-        Assert.assertEquals(2, filterStyleIdx);
+        assertEquals(1, filterStyleIdx);
 
-        Assert.assertEquals(Feature.values().length, filterStyle.settings.size());
+        assertEquals(Feature.values().length, filterStyle.settings.size());
         for (StyleSetting set : filterStyle.settings) {
             BooleanStyleSetting bset = (BooleanStyleSetting) set;
             String prefKey = bset.getKey();
@@ -142,7 +140,7 @@ public class MapRendererPerformanceTest {
                     break;
                 }
             }
-            Assert.assertTrue(prefKey, found);
+            assertTrue(found, prefKey);
         }
 
         MapCSSStyleSource defaultStyle = null;
@@ -154,7 +152,7 @@ public class MapRendererPerformanceTest {
                 break;
             }
         }
-        Assert.assertNotNull(defaultStyle);
+        assertNotNull(defaultStyle);
 
         for (StyleSetting set : defaultStyle.settings) {
             if (set instanceof BooleanStyleSetting) {
@@ -164,21 +162,17 @@ public class MapRendererPerformanceTest {
                 }
             }
         }
-        Assert.assertNotNull(hideIconsSetting);
+        assertNotNull(hideIconsSetting);
         hideIconsSetting.setValue(false);
         MapPaintStyleLoader.reloadStyles(defaultStyleIdx);
 
-        try (
-            InputStream fisC = Compression.getUncompressedFileInputStream(new File("nodist/data/neubrandenburg.osm.bz2"));
-        ) {
-            dsCity = OsmReader.parseDataSet(fisC, NullProgressMonitor.INSTANCE);
-        }
+        dsCity = PerformanceTestUtils.getNeubrandenburgDataSet();
     }
 
     /**
      * Cleanup test environment.
      */
-    @AfterClass
+    @AfterAll
     public static void cleanUp() {
         setFilterStyleActive(false);
         if (hideIconsSetting != null) {
@@ -187,7 +181,7 @@ public class MapRendererPerformanceTest {
         MapPaintStyleLoader.reloadStyles(defaultStyleIdx);
     }
 
-    private static class PerformanceTester {
+    private static final class PerformanceTester {
         public double scale = 0;
         public LatLon center = LL_CITY;
         public Bounds bounds;
@@ -216,7 +210,7 @@ public class MapRendererPerformanceTest {
             nc.zoomTo(ProjectionRegistry.getProjection().latlon2eastNorth(center), scale);
             if (checkScale) {
                 int lvl = Selector.GeneralSelector.scale2level(nc.getDist100Pixel());
-                Assert.assertEquals(17, lvl);
+                assertEquals(17, lvl);
             }
 
             if (bounds == null) {
@@ -282,7 +276,7 @@ public class MapRendererPerformanceTest {
      * @throws IOException in case of an I/O error
      */
     @Test
-    public void testPerformanceGenerate() throws IOException {
+    void testPerformanceGenerate() throws IOException {
         setFilterStyleActive(false);
         PerformanceTester test = new PerformanceTester();
         test.bounds = BOUNDS_CITY_ALL;
@@ -321,7 +315,7 @@ public class MapRendererPerformanceTest {
      * @throws IOException in case of an I/O error
      */
     @Test
-    public void testPerformanceDrawFeatures() throws IOException {
+    void testPerformanceDrawFeatures() throws IOException {
         testDrawFeature(null);
         for (Feature f : Feature.values()) {
             testDrawFeature(f);
@@ -351,7 +345,7 @@ public class MapRendererPerformanceTest {
         ImageIO.write(img, "png", outputfile);
     }
 
-    public static class BenchmarkData extends CapturingBenchmark {
+    static class BenchmarkData extends CapturingBenchmark {
 
         private List<StyleRecord> allStyleElems;
 
@@ -367,7 +361,7 @@ public class MapRendererPerformanceTest {
         }
 
         public void dumpTimes() {
-            System.out.print(String.format("gen. %4d, sort %4d, draw %4d%n", getGenerateTime(), getSortTime(), getDrawTime()));
+            System.out.printf("gen. %4d, sort %4d, draw %4d%n", getGenerateTime(), getSortTime(), getDrawTime());
         }
 
         public void dumpElementCount() {

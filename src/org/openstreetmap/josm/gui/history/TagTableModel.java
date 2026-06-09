@@ -1,6 +1,7 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.history;
 
+import java.awt.Color;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -83,6 +84,36 @@ public final class TagTableModel extends AbstractTableModel {
     }
 
     /**
+     * Returns the history primitive which changed the given key.
+     * @param key the OSM key
+     * @return the history primitive which changed the given key
+     */
+    public HistoryOsmPrimitive getWhichChangedTag(String key) {
+        HistoryOsmPrimitive primitive = model.getPointInTime(pointInTimeType);
+        if (primitive == null)
+            return null;
+        return model.getHistory().getWhichChangedTag(primitive, key, model.isLatest(primitive));
+    }
+
+    /**
+     * Returns a version string for the given primitive, {@code "*"} if it is {@linkplain HistoryBrowserModel#isLatest is latest}.
+     * @param primitive the history primitive
+     * @return a version string for the given primitive
+     */
+    public String getVersionString(HistoryOsmPrimitive primitive) {
+        return model.isLatest(primitive) ? "*" : "v" + primitive.getVersion();
+    }
+
+    /**
+     * Returns the color for the given primitive timestamp
+     * @param primitive the history primitive
+     * @return the color for the given primitive timestamp
+     */
+    public Color getVersionColor(HistoryOsmPrimitive primitive) {
+        return model.getVersionColor(primitive);
+    }
+
+    /**
      * Determines if a tag exists in the opposite point in time for the given key.
      * @param key tag key
      * @return {@code true} if a tag exists for the given key
@@ -141,6 +172,18 @@ public final class TagTableModel extends AbstractTableModel {
 
     @Override
     public int getColumnCount() {
-        return 2;
+        return 3;
+    }
+
+    TwoColumnDiff.Item.DiffItemType getDiffItemType(String key, boolean isValue) {
+        if ((!hasTag(key) && isCurrentPointInTime()) || (!oppositeHasTag(key) && isReferencePointInTime())) {
+            return TwoColumnDiff.Item.DiffItemType.DELETED;
+        } else if ((!oppositeHasTag(key) && isCurrentPointInTime()) || (!hasTag(key) && isReferencePointInTime())) {
+            return TwoColumnDiff.Item.DiffItemType.INSERTED;
+        } else if (isValue && hasTag(key) && oppositeHasTag(key) && !hasSameValueAsOpposite(key)) {
+            return TwoColumnDiff.Item.DiffItemType.CHANGED;
+        } else {
+            return TwoColumnDiff.Item.DiffItemType.EMPTY;
+        }
     }
 }

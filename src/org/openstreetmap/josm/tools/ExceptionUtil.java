@@ -10,11 +10,11 @@ import java.net.MalformedURLException;
 import java.net.SocketException;
 import java.net.URL;
 import java.net.UnknownHostException;
-import java.text.DateFormat;
-import java.text.ParseException;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.FormatStyle;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Date;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -28,6 +28,7 @@ import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.OsmPrimitiveType;
 import org.openstreetmap.josm.data.osm.Relation;
 import org.openstreetmap.josm.data.osm.Way;
+import org.openstreetmap.josm.gui.help.HelpUtil;
 import org.openstreetmap.josm.io.ChangesetClosedException;
 import org.openstreetmap.josm.io.IllegalDataException;
 import org.openstreetmap.josm.io.MissingOAuthAccessTokenException;
@@ -297,7 +298,7 @@ public final class ExceptionUtil {
                 + "Authentication at the OSM server with the OAuth token ''{0}'' failed.<br>"
                 + "Please launch the preferences dialog and retrieve another OAuth token."
                 + "</html>",
-                OAuthAccessTokenHolder.getInstance().getAccessTokenKey()
+                OAuthAccessTokenHolder.getInstance().getAccessToken(e.getUrl(), OsmApi.getAuthMethodVersion())
         );
     }
 
@@ -312,7 +313,7 @@ public final class ExceptionUtil {
         Logging.error(e);
         String msg = e.getDisplayMessage();
 
-        if (msg != null && !msg.isEmpty()) {
+        if (!Utils.isEmpty(msg)) {
             return tr("<html>"
                     + "Authorisation at the OSM server failed.<br>"
                     + "The server reported the following error:<br>"
@@ -343,7 +344,7 @@ public final class ExceptionUtil {
                 + "''{1}''.<br>"
                 + "Please launch the preferences dialog and retrieve another OAuth token."
                 + "</html>",
-                OAuthAccessTokenHolder.getInstance().getAccessTokenKey(),
+                OAuthAccessTokenHolder.getInstance().getAccessToken(e.getUrl(), OsmApi.getAuthMethodVersion()),
                 e.getAccessedUrl() == null ? tr("unknown") : e.getAccessedUrl()
         );
     }
@@ -397,10 +398,10 @@ public final class ExceptionUtil {
             Matcher m = Pattern.compile("The changeset (\\d+) was closed at (.*)").matcher(msg);
             if (m.matches()) {
                 long changesetId = Long.parseLong(m.group(1));
-                Date closeDate = null;
+                Instant closeDate = null;
                 try {
-                    closeDate = DateUtils.newOsmApiDateTimeFormat().parse(m.group(2));
-                } catch (ParseException ex) {
+                    closeDate = DateUtils.parseInstant(m.group(2));
+                } catch (UncheckedParseException ex) {
                     Logging.error(tr("Failed to parse date ''{0}'' replied by server.", m.group(2)));
                     Logging.error(ex);
                 }
@@ -414,7 +415,7 @@ public final class ExceptionUtil {
                             "<html>Closing of changeset <strong>{0}</strong> failed<br>"
                             +" because it has already been closed on {1}.",
                             changesetId,
-                            DateUtils.formatDateTime(closeDate, DateFormat.DEFAULT, DateFormat.DEFAULT)
+                            formatClosedOn(closeDate)
                     );
                 }
                 return msg;
@@ -444,8 +445,12 @@ public final class ExceptionUtil {
                 "<html>Failed to upload to changeset <strong>{0}</strong><br>"
                 +"because it has already been closed on {1}.",
                 e.getChangesetId(),
-                e.getClosedOn() == null ? "?" : DateUtils.formatDateTime(e.getClosedOn(), DateFormat.DEFAULT, DateFormat.DEFAULT)
+                e.getClosedOn() == null ? "?" : formatClosedOn(e.getClosedOn())
         );
+    }
+
+    private static String formatClosedOn(Instant closedOn) {
+        return DateUtils.getDateTimeFormatter(FormatStyle.SHORT, FormatStyle.SHORT).format(closedOn.atZone(ZoneId.systemDefault()));
     }
 
     /**
@@ -456,7 +461,7 @@ public final class ExceptionUtil {
      */
     public static String explainGeneric(Exception e) {
         String msg = e.getMessage();
-        if (msg == null || msg.trim().isEmpty()) {
+        if (Utils.isStripEmpty(msg)) {
             msg = e.toString();
         }
         Logging.error(e);
@@ -574,7 +579,16 @@ public final class ExceptionUtil {
                         errorHeader.startsWith("You requested too many nodes"))) {
             message += "<br>"
                 + tr("The area you tried to download is too big or your request was too large."
-                        + "<br>Either request a smaller area or use an export file provided by the OSM community.");
+                        + "<br>Either request a smaller area or use an export file provided by the OSM community."
+                        + "<br><br>Downloading a smaller area is <em>recommended</em>!"
+                        + "<br><br>Advanced users can use one of the following options:"
+                        + "<br><ul>"
+                        + "<li><a href=\"{0}\">Overpass</a></li>"
+                        + "<li><a href=\"{1}\">Geofabrik</a></li>"
+                        + "<li><a href=\"{2}\">OSM Planet File</a></li>"
+                        + "</ul>", HelpUtil.getHelpTopicUrl("/Help/Action/Download#DownloadfromOverpassAPI"),
+                    "https://www.geofabrik.de/data/download.html",
+                    "https://planet.openstreetmap.org/");
         } else if (errorHeader != null) {
             message += tr("<br>Error message(untranslated): {0}", errorHeader);
         }

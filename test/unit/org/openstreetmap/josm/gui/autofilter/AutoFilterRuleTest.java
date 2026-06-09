@@ -1,38 +1,31 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.autofilter;
 
-import static org.junit.Assert.assertArrayEquals;
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.NoSuchElementException;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-import org.junit.Rule;
-import org.junit.Test;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.OsmUtils;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
+import org.openstreetmap.josm.testutils.annotations.I18n;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests of {@link AutoFilterRule} class.
  */
-public class AutoFilterRuleTest {
-
-    /**
-     * Setup tests
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().i18n();
-
+@BasicPreferences
+@I18n
+class AutoFilterRuleTest {
     /**
      * Unit test of {@link AutoFilterRule#getTagValuesForPrimitive}.
      */
     @Test
-    public void testTagValuesForPrimitive() {
+    void testTagValuesForPrimitive() {
         // #17109, support values like 0.5 or 1.5 - level values are multiplied by 2 when parsing, values are divided by 2 for formatting
         final AutoFilterRule level = AutoFilterRule.getDefaultRule("level").orElseThrow(NoSuchElementException::new);
         assertTagValuesForPrimitive(level, "way level=-4--5", -10, -9, -8);
@@ -51,7 +44,7 @@ public class AutoFilterRuleTest {
      * Unit test of {@link AutoFilterRule#getTagValuesForPrimitive} to deal with {@code %} of key {@code incline}.
      */
     @Test
-    public void testTagValuesForPrimitiveInclineUnit() {
+    void testTagValuesForPrimitiveInclineUnit() {
         final AutoFilterRule incline = AutoFilterRule.getDefaultRule("incline").orElseThrow(NoSuchElementException::new);
         assertTagValuesForPrimitive(incline, "way incline=up");
         assertTagValuesForPrimitive(incline, "way incline=20", 20);
@@ -62,7 +55,7 @@ public class AutoFilterRuleTest {
      * Unit test of {@link AutoFilterRule#getTagValuesForPrimitive} provides sensible defaults, see #17496.
      */
     @Test
-    public void testTagValuesForPrimitivesDefaults() {
+    void testTagValuesForPrimitivesDefaults() {
         final AutoFilterRule layer = AutoFilterRule.getDefaultRule("layer").orElseThrow(NoSuchElementException::new);
         assertTagValuesForPrimitive(layer, "way foo=bar");
         assertTagValuesForPrimitive(layer, "way bridge=yes", 1);
@@ -84,7 +77,7 @@ public class AutoFilterRuleTest {
      * Unit test of {@link AutoFilterRule#formatValue}
      */
     @Test
-    public void testValueFormatter() {
+    void testValueFormatter() {
         final AutoFilterRule voltage = AutoFilterRule.getDefaultRule("voltage").orElseThrow(NoSuchElementException::new);
         assertEquals("230V", voltage.formatValue(230));
         assertEquals("1kV", voltage.formatValue(1000));

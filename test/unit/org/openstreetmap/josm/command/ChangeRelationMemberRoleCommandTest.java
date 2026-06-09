@@ -1,17 +1,14 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.command;
 
-import static org.junit.Assert.assertArrayEquals;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.command.CommandTest.CommandTestDataWithRelation;
 import org.openstreetmap.josm.data.osm.DataSet;
@@ -19,29 +16,28 @@ import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Relation;
 import org.openstreetmap.josm.data.osm.User;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.gui.mappaint.ElemStyles;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
+import org.openstreetmap.josm.testutils.annotations.I18n;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import nl.jqno.equalsverifier.EqualsVerifier;
 import nl.jqno.equalsverifier.Warning;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests of {@link ChangeRelationMemberRoleCommand} class.
  */
-public class ChangeRelationMemberRoleCommandTest {
-
-    /**
-     * We need prefs for nodes.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences().i18n();
+@I18n
+// We need prefs for nodes.
+@BasicPreferences
+class ChangeRelationMemberRoleCommandTest {
     private CommandTestDataWithRelation testData;
 
     /**
      * Set up the test data.
      */
-    @Before
+    @BeforeEach
     public void createTestData() {
         testData = new CommandTestDataWithRelation();
     }
@@ -50,7 +46,7 @@ public class ChangeRelationMemberRoleCommandTest {
      * Test if {@link ChangeRelationMemberRoleCommand} changes the role by index
      */
     @Test
-    public void testRoleChanged() {
+    void testRoleChanged() {
         assertTrue(new ChangeRelationMemberRoleCommand(testData.existingRelation, 0, "newRole").executeCommand());
         assertEquals("newRole", testData.existingRelation.getMember(0).getRole());
         assertEquals(testData.existingNode, testData.existingRelation.getMember(0).getMember());
@@ -66,7 +62,7 @@ public class ChangeRelationMemberRoleCommandTest {
      * Wrong index should be ignored.
      */
     @Test
-    public void testWrongIndex() {
+    void testWrongIndex() {
         // should be ignored
         ChangeRelationMemberRoleCommand command1 = new ChangeRelationMemberRoleCommand(testData.existingRelation, -1, "newRole");
         assertTrue(command1.executeCommand());
@@ -84,7 +80,7 @@ public class ChangeRelationMemberRoleCommandTest {
      * Same role should be ignored.
      */
     @Test
-    public void testSameRole() {
+    void testSameRole() {
         // should be ignored
         assertTrue(new ChangeRelationMemberRoleCommand(testData.existingRelation, 0, "node").executeCommand());
         assertFalse(testData.existingRelation.isModified());
@@ -94,7 +90,7 @@ public class ChangeRelationMemberRoleCommandTest {
      * Test {@link ChangeRelationMemberRoleCommand#undoCommand()}.
      */
     @Test
-    public void testUndo() {
+    void testUndo() {
         ChangeRelationMemberRoleCommand command = new ChangeRelationMemberRoleCommand(testData.existingRelation, 0, "newRole");
         command.executeCommand();
         assertEquals("newRole", testData.existingRelation.getMember(0).getRole());
@@ -113,7 +109,7 @@ public class ChangeRelationMemberRoleCommandTest {
      * Tests {@link ChangeCommand#fillModifiedData(java.util.Collection, java.util.Collection, java.util.Collection)}
      */
     @Test
-    public void testFillModifiedData() {
+    void testFillModifiedData() {
         ArrayList<OsmPrimitive> modified = new ArrayList<>();
         ArrayList<OsmPrimitive> deleted = new ArrayList<>();
         ArrayList<OsmPrimitive> added = new ArrayList<>();
@@ -127,7 +123,7 @@ public class ChangeRelationMemberRoleCommandTest {
      * Test {@link ChangeRelationMemberRoleCommand#getDescriptionText()}
      */
     @Test
-    public void testDescription() {
+    void testDescription() {
         testData.existingRelation.put("name", "xy");
         assertTrue(new ChangeRelationMemberRoleCommand(testData.existingRelation, 0, "newRole").getDescriptionText()
                 .matches("Change relation member role for relation.*xy.*"));
@@ -137,7 +133,7 @@ public class ChangeRelationMemberRoleCommandTest {
      * Test {@link ChangeRelationMemberRoleCommand#getChildren()}
      */
     @Test
-    public void testChildren() {
+    void testChildren() {
         assertNull(new ChangeRelationMemberRoleCommand(testData.existingRelation, 0, "newRole").getChildren());
     }
 
@@ -145,7 +141,7 @@ public class ChangeRelationMemberRoleCommandTest {
      * Unit test of methods {@link ChangeRelationMemberRoleCommand#equals} and {@link ChangeRelationMemberRoleCommand#hashCode}.
      */
     @Test
-    public void testEqualsContract() {
+    void testEqualsContract() {
         TestUtils.assumeWorkingEqualsVerifier();
         EqualsVerifier.forClass(ChangeRelationMemberRoleCommand.class).usingGetClass()
             .withPrefabValues(Relation.class,
@@ -156,6 +152,8 @@ public class ChangeRelationMemberRoleCommandTest {
                     User.createOsmUser(1, "foo"), User.createOsmUser(2, "bar"))
             .withPrefabValues(OsmDataLayer.class,
                 new OsmDataLayer(new DataSet(), "1", null), new OsmDataLayer(new DataSet(), "2", null))
+            .withPrefabValues(ElemStyles.class,
+                new ElemStyles(), new ElemStyles())
             .suppress(Warning.NONFINAL_FIELDS)
             .verify();
     }

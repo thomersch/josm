@@ -1,35 +1,26 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.dialogs.relation;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import javax.swing.JTable;
 
-import org.junit.Rule;
-import org.junit.Test;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests of {@link MemberTableRoleCellRenderer} class.
  */
-public class MemberTableRoleCellRendererTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+@BasicPreferences
+class MemberTableRoleCellRendererTest {
     /**
      * Unit test of {@link MemberTableRoleCellRenderer#MemberTableRoleCellRenderer}.
      */
     @Test
-    public void testMemberTableRoleCellRenderer() {
+    void testMemberTableRoleCellRenderer() {
         MemberTableRoleCellRenderer r = new MemberTableRoleCellRenderer();
         assertEquals(r, r.getTableCellRendererComponent(null, null, false, false, 0, 0));
         assertEquals(r, r.getTableCellRendererComponent(

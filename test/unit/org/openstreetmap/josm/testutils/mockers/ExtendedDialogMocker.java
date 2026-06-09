@@ -1,7 +1,7 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.testutils.mockers;
 
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.awt.Component;
 import java.awt.GraphicsEnvironment;
@@ -87,8 +87,7 @@ public class ExtendedDialogMocker extends BaseDialogMockUp<ExtendedDialog> {
     }
 
     protected String getString(final ExtendedDialog instance) {
-        return Optional.ofNullable(this.simpleStringContentMemo.get(instance))
-            .orElseGet(() -> instance.toString());
+        return Optional.ofNullable(this.simpleStringContentMemo.get(instance)).orElseGet(instance::toString);
     }
 
     protected int getMockResult(final ExtendedDialog instance) {
@@ -142,24 +141,46 @@ public class ExtendedDialogMocker extends BaseDialogMockUp<ExtendedDialog> {
         }
     }
 
-    @Mock
-    private void setupDialog(final Invocation invocation) {
-        if (!GraphicsEnvironment.isHeadless()) {
-            invocation.proceed();
+    /**
+     * Get the result field for an extended dialog instance
+     * @param instance The instance to get the result field for
+     * @return The result field. May be private.
+     * @throws NoSuchFieldException If the field cannot be found. Should never be thrown.
+     */
+    protected Field getResultField(ExtendedDialog instance) throws NoSuchFieldException {
+        // Note that subclasses of ExtendedDialogMocker will not have "result" as a declared field.
+        // Iterate up the chain until we get to a field that has "result" as a declared field.
+        // Only reason for this is just in case someone overrides the logic in ExtendedDialog.
+        Class<?> clazz = instance.getClass();
+        Field resultField = null;
+        // Store the exception, if any
+        NoSuchFieldException noSuchFieldException = null;
+        while (!Object.class.equals(clazz) && resultField == null) {
+            try {
+                resultField = clazz.getDeclaredField("result");
+            } catch (NoSuchFieldException e) {
+                clazz = instance.getClass().getSuperclass();
+                // Only save the first exception
+                if (noSuchFieldException == null) {
+                    noSuchFieldException = e;
+                }
+            }
         }
-        // else do nothing - WindowMocker-ed Windows doesn't work well enough for some of the
-        // component constructions
+        if (resultField == null) {
+            throw noSuchFieldException;
+        }
+        return resultField;
     }
 
     @Mock
     private void setVisible(final Invocation invocation, final boolean value) throws Throwable {
-        if (value == true) {
+        if (value) {
             try {
                 final ExtendedDialog instance = invocation.getInvokedInstance();
                 this.act(instance);
                 final int mockResult = this.getMockResult(instance);
                 // TODO check validity of mockResult?
-                Field resultField = instance.getClass().getDeclaredField("result");
+                final Field resultField = this.getResultField(instance);
                 resultField.setAccessible(true);
                 resultField.set(instance, mockResult);
                 Logging.info(

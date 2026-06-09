@@ -24,6 +24,7 @@ import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.data.osm.WaySegment;
+import org.openstreetmap.josm.data.projection.ProjectionRegistry;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.MapView;
 import org.openstreetmap.josm.gui.MapViewState;
@@ -340,7 +341,7 @@ class DrawSnapHelper {
         MapView mapView = MainApplication.getMap().mapView;
         EastNorth p0 = drawAction.getCurrentBaseNode().getEastNorth();
         EastNorth snapPoint = currentEN;
-        double angle = -1;
+        double angle = Double.NaN;
 
         double activeBaseHeading = (customBaseHeading >= 0) ? customBaseHeading : baseHeading;
 
@@ -388,7 +389,7 @@ class DrawSnapHelper {
 
         // find out the distance, in metres, between the base point and projected point
         LatLon mouseLatLon = mapView.getProjection().eastNorth2latlon(snapPoint);
-        double distance = this.drawAction.getCurrentBaseNode().getCoor().greatCircleDistance(mouseLatLon);
+        double distance = this.drawAction.getCurrentBaseNode().greatCircleDistance(mouseLatLon);
         double hdg = Utils.toDegrees(p0.heading(snapPoint));
         // heading of segment from current to calculated point, not to mouse position
 
@@ -439,7 +440,7 @@ class DrawSnapHelper {
         double de = p.east()-e0;
         double dn = p.north()-n0;
         double l = de*pe+dn*pn;
-        double delta = MainApplication.getMap().mapView.getDist100Pixel()/20;
+        double delta = MainApplication.getMap().mapView.getDist100Pixel() / (20 * ProjectionRegistry.getProjection().getMetersPerUnit());
         if (!absoluteFix && l < delta) {
             active = false;
             return p;
@@ -463,7 +464,7 @@ class DrawSnapHelper {
                 }
                 EastNorth enOpt = null;
                 double dOpt = 1e5;
-                for (EastNorth en: pointsToProject) { // searching for besht projection
+                for (EastNorth en: pointsToProject) { // searching for best projection
                     double l1 = (en.east()-e0)*pe+(en.north()-n0)*pn;
                     double d1 = Math.abs(l1-l);
                     if (d1 < delta && d1 < dOpt) {

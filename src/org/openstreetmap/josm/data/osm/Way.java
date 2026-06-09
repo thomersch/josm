@@ -10,9 +10,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.DoubleStream;
 import java.util.stream.IntStream;
 
-import org.openstreetmap.josm.data.coor.LatLon;
+import org.openstreetmap.josm.data.coor.ILatLon;
 import org.openstreetmap.josm.data.osm.visitor.OsmPrimitiveVisitor;
 import org.openstreetmap.josm.data.osm.visitor.PrimitiveVisitor;
 import org.openstreetmap.josm.spi.preferences.Config;
@@ -30,11 +31,12 @@ import org.openstreetmap.josm.tools.Utils;
 public final class Way extends OsmPrimitive implements IWay<Node> {
 
     static final UniqueIdGenerator idGenerator = new UniqueIdGenerator();
+    private static final Node[] EMPTY_NODES = new Node[0];
 
     /**
      * All way nodes in this way
      */
-    private Node[] nodes = new Node[0];
+    private Node[] nodes = EMPTY_NODES;
     private BBox bbox;
 
     @Override
@@ -52,10 +54,10 @@ public final class Way extends OsmPrimitive implements IWay<Node> {
                 node.clearCachedStyle();
             }
 
-            if (nodes == null) {
-                this.nodes = new Node[0];
+            if (Utils.isEmpty(nodes)) {
+                this.nodes = EMPTY_NODES;
             } else {
-                this.nodes = nodes.toArray(new Node[0]);
+                this.nodes = nodes.toArray(EMPTY_NODES);
             }
             for (Node node: this.nodes) {
                 node.addReferrer(this);
@@ -155,7 +157,8 @@ public final class Way extends OsmPrimitive implements IWay<Node> {
      * @since 3348
      */
     public List<Pair<Node, Node>> getNodePairs(boolean sort) {
-        List<Pair<Node, Node>> chunkSet = new ArrayList<>();
+        // For a way of size n, there are n - 1 pairs (a -> b, b -> c, c -> d, etc., 4 nodes -> 3 pairs)
+        List<Pair<Node, Node>> chunkSet = new ArrayList<>(Math.max(0, this.getNodesCount() - 1));
         if (isIncomplete()) return chunkSet;
         Node lastN = null;
         for (Node n : nodes) {
@@ -195,6 +198,7 @@ public final class Way extends OsmPrimitive implements IWay<Node> {
 
     /**
      * Constructs a new {@code Way} from an existing {@code Way}.
+     * This adds links from all way nodes to the clone. See #19885 for possible memory leaks.
      * @param original The original {@code Way} to be identically cloned. Must not be null
      * @param clearMetadata If {@code true}, clears the OSM id and other metadata as defined by {@link #clearOsmMetadata}.
      * If {@code false}, does nothing
@@ -211,6 +215,7 @@ public final class Way extends OsmPrimitive implements IWay<Node> {
 
     /**
      * Constructs a new {@code Way} from an existing {@code Way}.
+     * This adds links from all way nodes to the clone. See #19885 for possible memory leaks.
      * @param original The original {@code Way} to be identically cloned. Must not be null
      * @param clearMetadata If {@code true}, clears the OSM id and other metadata as defined by {@link #clearOsmMetadata}.
      * If {@code false}, does nothing
@@ -222,6 +227,7 @@ public final class Way extends OsmPrimitive implements IWay<Node> {
 
     /**
      * Constructs a new {@code Way} from an existing {@code Way} (including its id).
+     * This adds links from all way nodes to the clone. See #19885 for possible memory leaks.
      * @param original The original {@code Way} to be identically cloned. Must not be null
      * @since 86
      */
@@ -581,9 +587,9 @@ public final class Way extends OsmPrimitive implements IWay<Node> {
         if (getDataSet() == null)
             return new BBox(this);
         if (bbox == null) {
-            bbox = new BBox(this);
+            setBBox(new BBox(this));
         }
-        return new BBox(bbox);
+        return bbox;
     }
 
     @Override
@@ -591,19 +597,35 @@ public final class Way extends OsmPrimitive implements IWay<Node> {
         box.add(getBBox());
     }
 
+    private void setBBox(BBox bbox) {
+        this.bbox = bbox == null ? null : bbox.toImmutable();
+    }
+
     @Override
     public void updatePosition() {
-        bbox = new BBox(this);
+        setBBox(new BBox(this));
         clearCachedStyle();
     }
 
-    /**
-     * Replies true if this way has incomplete nodes, false otherwise.
-     * @return true if this way has incomplete nodes, false otherwise.
-     * @since 2587
-     */
+    @Override
     public boolean hasIncompleteNodes() {
-        return Arrays.stream(nodes).anyMatch(Node::isIncomplete);
+        /*
+         * Ideally, we would store this as a flag, but a node may become
+         * incomplete under some circumstances without being able to notify the
+         * way to recalculate the flag.
+         *
+         * When profiling #20716 on Mesa County, CO (overpass download), the
+         * Arrays.stream method was fairly expensive. When switching to the for
+         * loop, the CPU samples for hasIncompleteNodes went from ~150k samples
+         * to ~8.5k samples (94% improvement) and the memory allocations for
+         * hasIncompleteNodes went from ~15.6 GB to 0.
+         */
+        for (Node node : nodes) {
+            if (node.isIncomplete()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -612,7 +634,17 @@ public final class Way extends OsmPrimitive implements IWay<Node> {
      * @since 13033
      */
     public boolean hasOnlyLocatableNodes() {
-        return Arrays.stream(nodes).allMatch(Node::isLatLonKnown);
+        // This is used in various places, some of which are on the UI thread.
+        // If this is called many times, the memory allocations can become prohibitive, if
+        // we use Java streams.
+        // This can be easily tested by loading a large amount of ways into JOSM, and then
+        // selecting everything.
+        for (Node node : nodes) {
+            if (!node.isLatLonKnown()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     @Override
@@ -626,7 +658,7 @@ public final class Way extends OsmPrimitive implements IWay<Node> {
     }
 
     /**
-     * Replies the length of the way, in metres, as computed by {@link LatLon#greatCircleDistance}.
+     * Replies the length of the way, in metres, as computed by {@link ILatLon#greatCircleDistance}.
      * @return The length of the way, in metres
      * @since 4138
      */
@@ -634,12 +666,8 @@ public final class Way extends OsmPrimitive implements IWay<Node> {
         double length = 0;
         Node lastN = null;
         for (Node n:nodes) {
-            if (lastN != null) {
-                LatLon lastNcoor = lastN.getCoor();
-                LatLon coor = n.getCoor();
-                if (lastNcoor != null && coor != null) {
-                    length += coor.greatCircleDistance(lastNcoor);
-                }
+            if (lastN != null && lastN.isLatLonKnown() && n.isLatLonKnown()) {
+                length += n.greatCircleDistance(lastN);
             }
             lastN = n;
         }
@@ -647,27 +675,39 @@ public final class Way extends OsmPrimitive implements IWay<Node> {
     }
 
     /**
-     * Replies the length of the longest segment of the way, in metres, as computed by {@link LatLon#greatCircleDistance}.
+     * Replies the segment lengths of the way as computed by {@link ILatLon#greatCircleDistance}.
+     *
+     * @return The segment lengths of a way in metres, following way direction
+     * @since 18553
+     */
+    public double[] getSegmentLengths() {
+        return this.segmentLengths().toArray();
+    }
+
+    /**
+     * Replies the length of the longest segment of the way, in metres, as computed by {@link ILatLon#greatCircleDistance}.
      * @return The length of the segment, in metres
      * @since 8320
      */
     public double getLongestSegmentLength() {
-        double length = 0;
+        return this.segmentLengths().max().orElse(0);
+    }
+
+    /**
+     * Get the segment lengths as a stream
+     * @return The stream of segment lengths (ordered)
+     */
+    private DoubleStream segmentLengths() {
+        DoubleStream.Builder builder = DoubleStream.builder();
         Node lastN = null;
-        for (Node n:nodes) {
-            if (lastN != null) {
-                LatLon lastNcoor = lastN.getCoor();
-                LatLon coor = n.getCoor();
-                if (lastNcoor != null && coor != null) {
-                    double l = coor.greatCircleDistance(lastNcoor);
-                    if (l > length) {
-                        length = l;
-                    }
-                }
+        for (Node n : nodes) {
+            if (lastN != null && n.isLatLonKnown() && lastN.isLatLonKnown()) {
+                double distance = n.greatCircleDistance(lastN);
+                builder.accept(distance);
             }
             lastN = n;
         }
-        return length;
+        return builder.build();
     }
 
     /**

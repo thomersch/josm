@@ -6,6 +6,7 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 import java.awt.event.ActionEvent;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.function.IntFunction;
 import java.util.function.Supplier;
 
@@ -53,10 +54,8 @@ public class RestorePropertyAction extends AbstractAction {
         OsmPrimitive primitive = objectSp.get();
         if (primitive == null) return;
 
-        HashMap<String, String> changes = new HashMap<>();
-        for (int index : TableHelper.getSelectedIndices(selectionModel)) {
-            changes.put(keyFn.apply(index), valueFn.apply(index));
-        }
+        Map<String, String> changes = TableHelper.selectedIndices(selectionModel).boxed()
+                .collect(HashMap::new, (m, i) -> m.put(keyFn.apply(i), valueFn.apply(i)), HashMap::putAll);
         ChangePropertyCommand command = new ChangePropertyCommand(Collections.singleton(primitive), changes);
         UndoRedoHandler.getInstance().add(command);
     }

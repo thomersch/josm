@@ -1,9 +1,10 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.dialogs.validator;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -12,34 +13,25 @@ import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.Set;
 
-import org.junit.Rule;
-import org.junit.Test;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.validation.Severity;
 import org.openstreetmap.josm.data.validation.TestError;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests of {@link ValidatorTreePanel} class.
  */
-public class ValidatorTreePanelTest {
-
-    /**
-     * Setup tests
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences();
-
+@BasicPreferences
+class ValidatorTreePanelTest {
     /**
      * Unit test of {@link ValidatorTreePanel#ValidatorTreePanel}.
      */
     @Test
-    public void testValidatorTreePanel() {
-        assertNotNull(new ValidatorTreePanel());
+    void testValidatorTreePanel() {
+        assertDoesNotThrow(() -> new ValidatorTreePanel());
 
         ValidatorTreePanel vtp = new ValidatorTreePanel(new ArrayList<>(Arrays.asList(
                 TestError.builder(null, Severity.ERROR, 0)
@@ -67,19 +59,19 @@ public class ValidatorTreePanelTest {
         vtp.setVisible(true);
         vtp.setVisible(false);
         Node n = new Node(10);
-        vtp.setErrors(Arrays.asList(TestError.builder(null, Severity.ERROR, 0)
+        vtp.setErrors(Collections.singletonList(TestError.builder(null, Severity.ERROR, 0)
                 .message("")
                 .primitives(n)
                 .build()));
         assertEquals(1, vtp.getErrors().size());
-        vtp.selectRelatedErrors(Collections.<OsmPrimitive>singleton(n));
+        vtp.selectRelatedErrors(Collections.singleton(n));
         vtp.expandAll();
         assertNotNull(vtp.getRoot());
         vtp.resetErrors();
-        Set<? extends OsmPrimitive> filter = new HashSet<>(Arrays.asList(n));
+        Set<? extends OsmPrimitive> filter = new HashSet<>(Collections.singletonList(n));
         vtp.setFilter(filter);
         assertEquals(filter, vtp.getFilter());
-        vtp.setFilter(new HashSet<OsmPrimitive>());
+        vtp.setFilter(new HashSet<>());
         assertNull(vtp.getFilter());
         vtp.setFilter(null);
         assertNull(vtp.getFilter());

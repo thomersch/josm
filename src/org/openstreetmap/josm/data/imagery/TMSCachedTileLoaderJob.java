@@ -10,6 +10,7 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
@@ -22,6 +23,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.commons.jcs3.access.behavior.ICacheAccess;
+import org.apache.commons.jcs3.engine.behavior.ICache;
 import org.openstreetmap.gui.jmapviewer.Tile;
 import org.openstreetmap.gui.jmapviewer.interfaces.TileJob;
 import org.openstreetmap.gui.jmapviewer.interfaces.TileLoaderListener;
@@ -32,6 +34,8 @@ import org.openstreetmap.josm.data.cache.CacheEntry;
 import org.openstreetmap.josm.data.cache.CacheEntryAttributes;
 import org.openstreetmap.josm.data.cache.ICachedLoaderListener;
 import org.openstreetmap.josm.data.cache.JCSCachedTileLoaderJob;
+import org.openstreetmap.josm.data.imagery.vectortile.VectorTile;
+import org.openstreetmap.josm.data.imagery.vectortile.mapbox.MVTFile;
 import org.openstreetmap.josm.data.preferences.LongProperty;
 import org.openstreetmap.josm.tools.HttpClient;
 import org.openstreetmap.josm.tools.Logging;
@@ -83,7 +87,8 @@ public class TMSCachedTileLoaderJob extends JCSCachedTileLoaderJob<String, Buffe
     public String getCacheKey() {
         if (tile != null) {
             TileSource tileSource = tile.getTileSource();
-            return Optional.ofNullable(tileSource.getName()).orElse("").replace(':', '_') + ':'
+            return Optional.ofNullable(tileSource.getName()).orElse("").replace(ICache.NAME_COMPONENT_DELIMITER, "_")
+                    + ICache.NAME_COMPONENT_DELIMITER
                     + tileSource.getTileId(tile.getZoom(), tile.getXtile(), tile.getYtile());
         }
         return null;
@@ -134,12 +139,34 @@ public class TMSCachedTileLoaderJob extends JCSCachedTileLoaderJob<String, Buffe
             attributes.setNoTileAtZoom(true);
             return false; // do no try to load data from no-tile at zoom, cache empty object instead
         }
+        if (isNotImage(headers, statusCode)) {
+            String message = detectErrorMessage(new String(content, StandardCharsets.UTF_8));
+            if (!Utils.isEmpty(message)) {
+                tile.setError(message);
+            }
+            return false;
+        }
         return super.isResponseLoadable(headers, statusCode, content);
     }
 
+    private boolean isNotImage(Map<String, List<String>> headers, int statusCode) {
+        if (statusCode == 200 && headers.containsKey("Content-Type") && !headers.get("Content-Type").isEmpty()) {
+            String contentType = headers.get("Content-Type").stream().findAny().orElse(null);
+            if (contentType != null && !contentType.startsWith("image") && !MVTFile.MIMETYPE.contains(contentType.toLowerCase(Locale.ROOT))) {
+                Logging.warn("Image not returned for tile: " + url + " content type was: " + contentType);
+                // not an image - do not store response in cache, so next time it will be queried again from the server
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Override
-    protected boolean cacheAsEmpty() {
-        return isNoTileAtZoom() || super.cacheAsEmpty();
+    protected boolean cacheAsEmpty(Map<String, List<String>> headerFields, int responseCode) {
+        if (isNotImage(headerFields, responseCode)) {
+            return false;
+        }
+        return isNoTileAtZoom() || super.cacheAsEmpty(headerFields, responseCode);
     }
 
     @Override
@@ -170,7 +197,7 @@ public class TMSCachedTileLoaderJob extends JCSCachedTileLoaderJob<String, Buffe
                 }
             }
 
-            switch(result) {
+            switch (result) {
             case SUCCESS:
                 handleNoTileAtZoom();
                 if (attributes != null) {
@@ -188,6 +215,8 @@ public class TMSCachedTileLoaderJob extends JCSCachedTileLoaderJob<String, Buffe
                 break;
             case CANCELED:
                 tile.loadingCanceled();
+                break;
+            default: // This should be removed when we move to Java 17+
                 // do nothing
             }
 
@@ -210,6 +239,10 @@ public class TMSCachedTileLoaderJob extends JCSCachedTileLoaderJob<String, Buffe
     }
 
     private void handleError(CacheEntryAttributes attributes) {
+        if (tile.hasError() && tile.getErrorMessage() != null) {
+            // tile has already set error message, don't overwrite it
+            return;
+        }
         if (attributes != null) {
             int httpStatusCode = attributes.getResponseCode();
             if (attributes.getErrorMessage() == null) {
@@ -292,10 +325,11 @@ public class TMSCachedTileLoaderJob extends JCSCachedTileLoaderJob<String, Buffe
     private boolean tryLoadTileImage(CacheEntry object) throws IOException {
         if (object != null) {
             byte[] content = object.getContent();
-            if (content.length > 0) {
+            if (content.length > 0 || tile instanceof VectorTile) {
                 try (ByteArrayInputStream in = new ByteArrayInputStream(content)) {
                     tile.loadImage(in);
-                    if (tile.getImage() == null) {
+                    if ((!(tile instanceof VectorTile) && tile.getImage() == null)
+                        || ((tile instanceof VectorTile) && !tile.isLoaded())) {
                         String s = new String(content, StandardCharsets.UTF_8);
                         Matcher m = SERVICE_EXCEPTION_PATTERN.matcher(s);
                         if (m.matches()) {

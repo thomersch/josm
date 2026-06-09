@@ -21,10 +21,10 @@ import java.awt.image.DataBufferInt;
 import java.awt.image.Raster;
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.Date;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
@@ -59,6 +59,7 @@ import org.openstreetmap.josm.tools.JosmRuntimeException;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.Stopwatch;
 import org.openstreetmap.josm.tools.Utils;
+import org.openstreetmap.josm.tools.date.Interval;
 
 /**
  * Class that helps to draw large set of GPS tracks with different colors and options
@@ -90,7 +91,8 @@ public class GpxDrawHelper implements SoMChangeListener, MapViewPaintable.LayerP
     /** paint large dots for points **/
     private boolean large;
     private int largesize;
-    private boolean hdopCircle;
+    private boolean drawCircle;
+    private int circleDataSource;
     /** paint direction arrow with alternate math. may be faster **/
     private boolean arrowsFast;
     /** don't draw arrows nearer to each other than this **/
@@ -131,11 +133,13 @@ public class GpxDrawHelper implements SoMChangeListener, MapViewPaintable.LayerP
     /** Colors (without custom alpha channel, if given) for HDOP painting. **/
     private ColorScale hdopScale;
     private ColorScale qualityScale;
+    private ColorScale fixScale;
+    private ColorScale refScale;
     private ColorScale dateScale;
     private ColorScale directionScale;
 
-    /** Opacity for hdop points **/
-    private int hdopAlpha;
+    /** Opacity for circle points **/
+    private int circleAlpha;
 
     // lookup array to draw arrows without doing any math
     private static final int ll0 = 9;
@@ -189,20 +193,65 @@ public class GpxDrawHelper implements SoMChangeListener, MapViewPaintable.LayerP
         Color.CYAN // PPP
     };
 
+    private static final String[] rtkLibQualityNames = {
+            tr("1 - Fixed"),
+            tr("2 - Float"),
+            tr("3 - Reserved"),
+            tr("4 - DGPS"),
+            tr("5 - Single"),
+            tr("6 - PPP")
+    };
+
+    /**
+     *  @see GpxConstants#FIX_VALUES
+     */
+    private static final Color[] gpsFixQualityColors = {
+            Color.MAGENTA, //None
+            new Color(255, 125, 0), //2D (orange-red)
+            Color.ORANGE, //3D
+            Color.CYAN, //DGPS
+            new Color(150, 255, 150), //PPS (light-green)
+            Color.GREEN, //RTK
+            Color.YELLOW, //Float RTK
+            Color.RED, //Estimated
+            Color.BLUE, //Manual
+            Color.GRAY //Simulated
+    };
+
+    private static final String[] gpsFixQualityNames = {
+            tr("None"),
+            tr("2D"),
+            tr("3D"),
+            tr("DGPS"),
+            tr("PPS"),
+            tr("RTK"),
+            tr("Float RTK"),
+            tr("Estimated"),
+            tr("Manual"),
+            tr("Simulated")
+    };
+
     // user defined heatmap color
     private Color[] heatMapLutColor = createColorLut(0, Color.BLACK, Color.WHITE);
 
     // The heat map was invalidated since the last draw.
     private boolean gpxLayerInvalidated;
 
+    /** minTime saves the start time of the track as epoch seconds */
+    private double minTime;
+    /** maxTime saves the end time of the track as epoch seconds */
+    private double maxTime;
+
     private void setupColors() {
-        hdopAlpha = Config.getPref().getInt("hdop.color.alpha", -1);
+        circleAlpha = Config.getPref().getInt("circle.color.alpha", -1);
         velocityScale = ColorScale.createHSBScale(256);
-        /** Colors (without custom alpha channel, if given) for HDOP painting. **/
+        /* Colors (without custom alpha channel, if given) for HDOP painting. */
         hdopScale = ColorScale.createHSBScale(256).makeReversed().addTitle(tr("HDOP"));
-        qualityScale = ColorScale.createFixedScale(rtkLibQualityColors).addTitle(tr("Quality"));
-        dateScale = ColorScale.createHSBScale(256).addTitle(tr("Time"));
-        directionScale = ColorScale.createCyclicScale(256).setIntervalCount(4).addTitle(tr("Direction"));
+        qualityScale = ColorScale.createFixedScale(rtkLibQualityColors).addTitle(tr("Quality")).addColorBarTitles(rtkLibQualityNames);
+        fixScale = ColorScale.createFixedScale(gpsFixQualityColors).addTitle(tr("GPS fix value")).addColorBarTitles(gpsFixQualityNames);
+        refScale = ColorScale.createCyclicScale(1).addTitle(tr("GPS Ref-ID"));
+        dateScale = ColorScale.createHSBScale(256).addTitle(tr("Track date"));
+        directionScale = ColorScale.createCyclicScale(256).setIntervalCount(4).addTitle(tr("Direction [°]"));
 
         systemOfMeasurementChanged(null, null);
     }
@@ -210,7 +259,7 @@ public class GpxDrawHelper implements SoMChangeListener, MapViewPaintable.LayerP
     @Override
     public void systemOfMeasurementChanged(String oldSoM, String newSoM) {
         SystemOfMeasurement som = SystemOfMeasurement.getSystemOfMeasurement();
-        velocityScale.addTitle(tr("Velocity, {0}", som.speedName));
+        velocityScale.addTitle(tr("Velocity [{0}]", som.speedName));
         layer.invalidate();
     }
 
@@ -245,7 +294,15 @@ public class GpxDrawHelper implements SoMChangeListener, MapViewPaintable.LayerP
         /**
          * Color by quality (RTKLib)
          */
-        QUALITY;
+        QUALITY,
+        /**
+         * Color by GPS fix
+         */
+        FIX,
+        /**
+         * Color by differential ID
+         */
+        REF;
 
         static ColorMode fromIndex(final int index) {
             return values()[index];
@@ -323,7 +380,8 @@ public class GpxDrawHelper implements SoMChangeListener, MapViewPaintable.LayerP
         }
         large = optBool("points.large");
         largesize = optInt("points.large.size");
-        hdopCircle = optBool("points.hdopcircle");
+        drawCircle = optBool("points.circle");
+        circleDataSource = optInt("points.circle.data.source");
         colored = getColorMode();
         velocityTune = optInt("colormode.velocity.tune");
         colorModeDynamic = optBool("colormode.dynamic-range");
@@ -346,6 +404,8 @@ public class GpxDrawHelper implements SoMChangeListener, MapViewPaintable.LayerP
         dateScale.setNoDataColor(neutralColor);
         hdopScale.setNoDataColor(neutralColor);
         qualityScale.setNoDataColor(neutralColor);
+        fixScale.setNoDataColor(neutralColor);
+        refScale.setNoDataColor(neutralColor);
         directionScale.setNoDataColor(neutralColor);
 
         largesize += lineWidth;
@@ -520,7 +580,7 @@ public class GpxDrawHelper implements SoMChangeListener, MapViewPaintable.LayerP
                             continue;
                         }
                         if (oldWp != null && trkPnt.getTimeInMillis() > oldWp.getTimeInMillis()) {
-                            double vel = trkPnt.getCoor().greatCircleDistance(oldWp.getCoor())
+                            double vel = trkPnt.greatCircleDistance(oldWp)
                                     / (trkPnt.getTime() - oldWp.getTime());
                             velocities.add(vel);
                         }
@@ -539,8 +599,8 @@ public class GpxDrawHelper implements SoMChangeListener, MapViewPaintable.LayerP
                 for (Line segment : getLinesIterable(null)) {
                     for (WayPoint trkPnt : segment) {
                         Object val = trkPnt.get(GpxConstants.PT_HDOP);
-                        if (val != null) {
-                            double hdop = ((Float) val).doubleValue();
+                        if (val instanceof Float) {
+                            double hdop = ((Float) val);
                             if (hdop > maxval) {
                                 maxval = hdop;
                             }
@@ -561,41 +621,74 @@ public class GpxDrawHelper implements SoMChangeListener, MapViewPaintable.LayerP
             velocityScale.setRange(0, velocityTune);
             hdopScale.setRange(0, hdoprange);
             qualityScale.setRange(1, rtkLibQualityColors.length);
+            fixScale.setRange(0, gpsFixQualityColors.length);
+            refScale.setRange(0, gpsFixQualityColors.length);
         }
         double now = System.currentTimeMillis()/1000.0;
         if (colored == ColorMode.TIME) {
-            Date[] bounds = data.getMinMaxTimeForAllTracks();
-            if (bounds.length >= 2) {
-                minval = bounds[0].getTime()/1000.0;
-                maxval = bounds[1].getTime()/1000.0;
-            } else {
-                minval = 0;
-                maxval = now;
-            }
+            Interval interval = data.getMinMaxTimeForAllTracks().orElse(new Interval(Instant.EPOCH, Instant.now()));
+            minval = interval.getStart().getEpochSecond();
+            maxval = interval.getEnd().getEpochSecond();
+            this.minTime = minval;
+            this.maxTime = maxval;
+
             dateScale.setRange(minval, maxval);
         }
 
+        ArrayList<String> refs = new ArrayList<>();
+        if (colored == ColorMode.REF) {
+            for (Line segment : getLinesIterable(null)) {
+                for (WayPoint trkPnt : segment) {
+                    if (trkPnt.get(GpxConstants.PT_DGPSID) != null) {
+                        String refval = trkPnt.get(GpxConstants.PT_DGPSID).toString();
+                        int i = refs.indexOf(refval);
+                        if (i < 0) {
+                            refs.add(refval);
+                        }
+                    }
+                }
+            }
+            if (!refs.isEmpty()) {
+                Collections.sort(refs);
+                String[] a = {};
+                refScale = ColorScale.createCyclicScale(refs.size()).addTitle(tr("GPS ref ID")).addColorBarTitles(refs.toArray(a));
+                refScale.setRange(0, refs.size());
+            }
+        }
         // Now the colors for all the points will be assigned
         for (Line segment : getLinesIterable(null)) {
             if (!forceLines) { // don't draw lines between segments, unless forced to
                 oldWp = null;
             }
             for (WayPoint trkPnt : segment) {
-                LatLon c = trkPnt.getCoor();
                 trkPnt.customColoring = segment.getColor();
-                if (Double.isNaN(c.lat()) || Double.isNaN(c.lon())) {
+                if (Double.isNaN(trkPnt.lat()) || Double.isNaN(trkPnt.lon())) {
                     continue;
                 }
                 // now we are sure some color will be assigned
                 Color color = null;
 
                 if (colored == ColorMode.HDOP) {
-                    color = hdopScale.getColor((Float) trkPnt.get(GpxConstants.PT_HDOP));
+                    color = hdopScale.getColor((Number) trkPnt.get(GpxConstants.PT_HDOP));
                 } else if (colored == ColorMode.QUALITY) {
-                    color = qualityScale.getColor((Integer) trkPnt.get(GpxConstants.RTKLIB_Q));
+                    color = qualityScale.getColor((Number) trkPnt.get(GpxConstants.RTKLIB_Q));
+                } else if (colored == ColorMode.FIX) {
+                    Object fixval = trkPnt.get(GpxConstants.PT_FIX);
+                    if (fixval != null) {
+                        int fix = GpxConstants.FIX_VALUES.indexOf(fixval);
+                        if (fix >= 0) {
+                            color = fixScale.getColor(fix);
+                        }
+                    }
+                } else if (colored == ColorMode.REF && trkPnt.get(GpxConstants.PT_DGPSID) != null) {
+                    String refVal = trkPnt.get(GpxConstants.PT_DGPSID).toString();
+                    int i = refs.indexOf(refVal);
+                    if (i >= 0) {
+                        color = refScale.getColor(i);
+                    }
                 }
                 if (oldWp != null) { // other coloring modes need segment for calcuation
-                    double dist = c.greatCircleDistance(oldWp.getCoor());
+                    double dist = trkPnt.greatCircleDistance(oldWp);
                     boolean noDraw = false;
                     switch (colored) {
                     case VELOCITY:
@@ -607,7 +700,7 @@ public class GpxDrawHelper implements SoMChangeListener, MapViewPaintable.LayerP
                         }
                         break;
                     case DIRECTION:
-                        double dirColor = oldWp.getCoor().bearing(trkPnt.getCoor());
+                        double dirColor = oldWp.bearing(trkPnt);
                         color = directionScale.getColor(dirColor);
                         break;
                     case TIME:
@@ -623,7 +716,7 @@ public class GpxDrawHelper implements SoMChangeListener, MapViewPaintable.LayerP
                     }
                     if (!noDraw && (!segment.isUnordered() || !data.fromServer) && (maxLineLength == -1 || dist <= maxLineLength)) {
                         trkPnt.drawLine = true;
-                        double bearing = oldWp.getCoor().bearing(trkPnt.getCoor());
+                        double bearing = oldWp.bearing(trkPnt);
                         trkPnt.dir = ((int) (bearing / Math.PI * 4 + 1.5)) % 8;
                     } else {
                         trkPnt.drawLine = false;
@@ -685,9 +778,14 @@ public class GpxDrawHelper implements SoMChangeListener, MapViewPaintable.LayerP
      * @param visibleSegments segments visible in the current scope of mv
      */
     private void drawArrows(Graphics2D g, MapView mv, List<WayPoint> visibleSegments) {
-        /****************************************************************
-         ********** STEP 3b - DRAW NICE ARROWS **************************
-         ****************************************************************/
+        drawArrows3b(g, mv, visibleSegments);
+        drawArrows3c(g, mv, visibleSegments);
+    }
+
+    /****************************************************************
+     ********** STEP 3b - DRAW NICE ARROWS **************************
+     ****************************************************************/
+    private void drawArrows3b(Graphics2D g, MapView mv, List<WayPoint> visibleSegments) {
         if (lines && arrows && !arrowsFast) {
             Point old = null;
             Point oldA = null; // last arrow painted
@@ -714,10 +812,12 @@ public class GpxDrawHelper implements SoMChangeListener, MapViewPaintable.LayerP
                 }
             } // end for trkpnt
         }
+    }
 
-        /****************************************************************
-         ********** STEP 3c - DRAW FAST ARROWS **************************
-         ****************************************************************/
+    /****************************************************************
+     ********** STEP 3c - DRAW FAST ARROWS **************************
+     ****************************************************************/
+    private void drawArrows3c(Graphics2D g, MapView mv, List<WayPoint> visibleSegments) {
         if (lines && arrows && arrowsFast) {
             Point old = null;
             Point oldA = null; // last arrow painted
@@ -752,11 +852,17 @@ public class GpxDrawHelper implements SoMChangeListener, MapViewPaintable.LayerP
      * @param visibleSegments segments visible in the current scope of mv
      */
     private void drawPoints(Graphics2D g, MapView mv, List<WayPoint> visibleSegments) {
-        /****************************************************************
-         ********** STEP 3d - DRAW LARGE POINTS AND HDOP CIRCLE *********
-         ****************************************************************/
-        if (large || hdopCircle) {
-            final int halfSize = largesize/2;
+        drawPointsStep3d(g, mv, visibleSegments);
+        drawPointsStep3e(g, mv, visibleSegments);
+        drawPointsStep3f(g, mv, visibleSegments);
+    }
+
+    /****************************************************************
+     ************ STEP 3d - DRAW LARGE POINTS AND CIRCLES ***********
+     ****************************************************************/
+    private void drawPointsStep3d(Graphics2D g, MapView mv, List<WayPoint> visibleSegments) {
+        if (large || drawCircle) {
+            final int halfSize = largesize / 2;
             for (WayPoint trkPnt : visibleSegments) {
                 LatLon c = trkPnt.getCoor();
                 if (Double.isNaN(c.lat()) || Double.isNaN(c.lon())) {
@@ -764,20 +870,24 @@ public class GpxDrawHelper implements SoMChangeListener, MapViewPaintable.LayerP
                 }
                 Point screen = mv.getPoint(trkPnt);
 
-                if (hdopCircle && trkPnt.get(GpxConstants.PT_HDOP) != null) {
-                    // hdop value
-                    float hdop = (Float) trkPnt.get(GpxConstants.PT_HDOP);
-                    if (hdop < 0) {
-                        hdop = 0;
+                if (drawCircle) {
+                    float circleSize;
+                    //hdop
+                    if (circleDataSource == 0 && trkPnt.get(GpxConstants.PT_HDOP) != null) {
+                        // circleSize value
+                        circleSize = ((Number) trkPnt.get(GpxConstants.PT_HDOP)).floatValue();
+                        drawCircle(g, mv, trkPnt, screen, circleSize);
                     }
-                    Color customColoringTransparent = hdopAlpha < 0 ? trkPnt.customColoring :
-                        new Color((trkPnt.customColoring.getRGB() & 0x00ffffff) | (hdopAlpha << 24), true);
-                    g.setColor(customColoringTransparent);
-                    // hdop circles
-                    int hdopp = mv.getPoint(new LatLon(
-                            trkPnt.getCoor().lat(),
-                            trkPnt.getCoor().lon() + 2d*6*hdop*360/40000000d)).x - screen.x;
-                    g.drawArc(screen.x-hdopp/2, screen.y-hdopp/2, hdopp, hdopp, 0, 360);
+                    //horizontal standard deviation estimate
+                    if (circleDataSource == 1 && trkPnt.get(GpxConstants.PT_STD_HDEV) != null) {
+                        circleSize = ((Number) trkPnt.get(GpxConstants.PT_STD_HDEV)).floatValue();
+                        drawCircle(g, mv, trkPnt, screen, circleSize);
+                    }
+                    //age of correction
+                    if (circleDataSource == 2 && trkPnt.get(GpxConstants.PT_AGEOFDGPSDATA) != null) {
+                        circleSize = ((Number) trkPnt.get(GpxConstants.PT_AGEOFDGPSDATA)).floatValue();
+                        drawCircle(g, mv, trkPnt, screen, circleSize);
+                    }
                 }
                 if (large) {
                     // color the large GPS points like the gps lines
@@ -786,21 +896,37 @@ public class GpxDrawHelper implements SoMChangeListener, MapViewPaintable.LayerP
                             g.setColor(colorCacheTransparent);
                         } else {
                             Color customColoringTransparent = largePointAlpha < 0 ? trkPnt.customColoring :
-                                new Color((trkPnt.customColoring.getRGB() & 0x00ffffff) | (largePointAlpha << 24), true);
+                                    new Color((trkPnt.customColoring.getRGB() & 0x00ffffff) | (largePointAlpha << 24), true);
 
                             g.setColor(customColoringTransparent);
                             colorCache = trkPnt.customColoring;
                             colorCacheTransparent = customColoringTransparent;
                         }
                     }
-                    g.fillRect(screen.x-halfSize, screen.y-halfSize, largesize, largesize);
+                    g.fillRect(screen.x - halfSize, screen.y - halfSize, largesize, largesize);
                 }
             } // end for trkpnt
-        } // end if large || hdopcircle
+        } // end if large || drawCircle
+    }
 
-        /****************************************************************
-         ********** STEP 3e - DRAW SMALL POINTS FOR LINES ***************
-         ****************************************************************/
+    private void drawCircle(Graphics2D g, MapView mv, WayPoint trkPnt, Point screen, float circleSize) {
+        if (circleSize < 0) {
+            circleSize = 0;
+        }
+        Color customColoringTransparent = circleAlpha < 0 ? trkPnt.customColoring :
+                new Color((trkPnt.customColoring.getRGB() & 0x00ffffff) | (circleAlpha << 24), true);
+        g.setColor(customColoringTransparent);
+        // circles
+        int circleSizep = mv.getPoint(new LatLon(
+                trkPnt.getCoor().lat(),
+                trkPnt.getCoor().lon() + 2d * 6 * circleSize * 360 / 40000000d)).x - screen.x;
+        g.drawArc(screen.x - circleSizep / 2, screen.y - circleSizep / 2, circleSizep, circleSizep, 0, 360);
+    }
+
+    /****************************************************************
+     ********** STEP 3e - DRAW SMALL POINTS FOR LINES ***************
+     ****************************************************************/
+    private void drawPointsStep3e(Graphics2D g, MapView mv, List<WayPoint> visibleSegments) {
         if (!large && lines) {
             g.setColor(neutralColor);
             for (WayPoint trkPnt : visibleSegments) {
@@ -815,10 +941,12 @@ public class GpxDrawHelper implements SoMChangeListener, MapViewPaintable.LayerP
                 }
             } // end for trkpnt
         } // end if large
+    }
 
-        /****************************************************************
-         ********** STEP 3f - DRAW SMALL POINTS INSTEAD OF LINES ********
-         ****************************************************************/
+    /****************************************************************
+     ********** STEP 3f - DRAW SMALL POINTS INSTEAD OF LINES ********
+     ****************************************************************/
+    private void drawPointsStep3f(Graphics2D g, MapView mv, List<WayPoint> visibleSegments) {
         if (!large && !lines) {
             g.setColor(neutralColor);
             for (WayPoint trkPnt : visibleSegments) {
@@ -1088,7 +1216,7 @@ public class GpxDrawHelper implements SoMChangeListener, MapViewPaintable.LayerP
         Color[] nextUserColor = userColor1;
 
         // select by index
-        if (tableIdx < lut.length) {
+        if (tableIdx >= 0 && tableIdx < lut.length) {
             nextUserColor = lut[ tableIdx ];
         }
 
@@ -1224,10 +1352,8 @@ public class GpxDrawHelper implements SoMChangeListener, MapViewPaintable.LayerP
                     lastPixelX = 0; lastPixelColor = thePixelColor - 1;
                 }
 
-                boolean bDrawIt = false;
-
                 // when one of segment is mapped to black
-                bDrawIt = bDrawIt || (lastPixelColor == 0) || (thePixelColor == 0);
+                boolean bDrawIt = (lastPixelColor == 0) || (thePixelColor == 0);
 
                 // different color
                 bDrawIt = bDrawIt || (Math.abs(lastPixelColor-thePixelColor) > 0);
@@ -1367,7 +1493,8 @@ public class GpxDrawHelper implements SoMChangeListener, MapViewPaintable.LayerP
     private static void drawHeatGrayDotMap(Graphics2D gB, MapView mv, List<WayPoint> listSegm, int drawSize) {
 
         // typical rendering rate -> use realtime preview instead of accurate display
-        final double maxSegm = 25_000, nrSegms = listSegm.size();
+        final double maxSegm = 25_000;
+        final double nrSegms = listSegm.size();
 
         // determine random drop rate
         final double randomDrop = Math.min(nrSegms > maxSegm ? (nrSegms - maxSegm) / nrSegms : 0, 0.70f);
@@ -1412,8 +1539,10 @@ public class GpxDrawHelper implements SoMChangeListener, MapViewPaintable.LayerP
             Point fromPnt, Point toPnt, int drawSize, double rmsSizeX, double rmsSizeY, double dropRate) {
 
         // collect frequently used items
-        final long fromX = (long) fromPnt.getX(); final long deltaX = (long) (toPnt.getX() - fromX);
-        final long fromY = (long) fromPnt.getY(); final long deltaY = (long) (toPnt.getY() - fromY);
+        final long fromX = (long) fromPnt.getX();
+        final long fromY = (long) fromPnt.getY();
+        final long deltaX = (long) (toPnt.getX() - fromX);
+        final long deltaY = (long) (toPnt.getY() - fromY);
 
         // use same random values for each point
         final Random heatMapRandom = new Random(fromX+fromY+deltaX+deltaY);
@@ -1517,14 +1646,20 @@ public class GpxDrawHelper implements SoMChangeListener, MapViewPaintable.LayerP
         g.setComposite(AlphaComposite.SrcOver.derive(1.00f));
 
         if (colored == ColorMode.HDOP) {
-            hdopScale.drawColorBar(g, w-30, 50, 20, 100, 1.0);
+            hdopScale.drawColorBar(g, w-10, 50, 20, 100, 1.0);
         } else if (colored == ColorMode.QUALITY) {
-            qualityScale.drawColorBar(g, w-30, 50, 20, 100, 1.0);
+            qualityScale.drawColorBar(g, w-10, 50, 20, 100, 1.0);
+        } else if (colored == ColorMode.FIX) {
+            fixScale.drawColorBar(g, w-10, 50, 20, 175, 1.0);
+        } else if (colored == ColorMode.REF) {
+            refScale.drawColorBar(g, w-10, 50, 20, 175, 1.0);
         } else if (colored == ColorMode.VELOCITY) {
             SystemOfMeasurement som = SystemOfMeasurement.getSystemOfMeasurement();
-            velocityScale.drawColorBar(g, w-30, 50, 20, 100, som.speedValue);
+            velocityScale.drawColorBar(g, w-10, 50, 20, 100, som.speedValue);
         } else if (colored == ColorMode.DIRECTION) {
-            directionScale.drawColorBar(g, w-30, 50, 20, 100, 180.0/Math.PI);
+            directionScale.drawColorBar(g, w-10, 50, 20, 100, 180.0/Math.PI);
+        } else if (colored == ColorMode.TIME) {
+            dateScale.drawColorBarTime(g, w-10, 50, 20, 100, this.minTime, this.maxTime);
         }
     }
 

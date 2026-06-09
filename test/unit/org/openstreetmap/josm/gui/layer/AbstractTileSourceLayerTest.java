@@ -1,19 +1,19 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.layer;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.Point;
 import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.gui.jmapviewer.Coordinate;
 import org.openstreetmap.gui.jmapviewer.Projected;
 import org.openstreetmap.gui.jmapviewer.Tile;
@@ -31,22 +31,15 @@ import org.openstreetmap.josm.data.imagery.TileLoaderFactory;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.layer.imagery.ImageryFilterSettings;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.testutils.annotations.Main;
+import org.openstreetmap.josm.testutils.annotations.Projection;
 
 /**
  * Test of the base {@link AbstractTileSourceLayer} class
  */
-public class AbstractTileSourceLayerTest {
-
-    /**
-     * Setup test
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().projection().main();
-
+@Projection
+@Main
+class AbstractTileSourceLayerTest {
     private static final class TMSTileStubSource extends AbstractTMSTileSource {
         private TMSTileStubSource() {
             super(new TileSourceInfo());
@@ -147,7 +140,7 @@ public class AbstractTileSourceLayerTest {
     /**
      * Create test layer
      */
-    @Before
+    @BeforeEach
     public void setUp() {
         MainApplication.getLayerManager().addLayer(new OsmDataLayer(new DataSet(), "", null));
         testLayer = new TileSourceStubLayer();
@@ -158,7 +151,7 @@ public class AbstractTileSourceLayerTest {
      * Test {@link AbstractTileSourceLayer#filterChanged}
      */
     @Test
-    public void testFilterChanged() {
+    void testFilterChanged() {
         try {
             ImageryFilterSettings filterSettings = new ImageryFilterSettings();
             filterSettings.addFilterChangeListener(testLayer);
@@ -174,7 +167,7 @@ public class AbstractTileSourceLayerTest {
      * Test {@link AbstractTileSourceLayer#clearTileCache}
      */
     @Test
-    public void testClearTileCache() {
+    void testClearTileCache() {
         testLayer.loadAllTiles(true);
         assertTrue(testLayer.getTileCache().getTileCount() > 0);
         testLayer.clearTileCache();
@@ -185,7 +178,7 @@ public class AbstractTileSourceLayerTest {
      * Test {@link AbstractTileSourceLayer#getAdjustAction}
      */
     @Test
-    public void testGetAdjustAction() {
+    void testGetAdjustAction() {
         assertNotNull(testLayer.getAdjustAction());
     }
 
@@ -193,7 +186,7 @@ public class AbstractTileSourceLayerTest {
      * Test {@link AbstractTileSourceLayer#getInfoComponent}
      */
     @Test
-    public void testGetInfoComponent() {
+    void testGetInfoComponent() {
         assertNotNull(testLayer.getInfoComponent());
     }
 
@@ -201,7 +194,7 @@ public class AbstractTileSourceLayerTest {
      * Test {@link AbstractTileSourceLayer.TileSourceLayerPopup}
      */
     @Test
-    public void testTileSourceLayerPopup() {
-        assertNotNull(testLayer.new TileSourceLayerPopup(100, 100));
+    void testTileSourceLayerPopup() {
+        assertDoesNotThrow(() -> testLayer.new TileSourceLayerPopup(100, 100));
     }
 }

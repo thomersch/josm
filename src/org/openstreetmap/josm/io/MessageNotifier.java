@@ -10,6 +10,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import org.openstreetmap.josm.data.UserIdentityManager;
+import org.openstreetmap.josm.data.oauth.OAuthVersion;
 import org.openstreetmap.josm.data.osm.UserInfo;
 import org.openstreetmap.josm.data.preferences.BooleanProperty;
 import org.openstreetmap.josm.data.preferences.IntegerProperty;
@@ -68,7 +69,7 @@ public final class MessageNotifier {
 
     private static volatile ScheduledFuture<?> task;
 
-    private static class Worker implements Runnable {
+    private static final class Worker implements Runnable {
 
         private int lastUnreadCount;
         private long lastTimeInMillis;
@@ -89,7 +90,7 @@ public final class MessageNotifier {
                     }
                 }
             } catch (OsmApiException e) {
-                // We want to explicitely display message to user in some cases like when he has been blocked (#17722)
+                // We want to explicitly display message to user in some cases like when he has been blocked (#17722)
                 ExceptionDialogUtil.explainOsmTransferException(e);
             } catch (OsmTransferException e) {
                 // But not message for random network or API issues (like in #17929)
@@ -143,12 +144,15 @@ public final class MessageNotifier {
             CredentialsManager credManager = CredentialsManager.getInstance();
             try {
                 if (JosmPreferencesCredentialAgent.class.equals(credManager.getCredentialsAgentClass())) {
-                    if (OsmApi.isUsingOAuth()) {
-                        return credManager.lookupOAuthAccessToken() != null;
+                    if (OsmApi.isUsingOAuth(OAuthVersion.OAuth20) || OsmApi.isUsingOAuth(OAuthVersion.OAuth21)) {
+                        return credManager.lookupOAuthAccessToken(OsmApi.getOsmApi().getHost()) != null;
+                    } else if (OsmApi.isUsingOAuth()) {
+                        // Ensure we do not forget to update this section
+                        throw new IllegalStateException("Unknown oauth version: " + OsmApi.getAuthMethod());
                     } else {
                         String username = Config.getPref().get("osm-server.username", null);
                         String password = Config.getPref().get("osm-server.password", null);
-                        return username != null && !username.isEmpty() && password != null && !password.isEmpty();
+                        return !Utils.isEmpty(username) && !Utils.isEmpty(password);
                     }
                 } else {
                     CredentialsAgentResponse credentials = credManager.getCredentials(
@@ -156,7 +160,7 @@ public final class MessageNotifier {
                     if (credentials != null) {
                         String username = credentials.getUsername();
                         char[] password = credentials.getPassword();
-                        return username != null && !username.isEmpty() && password != null && password.length > 0;
+                        return !Utils.isEmpty(username) && password != null && password.length > 0;
                     }
                 }
             } catch (CredentialsAgentException e) {

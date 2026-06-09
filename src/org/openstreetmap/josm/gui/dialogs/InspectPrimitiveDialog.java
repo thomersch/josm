@@ -48,14 +48,13 @@ import org.openstreetmap.josm.tools.GBC;
 
 /**
  * Panel to inspect one or more OsmPrimitives.
- *
+ * <p>
  * Gives an unfiltered view of the object's internal state.
  * Might be useful for power users to give more detailed bug reports and
  * to better understand the JOSM data representation.
  */
 public class InspectPrimitiveDialog extends ExtendedDialog {
 
-    protected transient List<IPrimitive> primitives;
     private boolean mappaintTabLoaded;
     private boolean editcountTabLoaded;
 
@@ -67,14 +66,13 @@ public class InspectPrimitiveDialog extends ExtendedDialog {
      */
     public InspectPrimitiveDialog(final Collection<? extends IPrimitive> primitives, OsmData<?, ?, ?, ?> data) {
         super(MainApplication.getMainFrame(), tr("Advanced object info"), tr("Close"));
-        this.primitives = new ArrayList<>(primitives);
         setRememberWindowGeometry(getClass().getName() + ".geometry",
                 WindowGeometry.centerInWindow(MainApplication.getMainFrame(), new Dimension(750, 550)));
 
         setButtonIcons("ok");
         final JTabbedPane tabs = new JTabbedPane();
 
-        tabs.addTab(tr("data"), genericMonospacePanel(new JPanel(), buildDataText(data, this.primitives)));
+        tabs.addTab(tr("data"), genericMonospacePanel(new JPanel(), buildDataText(data, new ArrayList<>(primitives))));
 
         final JPanel pMapPaint = new JPanel();
         tabs.addTab(tr("map style"), pMapPaint);
@@ -130,7 +128,7 @@ public class InspectPrimitiveDialog extends ExtendedDialog {
             for (IPrimitive osm : sel) {
                 String heading = tr("Styles for \"{0}\":", osm.getDisplayName(DefaultNameFormatter.getInstance()));
                 txtMappaint.println(heading);
-                txtMappaint.println(repeatString("=", heading.length()));
+                txtMappaint.println("=".repeat(heading.length()));
 
                 MultiCascade mc = new MultiCascade();
 
@@ -138,7 +136,7 @@ public class InspectPrimitiveDialog extends ExtendedDialog {
                     if (s.active) {
                         heading = tr("{0} style \"{1}\"", getSort(s), s.getDisplayString());
                         txtMappaint.println(heading);
-                        txtMappaint.println(repeatString("-", heading.length()));
+                        txtMappaint.println("-".repeat(heading.length()));
                         s.apply(mc, osm, scale, false);
                         txtMappaint.println(tr("Display range: {0}", mc.range));
                         for (Entry<String, Cascade> e : mc.getLayers()) {
@@ -151,7 +149,7 @@ public class InspectPrimitiveDialog extends ExtendedDialog {
                 txtMappaint.println();
                 heading = tr("List of generated Styles:");
                 txtMappaint.println(heading);
-                txtMappaint.println(repeatString("-", heading.length()));
+                txtMappaint.println("-".repeat(heading.length()));
                 StyleElementList sl = elemstyles.get(osm, scale, nc);
                 for (StyleElement s : sl) {
                     txtMappaint.print(" * ");
@@ -165,8 +163,8 @@ public class InspectPrimitiveDialog extends ExtendedDialog {
         }
         if (sel.size() == 2) {
             List<IPrimitive> selList = new ArrayList<>(sel);
-            StyleCache sc1 = selList.get(0).getCachedStyle();
-            StyleCache sc2 = selList.get(1).getCachedStyle();
+            StyleCache sc1 = selList.get(0).getCachedStyle(elemstyles);
+            StyleCache sc2 = selList.get(1).getCachedStyle(elemstyles);
             if (sc1 == sc2) {
                 txtMappaint.println(tr("The 2 selected objects have identical style caches."));
             }
@@ -178,11 +176,6 @@ public class InspectPrimitiveDialog extends ExtendedDialog {
             }
         }
         return stringWriter.toString();
-    }
-
-    private static String repeatString(String string, int count) {
-        // Java 11: use String.repeat
-        return new String(new char[count]).replace("\0", string);
     }
 
     /*  Future Ideas:

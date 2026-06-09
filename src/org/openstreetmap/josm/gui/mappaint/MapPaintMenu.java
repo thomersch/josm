@@ -21,7 +21,7 @@ import org.openstreetmap.josm.gui.util.StayOpenCheckBoxMenuItem;
 import org.openstreetmap.josm.tools.ImageProvider;
 
 /**
- * The View -&gt; Map Paint Styles menu
+ * The View → Map Paint Styles menu
  * @since 5086
  */
 public class MapPaintMenu extends JMenu implements MapPaintStylesUpdateListener {
@@ -45,7 +45,10 @@ public class MapPaintMenu extends JMenu implements MapPaintStylesUpdateListener 
         }
 
         private void toggleStyle() {
-            MapPaintStyles.toggleStyleActive(MapPaintStyles.getStyles().getStyleSources().indexOf(style));
+            int index = MapPaintStyles.getStyles().getStyleSources().indexOf(style);
+            if (index >= 0) {
+                MapPaintStyles.toggleStyleActive(index);
+            }
             updateButton();
         }
 

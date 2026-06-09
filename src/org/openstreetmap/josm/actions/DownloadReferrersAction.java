@@ -14,6 +14,7 @@ import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.tools.Shortcut;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * This action loads the set of primitives referring to the current selection from the OSM server.
@@ -43,7 +44,7 @@ public class DownloadReferrersAction extends JosmAction {
      * @throws IllegalArgumentException if targetLayer is null
      */
     public static void downloadReferrers(OsmDataLayer targetLayer, Collection<OsmPrimitive> children) {
-        if (children == null || children.isEmpty())
+        if (Utils.isEmpty(children))
             return;
         MainApplication.worker.submit(new DownloadReferrersTask(targetLayer, children));
     }
@@ -67,7 +68,7 @@ public class DownloadReferrersAction extends JosmAction {
     @Override
     protected void updateEnabledState(Collection<? extends OsmPrimitive> selection) {
         updateEnabledStateOnModifiableSelection(selection);
-        if (isEnabled() && selection != null && !selection.isEmpty()
+        if (isEnabled() && !Utils.isEmpty(selection)
                 && DownloadPolicy.BLOCKED.equals(selection.iterator().next().getDataSet().getDownloadPolicy())) {
             setEnabled(false);
         }

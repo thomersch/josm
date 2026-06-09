@@ -3,11 +3,15 @@ package org.openstreetmap.josm.gui.dialogs.relation.actions;
 
 import javax.swing.Action;
 
+import org.openstreetmap.josm.data.osm.IRelation;
+import org.openstreetmap.josm.data.osm.Relation;
+import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.dialogs.relation.IRelationEditor;
 import org.openstreetmap.josm.gui.dialogs.relation.MemberTable;
 import org.openstreetmap.josm.gui.dialogs.relation.MemberTableModel;
 import org.openstreetmap.josm.gui.dialogs.relation.SelectionTable;
 import org.openstreetmap.josm.gui.dialogs.relation.SelectionTableModel;
+import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.tagging.TagEditorModel;
 import org.openstreetmap.josm.gui.tagging.ac.AutoCompletingTextField;
 
@@ -66,8 +70,56 @@ public interface IRelationEditorActionAccess {
     TagEditorModel getTagModel();
 
     /**
+     * Get the changed relation
+     * @return The changed relation (note: will not be part of a dataset) or the
+     * value returned by {@code getEditor().getRelation()}. This should never be {@code null}.
+     * If called for a temporary use of the relation instance, make sure to cleanup a copy to avoid memory leaks, see #23527
+     * @since 18413
+     */
+    default IRelation<?> getChangedRelation() {
+        final Relation newRelation;
+        final Relation oldRelation = getEditor().getRelation();
+        boolean isUploadInProgress = MainApplication.getLayerManager().getLayersOfType(OsmDataLayer.class)
+                .stream().anyMatch(OsmDataLayer::isUploadInProgress);
+        if (isUploadInProgress || (oldRelation != null && oldRelation.getDataSet() != null && oldRelation.getDataSet().isLocked())) {
+            // If the dataset is locked, then we cannot change the relation. See JOSM #22024.
+            // We should also avoid changing the relation if there is an upload in progress. See JOSM #22268/#22398.
+            // There appears to be a race condition where a dataset might not be locked in the check, then is locked while using the
+            // copy relation constructor.
+            // This is due to the `setMembers` -> `addReferrer` call chain requires that the dataset is not read only.
+            return oldRelation;
+        } else if (oldRelation != null) {
+            newRelation = new Relation(oldRelation);
+        } else {
+            newRelation = new Relation();
+        }
+        getTagModel().applyToPrimitive(newRelation);
+        getMemberTableModel().applyToRelation(newRelation);
+        return newRelation;
+    }
+
+    /**
+     * Check if the changed relation would be useful.
+     * @return true if the saved relation has at least one tag and one member
+     * @since 19014
+     */
+    default boolean wouldRelationBeUseful() {
+        return (getTagModel().getRowCount() > 0 && getMemberTableModel().getRowCount() > 0);
+    }
+
+    /**
      * Get the text field that is used to edit the role.
      * @return The role text field.
      */
     AutoCompletingTextField getTextFieldRole();
+
+    /**
+     * Tells the member table editor to stop editing and accept any partially edited value as the value of the editor.
+     * The editor returns false if editing was not stopped; this is useful for editors that validate and can not accept invalid entries.
+     * @return {@code true} if editing was stopped; {@code false} otherwise
+     * @since 18118
+     */
+    default boolean stopMemberCellEditing() {
+        return getMemberTable().isEditing() && getMemberTable().getCellEditor().stopCellEditing();
+    }
 }

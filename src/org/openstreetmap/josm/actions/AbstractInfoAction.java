@@ -18,6 +18,7 @@ import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.OpenBrowser;
 import org.openstreetmap.josm.tools.Shortcut;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * Abstract base class for info actions, opening an URL describing a particular object.
@@ -50,17 +51,6 @@ public abstract class AbstractInfoAction extends JosmAction {
     protected AbstractInfoAction(String name, String iconName, String tooltip, Shortcut shortcut, boolean register,
             String toolbarId, boolean installAdapters) {
         super(name, iconName, tooltip, shortcut, register, toolbarId, installAdapters);
-    }
-
-    /**
-     * Asks user confirmation before launching a large number of browser windows.
-     * @param numBrowsers the number of browser windows to open
-     * @return {@code true} if the user confirms, {@code false} otherwise
-     * @deprecated use {@link OpenBrowserAction#confirmLaunchMultiple(int)}
-     */
-    @Deprecated
-    public static boolean confirmLaunchMultiple(int numBrowsers) {
-        return OpenBrowserAction.confirmLaunchMultiple(numBrowsers);
     }
 
     protected void launchInfoBrowsersForSelectedPrimitivesAndNote() {
@@ -125,6 +115,6 @@ public abstract class AbstractInfoAction extends JosmAction {
 
     @Override
     protected void updateEnabledState(Collection<? extends OsmPrimitive> selection) {
-        setEnabled(selection != null && !selection.isEmpty());
+        setEnabled(!Utils.isEmpty(selection));
     }
 }

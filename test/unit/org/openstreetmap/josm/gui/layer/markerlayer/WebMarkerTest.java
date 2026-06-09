@@ -6,16 +6,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import java.net.URL;
 
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.gpx.GpxData;
 import org.openstreetmap.josm.data.gpx.WayPoint;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-import org.openstreetmap.josm.tools.PlatformManager;
+import org.openstreetmap.josm.testutils.annotations.FullPreferences;
+import org.openstreetmap.josm.testutils.annotations.HTTPS;
 import org.openstreetmap.josm.tools.PlatformHook;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.tools.PlatformManager;
 
 import mockit.Expectations;
 import mockit.Injectable;
@@ -24,15 +22,9 @@ import mockit.Mocked;
 /**
  * Unit tests of {@link WebMarker} class.
  */
-public class WebMarkerTest {
-
-    /**
-     * Setup tests
-     */
-    @RegisterExtension
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences().https();
-
+@FullPreferences
+@HTTPS
+class WebMarkerTest {
     /**
      * Unit test of {@link WebMarker#WebMarker}.
      * @param mockPlatformHook platform hook mock
@@ -40,7 +32,7 @@ public class WebMarkerTest {
      * @throws Exception  in case of error
      */
     @Test
-    public void testWebMarker(@Injectable final PlatformHook mockPlatformHook,
+    void testWebMarker(@Injectable final PlatformHook mockPlatformHook,
                               @Mocked final PlatformManager platformManager) throws Exception {
         TestUtils.assumeWorkingJMockit();
         new Expectations() {{

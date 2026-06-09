@@ -5,8 +5,10 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.awt.Component;
 import java.awt.GridBagLayout;
-import java.text.DateFormat;
-import java.util.Date;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.FormatStyle;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -15,6 +17,8 @@ import javax.swing.JCheckBox;
 import javax.swing.JFormattedTextField;
 import javax.swing.JLabel;
 import javax.swing.JList;
+import javax.swing.JScrollPane;
+import javax.swing.JSeparator;
 import javax.swing.JSpinner;
 import javax.swing.ListCellRenderer;
 import javax.swing.LookAndFeel;
@@ -28,10 +32,14 @@ import org.openstreetmap.josm.gui.MapFrame;
 import org.openstreetmap.josm.gui.MapMover;
 import org.openstreetmap.josm.gui.NavigatableComponent;
 import org.openstreetmap.josm.gui.dialogs.ToggleDialog;
-import org.openstreetmap.josm.gui.preferences.DefaultTabPreferenceSetting;
+import org.openstreetmap.josm.gui.dialogs.properties.PropertiesDialog;
+
 import org.openstreetmap.josm.gui.preferences.PreferenceSetting;
 import org.openstreetmap.josm.gui.preferences.PreferenceSettingFactory;
 import org.openstreetmap.josm.gui.preferences.PreferenceTabbedPane;
+import org.openstreetmap.josm.gui.preferences.SubPreferenceSetting;
+import org.openstreetmap.josm.gui.preferences.TabPreferenceSetting;
+import org.openstreetmap.josm.gui.util.WindowGeometry;
 import org.openstreetmap.josm.gui.widgets.FileChooserManager;
 import org.openstreetmap.josm.gui.widgets.JosmComboBox;
 import org.openstreetmap.josm.gui.widgets.VerticallyScrollablePanel;
@@ -44,7 +52,7 @@ import org.openstreetmap.josm.tools.date.DateUtils;
 /**
  * Look-and-feel preferences.
  */
-public class LafPreference extends DefaultTabPreferenceSetting {
+public class LafPreference implements SubPreferenceSetting {
 
     /**
      * Look-and-feel property.
@@ -72,10 +80,6 @@ public class LafPreference extends DefaultTabPreferenceSetting {
         }
     }
 
-    LafPreference() {
-        super(/* ICON(preferences/) */ "display", tr("Look and Feel"), tr("Change the Look and Feel of the program"));
-    }
-
     /**
      * ComboBox with all look and feels.
      */
@@ -88,8 +92,11 @@ public class LafPreference extends DefaultTabPreferenceSetting {
     private final JCheckBox showCoor = new JCheckBox(tr("Show node coordinates in selection lists"));
     private final JCheckBox showLocalizedName = new JCheckBox(tr("Show localized name in selection lists"));
     private final JCheckBox modeless = new JCheckBox(tr("Modeless working (Potlatch style)"));
+    private final JCheckBox previewPropsOnHover = new JCheckBox(tr("Preview object properties on mouse hover"));
+    private final JCheckBox previewPrioritizeSelection = new JCheckBox(tr("Prefer showing information for selected objects"));
     private final JCheckBox dynamicButtons = new JCheckBox(tr("Dynamic buttons in side menus"));
     private final JCheckBox isoDates = new JCheckBox(tr("Display ISO dates"));
+    private final JCheckBox dialogGeometry = new JCheckBox(tr("Remember dialog geometries"));
     private final JCheckBox nativeFileChoosers = new JCheckBox(tr("Use native file choosers (nicer, but do not support file filters)"));
     private final JCheckBox zoomReverseWheel = new JCheckBox(tr("Reverse zoom with mouse wheel"));
     private final JCheckBox zoomIntermediateSteps = new JCheckBox(tr("Intermediate steps between native resolutions"));
@@ -126,6 +133,12 @@ public class LafPreference extends DefaultTabPreferenceSetting {
 
         panel = new VerticallyScrollablePanel(new GridBagLayout());
         panel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
+
+        // First the most important setting "Look and Feel" that changes the most
+        panel.add(new JLabel(tr("Look and Feel")), GBC.std().insets(20, 0, 0, 0));
+        panel.add(GBC.glue(5, 0), GBC.std().fill(GBC.HORIZONTAL));
+        panel.add(lafCombo, GBC.eol().fill(GBC.HORIZONTAL));
+        panel.add(new JSeparator(), GBC.eol().fill(GBC.HORIZONTAL).insets(0, 10, 0, 10));
 
         // Show splash screen on startup
         showSplashScreen.setToolTipText(tr("Show splash screen at startup"));
@@ -164,17 +177,31 @@ public class LafPreference extends DefaultTabPreferenceSetting {
         panel.add(showLocalizedName, GBC.eop().insets(20, 0, 0, 0));
         panel.add(modeless, GBC.eop().insets(20, 0, 0, 0));
 
+        previewPropsOnHover.setToolTipText(
+                tr("Show tags and relation memberships of objects in the properties dialog when hovering over them with the mouse pointer"));
+        previewPropsOnHover.setSelected(PropertiesDialog.PROP_PREVIEW_ON_HOVER.get());
+        panel.add(previewPropsOnHover, GBC.eop().insets(20, 0, 0, 0));
+
+        previewPrioritizeSelection.setToolTipText(
+            tr("Always show information for selected objects when something is selected instead of the hovered object"));
+        previewPrioritizeSelection.setSelected(PropertiesDialog.PROP_PREVIEW_ON_HOVER_PRIORITIZE_SELECTION.get());
+        panel.add(previewPrioritizeSelection, GBC.eop().insets(40, 0, 0, 0));
+        previewPropsOnHover.addActionListener(l -> previewPrioritizeSelection.setEnabled(previewPropsOnHover.isSelected()));
+
         dynamicButtons.setToolTipText(tr("Display buttons in right side menus only when mouse is inside the element"));
         dynamicButtons.setSelected(ToggleDialog.PROP_DYNAMIC_BUTTONS.get());
         panel.add(dynamicButtons, GBC.eop().insets(20, 0, 0, 0));
 
-        Date today = new Date();
+        LocalDate today = LocalDate.now(ZoneId.systemDefault());
         isoDates.setToolTipText(tr("Format dates according to {0}. Today''s date will be displayed as {1} instead of {2}",
                 tr("ISO 8601"),
-                DateUtils.newIsoDateFormat().format(today),
-                DateFormat.getDateInstance(DateFormat.SHORT).format(today)));
+                today.toString(),
+                DateTimeFormatter.ofLocalizedDate(FormatStyle.SHORT).format(today)));
         isoDates.setSelected(DateUtils.PROP_ISO_DATES.get());
         panel.add(isoDates, GBC.eop().insets(20, 0, 0, 0));
+
+        dialogGeometry.setSelected(WindowGeometry.GUI_GEOMETRY_ENABLED.get());
+        panel.add(dialogGeometry, GBC.eop().insets(20, 0, 0, 0));
 
         nativeFileChoosers.setToolTipText(
                 tr("Use file choosers that behave more like native ones. They look nicer but do not support some features like file filters"));
@@ -198,7 +225,7 @@ public class LafPreference extends DefaultTabPreferenceSetting {
         logZoomLevel = Math.max(1, logZoomLevel);
         logZoomLevel = Math.min(5, logZoomLevel);
         JLabel labelZoomRatio = new JLabel(tr("Zoom steps to get double scale"));
-        spinZoomRatio = new JSpinner(new SpinnerNumberModel(logZoomLevel, 1, 5, 1));
+        spinZoomRatio = new JSpinner(new SpinnerNumberModel(logZoomLevel, 1, 10, 1));
         Component spinZoomRatioEditor = spinZoomRatio.getEditor();
         JFormattedTextField jftf = ((JSpinner.DefaultEditor) spinZoomRatioEditor).getTextField();
         jftf.setColumns(2);
@@ -210,12 +237,9 @@ public class LafPreference extends DefaultTabPreferenceSetting {
         panel.add(GBC.glue(5, 0), GBC.std().fill(GBC.HORIZONTAL));
         panel.add(spinZoomRatio, GBC.eol());
 
-        panel.add(new JLabel(tr("Look and Feel")), GBC.std().insets(20, 0, 0, 0));
-        panel.add(GBC.glue(5, 0), GBC.std().fill(GBC.HORIZONTAL));
-        panel.add(lafCombo, GBC.eol().fill(GBC.HORIZONTAL));
-        panel.add(Box.createVerticalGlue(), GBC.eol().fill(GBC.BOTH));
-
-        createPreferenceTabWithScrollPane(gui, panel);
+        JScrollPane scrollpane = panel.getVerticalScrollPane();
+        scrollpane.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
+        gui.getDisplayPreference().addSubTab(this, tr("Look and Feel"), scrollpane);
     }
 
     @Override
@@ -228,8 +252,11 @@ public class LafPreference extends DefaultTabPreferenceSetting {
         Config.getPref().putBoolean("osm-primitives.showcoor", showCoor.isSelected());
         Config.getPref().putBoolean("osm-primitives.localize-name", showLocalizedName.isSelected());
         MapFrame.MODELESS.put(modeless.isSelected());
+        PropertiesDialog.PROP_PREVIEW_ON_HOVER.put(previewPropsOnHover.isSelected());
+        PropertiesDialog.PROP_PREVIEW_ON_HOVER_PRIORITIZE_SELECTION.put(previewPrioritizeSelection.isSelected());
         Config.getPref().putBoolean(ToggleDialog.PROP_DYNAMIC_BUTTONS.getKey(), dynamicButtons.isSelected());
         Config.getPref().putBoolean(DateUtils.PROP_ISO_DATES.getKey(), isoDates.isSelected());
+        WindowGeometry.GUI_GEOMETRY_ENABLED.put(dialogGeometry.isSelected());
         Config.getPref().putBoolean(FileChooserManager.PROP_USE_NATIVE_FILE_DIALOG.getKey(), nativeFileChoosers.isSelected());
         MapMover.PROP_ZOOM_REVERSE_WHEEL.put(zoomReverseWheel.isSelected());
         NavigatableComponent.PROP_ZOOM_INTERMEDIATE_STEPS.put(zoomIntermediateSteps.isSelected());
@@ -241,6 +268,11 @@ public class LafPreference extends DefaultTabPreferenceSetting {
     @Override
     public boolean isExpert() {
         return false;
+    }
+
+    @Override
+    public TabPreferenceSetting getTabPreferenceSetting(final PreferenceTabbedPane gui) {
+        return gui.getDisplayPreference();
     }
 
 }

@@ -5,6 +5,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.jcs3.access.behavior.ICacheAccess;
+import org.apache.commons.jcs3.engine.behavior.ICache;
 import org.openstreetmap.gui.jmapviewer.Tile;
 import org.openstreetmap.gui.jmapviewer.interfaces.CachedTileLoader;
 import org.openstreetmap.gui.jmapviewer.interfaces.TileJob;
@@ -68,7 +69,7 @@ public class TMSCachedTileLoader implements TileLoader, CachedTileLoader {
      * @return new ThreadPoolExecutor that will use a @see HostLimitQueue based queue
      */
     public static ThreadPoolExecutor getNewThreadPoolExecutor(String nameFormat, int workers) {
-        return getNewThreadPoolExecutor(nameFormat, workers, HOST_LIMIT.get().intValue());
+        return getNewThreadPoolExecutor(nameFormat, workers, HOST_LIMIT.get());
     }
 
     /**
@@ -95,7 +96,7 @@ public class TMSCachedTileLoader implements TileLoader, CachedTileLoader {
      * @return new ThreadPoolExecutor that will use a {@link HostLimitQueue} based queue, with default number of threads
      */
     public static ThreadPoolExecutor getNewThreadPoolExecutor(String name) {
-        return getNewThreadPoolExecutor(name, THREAD_LIMIT.get().intValue());
+        return getNewThreadPoolExecutor(name, THREAD_LIMIT.get());
     }
 
     @Override
@@ -110,7 +111,7 @@ public class TMSCachedTileLoader implements TileLoader, CachedTileLoader {
 
     @Override
     public void clearCache(TileSource source) {
-        this.cache.remove(source.getName() + ':');
+        this.cache.remove(source.getName() + ICache.NAME_COMPONENT_DELIMITER);
     }
 
     /**
@@ -156,5 +157,15 @@ public class TMSCachedTileLoader implements TileLoader, CachedTileLoader {
      */
     public ThreadPoolExecutor getDownloadExecutor() {
         return downloadExecutor;
+    }
+
+    /**
+     * Shutdown the job dispatcher provided that it's not the default one
+     */
+    public void shutdown() {
+        if (!downloadExecutor.equals(DEFAULT_DOWNLOAD_JOB_DISPATCHER)) {
+            cancelOutstandingTasks();
+            downloadExecutor.shutdown();
+        }
     }
 }

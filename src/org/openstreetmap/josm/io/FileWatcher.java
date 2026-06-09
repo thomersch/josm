@@ -34,7 +34,7 @@ public class FileWatcher {
     private static final Map<SourceType, Consumer<SourceEntry>> loaderMap = new EnumMap<>(SourceType.class);
     private final Map<Path, SourceEntry> sourceMap = new HashMap<>();
 
-    private static class InstanceHolder {
+    private static final class InstanceHolder {
         static final FileWatcher INSTANCE = new FileWatcher();
     }
 
@@ -53,7 +53,7 @@ public class FileWatcher {
     public FileWatcher() {
         try {
             watcher = FileSystems.getDefault().newWatchService();
-            thread = new Thread((Runnable) this::processEvents, "File Watcher");
+            thread = new Thread(this::processEvents, "File Watcher");
         } catch (IOException | UnsupportedOperationException | UnsatisfiedLinkError e) {
             Logging.error(e);
         }

@@ -31,6 +31,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import javax.swing.AbstractAction;
+import javax.swing.Action;
 import javax.swing.BorderFactory;
 import javax.swing.InputMap;
 import javax.swing.JButton;
@@ -46,9 +47,11 @@ import javax.swing.JTabbedPane;
 import javax.swing.JTable;
 import javax.swing.JToolBar;
 import javax.swing.KeyStroke;
+import javax.swing.SwingConstants;
+import javax.swing.event.TableModelListener;
 
 import org.openstreetmap.josm.actions.JosmAction;
-import org.openstreetmap.josm.command.ChangeCommand;
+import org.openstreetmap.josm.command.ChangeMembersCommand;
 import org.openstreetmap.josm.command.Command;
 import org.openstreetmap.josm.data.UndoRedoHandler;
 import org.openstreetmap.josm.data.UndoRedoHandler.CommandQueueListener;
@@ -61,6 +64,7 @@ import org.openstreetmap.josm.data.validation.tests.RelationChecker;
 import org.openstreetmap.josm.gui.ConditionalOptionPaneUtil;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.MainMenu;
+import org.openstreetmap.josm.gui.Notification;
 import org.openstreetmap.josm.gui.ScrollViewport;
 import org.openstreetmap.josm.gui.datatransfer.ClipboardUtils;
 import org.openstreetmap.josm.gui.dialogs.relation.actions.AbstractRelationEditorAction;
@@ -120,7 +124,6 @@ public class GenericRelationEditor extends RelationEditor implements CommandQueu
     /** the tag table and its model */
     private final TagEditorPanel tagEditorPanel;
     private final ReferringRelationsBrowser referrerBrowser;
-    private final ReferringRelationsBrowserModel referrerModel;
 
     /** the member table and its model */
     private final MemberTable memberTable;
@@ -131,6 +134,7 @@ public class GenericRelationEditor extends RelationEditor implements CommandQueu
     private final SelectionTableModel selectionTableModel;
 
     private final AutoCompletingTextField tfRole;
+    private final RelationEditorActionAccess actionAccess;
 
     /**
      * the menu item in the windows menu. Required to properly hide on dialog close.
@@ -149,18 +153,6 @@ public class GenericRelationEditor extends RelationEditor implements CommandQueu
      */
     private final SelectAction selectAction;
     /**
-     * Action for performing the {@link DuplicateRelationAction}
-     */
-    private final DuplicateRelationAction duplicateAction;
-    /**
-     * Action for performing the {@link DeleteCurrentRelationAction}
-     */
-    private final DeleteCurrentRelationAction deleteAction;
-    /**
-     * Action for performing the {@link OKAction}
-     */
-    private final OKAction okAction;
-    /**
      * Action for performing the {@link CancelAction}
      */
     private final CancelAction cancelAction;
@@ -168,11 +160,15 @@ public class GenericRelationEditor extends RelationEditor implements CommandQueu
      * A list of listeners that need to be notified on clipboard content changes.
      */
     private final ArrayList<FlavorListener> clipboardListeners = new ArrayList<>();
+    /**
+     * Flag that signals that this instance of the relation editor is currently saving the relation
+     */
+    private boolean isSaving;
 
     /**
      * Creates a new relation editor for the given relation. The relation will be saved if the user
      * selects "ok" in the editor.
-     *
+     * <p>
      * If no relation is given, will create an editor for a new relation.
      *
      * @param layer the {@link OsmDataLayer} the new or edited relation belongs to
@@ -194,9 +190,14 @@ public class GenericRelationEditor extends RelationEditor implements CommandQueu
 
             @Override
             public Collection<OsmPrimitive> getSelection() {
-                Relation relation = new Relation();
-                tagEditorPanel.getModel().applyToPrimitive(relation);
-                return Collections.<OsmPrimitive>singletonList(relation);
+                // Creating a new relation will open the window. The relation, in that case, will be null.
+                if (getRelation() == null) {
+                    Relation relation = new Relation();
+                    tagEditorPanel.getModel().applyToPrimitive(relation);
+                    memberTableModel.applyToRelation(relation);
+                    return Collections.singletonList(relation);
+                }
+                return Collections.singletonList(getRelation());
             }
         };
 
@@ -206,7 +207,7 @@ public class GenericRelationEditor extends RelationEditor implements CommandQueu
         memberTableModel.register();
         selectionTableModel = new SelectionTableModel(getLayer());
         selectionTableModel.register();
-        referrerModel = new ReferringRelationsBrowserModel(relation);
+        ReferringRelationsBrowserModel referrerModel = new ReferringRelationsBrowserModel(relation);
 
         tagEditorPanel = new TagEditorPanel(relation, presetHandler);
         populateModels(relation);
@@ -235,7 +236,8 @@ public class GenericRelationEditor extends RelationEditor implements CommandQueu
         pnl.setBorder(BorderFactory.createRaisedBevelBorder());
 
         getContentPane().setLayout(new BorderLayout());
-        JTabbedPane tabbedPane = new JTabbedPane();
+        final JTabbedPane tabbedPane;
+        tabbedPane = new JTabbedPane();
         tabbedPane.add(tr("Tags and Members"), pnl);
         referrerBrowser = new ReferringRelationsBrowser(getLayer(), referrerModel);
         tabbedPane.add(tr("Parent Relations"), referrerBrowser);
@@ -249,21 +251,28 @@ public class GenericRelationEditor extends RelationEditor implements CommandQueu
             }
         });
 
-        IRelationEditorActionAccess actionAccess = new RelationEditorActionAccess();
+        actionAccess = new RelationEditorActionAccess();
 
         refreshAction = new RefreshAction(actionAccess);
         applyAction = new ApplyAction(actionAccess);
         selectAction = new SelectAction(actionAccess);
-        duplicateAction = new DuplicateRelationAction(actionAccess);
-        deleteAction = new DeleteCurrentRelationAction(actionAccess);
+        // Action for performing the {@link DuplicateRelationAction}
+        final DuplicateRelationAction duplicateAction = new DuplicateRelationAction(actionAccess);
+        // Action for performing the {@link DeleteCurrentRelationAction}
+        final DeleteCurrentRelationAction deleteAction = new DeleteCurrentRelationAction(actionAccess);
+
+        this.memberTableModel.addTableModelListener(applyAction);
+        this.tagEditorPanel.getModel().addTableModelListener(applyAction);
+
         addPropertyChangeListener(deleteAction);
 
-        okAction = new OKAction(actionAccess);
+        // Action for performing the {@link OKAction}
+        final OKAction okAction = new OKAction(actionAccess);
         cancelAction = new CancelAction(actionAccess);
 
         getContentPane().add(buildToolBar(refreshAction, applyAction, selectAction, duplicateAction, deleteAction), BorderLayout.NORTH);
         getContentPane().add(tabbedPane, BorderLayout.CENTER);
-        getContentPane().add(buildOkCancelButtonPanel(okAction, cancelAction), BorderLayout.SOUTH);
+        getContentPane().add(buildOkCancelButtonPanel(okAction, deleteAction, cancelAction), BorderLayout.SOUTH);
 
         setSize(findMaxDialogSize());
 
@@ -304,8 +313,14 @@ public class GenericRelationEditor extends RelationEditor implements CommandQueu
         key = Shortcut.getCopyKeyStroke();
         if (key != null) {
             // handle uncommon situation, that user has no keystroke assigned to copy
-            registerCopyPasteAction(new CopyMembersAction(actionAccess),
+            registerCopyPasteAction(new CopyMembersAction(actionAccess, true),
                     "COPY_MEMBERS", key, getRootPane(), memberTable, selectionTable);
+        }
+        key = Shortcut.getCutKeyStroke();
+        if (key != null) {
+            // handle uncommon situation, that user has no keystroke assigned to cut
+            registerCopyPasteAction(new CopyMembersAction(actionAccess, false),
+                    "CUT_MEMBERS", key, getRootPane(), memberTable, selectionTable);
         }
         tagEditorPanel.setNextFocusComponent(memberTable);
         selectionTable.setFocusable(false);
@@ -378,16 +393,44 @@ public class GenericRelationEditor extends RelationEditor implements CommandQueu
     /**
      * builds the panel with the OK and the Cancel button
      * @param okAction OK action
+     * @param deleteAction  Delete action
      * @param cancelAction Cancel action
      *
      * @return the panel with the OK and the Cancel button
      */
-    protected static JPanel buildOkCancelButtonPanel(OKAction okAction, CancelAction cancelAction) {
-        JPanel pnl = new JPanel(new FlowLayout(FlowLayout.CENTER));
-        pnl.add(new JButton(okAction));
+    protected final JPanel buildOkCancelButtonPanel(OKAction okAction, DeleteCurrentRelationAction deleteAction,
+            CancelAction cancelAction) {
+        final JPanel pnl = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        final JButton okButton = new JButton(okAction);
+        final JButton deleteButton = new JButton(deleteAction);
+        okButton.setPreferredSize(deleteButton.getPreferredSize());
+        pnl.add(okButton);
+        pnl.add(deleteButton);
         pnl.add(new JButton(cancelAction));
         pnl.add(new JButton(new ContextSensitiveHelpAction(ht("/Dialog/RelationEditor"))));
+        // Keep users from saving invalid relations -- a relation MUST have at least a tag with the key "type"
+        // AND must contain at least one other OSM object.
+        final TableModelListener listener = l -> updateOkPanel(okButton, deleteButton);
+        listener.tableChanged(null);
+        this.memberTableModel.addTableModelListener(listener);
+        this.tagEditorPanel.getModel().addTableModelListener(listener);
         return pnl;
+    }
+
+    /**
+     * Update the OK panel area with a temporary relation that looks if it were to be saved now.
+     * @param okButton The OK button
+     * @param deleteButton The delete button
+     */
+    private void updateOkPanel(JButton okButton, JButton deleteButton) {
+        boolean useful = this.actionAccess.wouldRelationBeUseful();
+        okButton.setVisible(useful || this.getRelationSnapshot() == null);
+        deleteButton.setVisible(!useful && this.getRelationSnapshot() != null);
+        if (this.getRelationSnapshot() == null && !useful) {
+            okButton.setText(tr("Delete"));
+        } else {
+            okButton.setText(tr("OK"));
+        }
     }
 
     /**
@@ -458,7 +501,7 @@ public class GenericRelationEditor extends RelationEditor implements CommandQueu
      *
      * @return the panel for the relation member editor
      */
-    protected static JPanel buildMemberEditorPanel(
+    static JPanel buildMemberEditorPanel(
             LeftButtonToolbar leftButtonToolbar, IRelationEditorActionAccess editorAccess) {
         final JPanel pnl = new JPanel(new GridBagLayout());
         final JScrollPane scrollPane = new JScrollPane(editorAccess.getMemberTable());
@@ -615,7 +658,7 @@ public class GenericRelationEditor extends RelationEditor implements CommandQueu
          * @param editorAccess relation editor
          */
         LeftButtonToolbar(IRelationEditorActionAccess editorAccess) {
-            setOrientation(JToolBar.VERTICAL);
+            setOrientation(SwingConstants.VERTICAL);
             setFloatable(false);
 
             List<IRelationEditorActionGroup> groups = new ArrayList<>();
@@ -648,15 +691,15 @@ public class GenericRelationEditor extends RelationEditor implements CommandQueu
             IRelationEditorActionGroup.fillToolbar(this, groups, editorAccess);
 
 
-            InputMap inputMap = editorAccess.getMemberTable().getInputMap(MemberTable.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT);
+            InputMap inputMap = editorAccess.getMemberTable().getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT);
             inputMap.put((KeyStroke) new RemoveAction(editorAccess, "removeSelected")
-                    .getValue(AbstractAction.ACCELERATOR_KEY), "removeSelected");
+                    .getValue(Action.ACCELERATOR_KEY), "removeSelected");
             inputMap.put((KeyStroke) new MoveUpAction(editorAccess, "moveUp")
-                    .getValue(AbstractAction.ACCELERATOR_KEY), "moveUp");
+                    .getValue(Action.ACCELERATOR_KEY), "moveUp");
             inputMap.put((KeyStroke) new MoveDownAction(editorAccess, "moveDown")
-                    .getValue(AbstractAction.ACCELERATOR_KEY), "moveDown");
+                    .getValue(Action.ACCELERATOR_KEY), "moveDown");
             inputMap.put((KeyStroke) new DownloadIncompleteMembersAction(
-                    editorAccess, "downloadIncomplete").getValue(AbstractAction.ACCELERATOR_KEY), "downloadIncomplete");
+                    editorAccess, "downloadIncomplete").getValue(Action.ACCELERATOR_KEY), "downloadIncomplete");
         }
     }
 
@@ -667,7 +710,7 @@ public class GenericRelationEditor extends RelationEditor implements CommandQueu
      * @return control buttons panel for selection/members
      */
     protected static JToolBar buildSelectionControlButtonToolbar(IRelationEditorActionAccess editorAccess) {
-        JToolBar tb = new JToolBar(JToolBar.VERTICAL);
+        JToolBar tb = new JToolBar(SwingConstants.VERTICAL);
         tb.setFloatable(false);
 
         List<IRelationEditorActionGroup> groups = new ArrayList<>();
@@ -735,6 +778,7 @@ public class GenericRelationEditor extends RelationEditor implements CommandQueu
             selectionTableModel.unregister();
             memberTableModel.unregister();
             memberTable.unregisterListeners();
+
             if (windowMenuItem != null) {
                 MainApplication.getMenu().windowMenu.remove(windowMenuItem);
                 windowMenuItem = null;
@@ -794,7 +838,7 @@ public class GenericRelationEditor extends RelationEditor implements CommandQueu
                             new String[]{tr("Remove them, clean up relation"), tr("Ignore them, leave relation as is")},
                             tr("Remove them, clean up relation")
             );
-            switch(ret) {
+            switch (ret) {
             case ConditionalOptionPaneUtil.DIALOG_DISABLED_OPTION:
             case JOptionPane.CLOSED_OPTION:
             case JOptionPane.NO_OPTION:
@@ -839,8 +883,8 @@ public class GenericRelationEditor extends RelationEditor implements CommandQueu
     public void dispose() {
         refreshAction.destroy();
         UndoRedoHandler.getInstance().removeCommandQueueListener(this);
+        super.dispose(); // call before setting relation to null, see #20304
         setRelation(null);
-        super.dispose();
     }
 
     /**
@@ -850,7 +894,7 @@ public class GenericRelationEditor extends RelationEditor implements CommandQueu
     }
 
     /**
-     * Asks confirmationbefore adding a primitive.
+     * Asks confirmation before adding a primitive.
      * @param primitive primitive to add
      * @return {@code true} is user confirms the operation, {@code false} otherwise
      * @throws AddAbortException if user aborts operation
@@ -872,7 +916,7 @@ public class GenericRelationEditor extends RelationEditor implements CommandQueu
                 null,
                 null
         );
-        switch(ret) {
+        switch (ret) {
         case ConditionalOptionPaneUtil.DIALOG_DISABLED_OPTION:
         case JOptionPane.YES_OPTION:
             return true;
@@ -938,27 +982,26 @@ public class GenericRelationEditor extends RelationEditor implements CommandQueu
         try {
             final Collection<TaggingPreset> presets = TaggingPresets.getMatchingPresets(
                     EnumSet.of(TaggingPresetType.forPrimitive(orig)), orig.getKeys(), false);
-            Relation relation = new Relation(orig);
+            Relation target = new Relation(orig);
             boolean modified = false;
             for (OsmPrimitive p : primitivesToAdd) {
                 if (p instanceof Relation) {
-                    List<Relation> loop = RelationChecker.checkAddMember(relation, (Relation) p);
+                    List<Relation> loop = RelationChecker.checkAddMember(target, (Relation) p);
                     if (!loop.isEmpty() && loop.get(0).equals(loop.get(loop.size() - 1))) {
                         warnOfCircularReferences(p, loop);
                         continue;
                     }
-                } else if (MemberTableModel.hasMembersReferringTo(relation.getMembers(), Collections.singleton(p))
+                } else if (MemberTableModel.hasMembersReferringTo(target.getMembers(), Collections.singleton(p))
                         && !confirmAddingPrimitive(p)) {
                     continue;
                 }
                 final Set<String> roles = findSuggestedRoles(presets, p);
-                relation.addMember(new RelationMember(roles.size() == 1 ? roles.iterator().next() : "", p));
+                target.addMember(new RelationMember(roles.size() == 1 ? roles.iterator().next() : "", p));
                 modified = true;
             }
-            if (!modified) {
-                relation.setMembers(null); // see #19885
-            }
-            return modified ? new ChangeCommand(orig, relation) : null;
+            List<RelationMember> members = new ArrayList<>(target.getMembers());
+            target.setMembers(null); // see #19885
+            return modified ? new ChangeMembersCommand(orig, members) : null;
         } catch (AddAbortException ign) {
             Logging.trace(ign);
             return null;
@@ -968,7 +1011,7 @@ public class GenericRelationEditor extends RelationEditor implements CommandQueu
     protected static Set<String> findSuggestedRoles(final Collection<TaggingPreset> presets, OsmPrimitive p) {
         return presets.stream()
                 .map(preset -> preset.suggestRoleForOsmPrimitive(p))
-                .filter(role -> role != null && !role.isEmpty())
+                .filter(role -> !Utils.isEmpty(role))
                 .collect(Collectors.toSet());
     }
 
@@ -976,12 +1019,12 @@ public class GenericRelationEditor extends RelationEditor implements CommandQueu
         @Override
         public void mouseClicked(MouseEvent e) {
             if (e.getButton() == MouseEvent.BUTTON1 && e.getClickCount() == 2) {
-                new EditAction(new RelationEditorActionAccess()).actionPerformed(null);
+                new EditAction(actionAccess).actionPerformed(null);
             }
         }
     }
 
-    private class RelationEditorActionAccess implements IRelationEditorActionAccess {
+    private final class RelationEditorActionAccess implements IRelationEditorActionAccess {
 
         @Override
         public MemberTable getMemberTable() {
@@ -1023,10 +1066,32 @@ public class GenericRelationEditor extends RelationEditor implements CommandQueu
     @Override
     public void commandChanged(int queueSize, int redoSize) {
         Relation r = getRelation();
-        if (r != null && r.getDataSet() == null) {
-            // see #19915
-            setRelation(null);
-            applyAction.updateEnabledState();
+        if (r != null) {
+            if (r.getDataSet() == null) {
+                // see #19915
+                setRelation(null);
+                applyAction.updateEnabledState();
+            } else if (isDirtyRelation()) {
+                if (!isDirtyEditor()) {
+                    reloadDataFromRelation();
+                } else if (!isSaving) {
+                    new Notification(tr("Relation modified outside of relation editor with pending changes. Conflict resolution required."))
+                    .setIcon(JOptionPane.WARNING_MESSAGE).show();
+                }
+            }
         }
+    }
+
+    @Override
+    public boolean isDirtyEditor() {
+        Relation snapshot = getRelationSnapshot();
+        Relation relation = getRelation();
+        return (snapshot != null && !memberTableModel.hasSameMembersAs(snapshot)) ||
+                tagEditorPanel.getModel().isDirty() || relation == null || relation.getDataSet() == null;
+    }
+
+    @Override
+    public void setIsSaving(boolean b) {
+        isSaving = b;
     }
 }

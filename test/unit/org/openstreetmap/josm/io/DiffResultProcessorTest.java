@@ -1,16 +1,14 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.io;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Set;
 
-import org.junit.Rule;
-import org.junit.Test;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.Changeset;
 import org.openstreetmap.josm.data.osm.Node;
@@ -21,24 +19,17 @@ import org.openstreetmap.josm.data.osm.SimplePrimitiveId;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.gui.progress.NullProgressMonitor;
 import org.openstreetmap.josm.io.DiffResultProcessor.DiffResultEntry;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.XmlParsingException;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests of {@link DiffResultProcessor}
  */
-public class DiffResultProcessorTest {
-
-    /**
-     * Setup rule
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+@BasicPreferences
+class DiffResultProcessorTest {
     private static void shouldFail(String s) {
         try {
             new DiffResultProcessor(null).parse(s, NullProgressMonitor.INSTANCE);
@@ -52,7 +43,7 @@ public class DiffResultProcessorTest {
      * Unit test of {@link DiffResultProcessor#DiffResultProcessor}.
      */
     @Test
-    public void testConstructor() {
+    void testConstructor() {
         Node n = new Node(1);
         // these calls should not fail
         //
@@ -65,7 +56,7 @@ public class DiffResultProcessorTest {
      * Test invalid cases.
      */
     @Test
-    public void testParse_NOK_Cases() {
+    void testParse_NOK_Cases() {
         shouldFail(null);
         shouldFail("");
         shouldFail("<x></x>");
@@ -76,7 +67,7 @@ public class DiffResultProcessorTest {
      * @throws XmlParsingException never
      */
     @Test
-    public void testParse_OK_Cases() throws XmlParsingException {
+    void testParse_OK_Cases() throws XmlParsingException {
         DiffResultProcessor processor = new DiffResultProcessor(null);
         String doc =
         "<diffResult version=\"0.6\" generator=\"Test Data\">\n" +
@@ -111,7 +102,7 @@ public class DiffResultProcessorTest {
      * @throws XmlParsingException never
      */
     @Test
-    public void testPostProcess_Invocation_Variants() throws XmlParsingException {
+    void testPostProcess_Invocation_Variants() throws XmlParsingException {
         DiffResultProcessor processor = new DiffResultProcessor(null);
         String doc =
         "<diffResult version=\"0.6\" generator=\"Test Data\">\n" +
@@ -135,7 +126,7 @@ public class DiffResultProcessorTest {
      * @throws XmlParsingException never
      */
     @Test
-    public void testPostProcess_OK() throws XmlParsingException {
+    void testPostProcess_OK() throws XmlParsingException {
 
         Node n = new Node();
         Way w = new Way();
@@ -170,7 +161,7 @@ public class DiffResultProcessorTest {
      * @throws XmlParsingException never
      */
     @Test
-    public void testPostProcess_ForCreatedElement() throws XmlParsingException {
+    void testPostProcess_ForCreatedElement() throws XmlParsingException {
 
         Node n = new Node();
         String doc =
@@ -192,7 +183,7 @@ public class DiffResultProcessorTest {
      * @throws XmlParsingException never
      */
     @Test
-    public void testPostProcess_ForModifiedElement() throws XmlParsingException {
+    void testPostProcess_ForModifiedElement() throws XmlParsingException {
 
         Node n = new Node(1);
         n.setCoor(new LatLon(1, 1));
@@ -217,7 +208,7 @@ public class DiffResultProcessorTest {
      * @throws XmlParsingException never
      */
     @Test
-    public void testPostProcess_ForDeletedElement() throws XmlParsingException {
+    void testPostProcess_ForDeletedElement() throws XmlParsingException {
 
         Node n = new Node(1);
         n.setCoor(new LatLon(1, 1));

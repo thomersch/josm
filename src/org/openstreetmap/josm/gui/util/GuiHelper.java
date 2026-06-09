@@ -211,6 +211,7 @@ public final class GuiHelper {
      */
     static void handleEDTException(Throwable t) {
         Logging.logWithStackTrace(Logging.LEVEL_ERROR, t, "Exception raised in EDT");
+        BugReport.addSuppressedException(t);
     }
 
     /**
@@ -266,7 +267,7 @@ public final class GuiHelper {
         if (SwingUtilities.isEventDispatchThread()) {
             try {
                 return callable.call();
-            } catch (Exception e) { // NOPMD
+            } catch (Exception e) {
                 handleEDTException(e);
                 return null;
             }
@@ -288,7 +289,7 @@ public final class GuiHelper {
      * @since 10271
      */
     public static void assertCallFromEdt() {
-        if (!SwingUtilities.isEventDispatchThread()) {
+        if (!SwingUtilities.isEventDispatchThread() && !GraphicsEnvironment.isHeadless()) {
             throw new IllegalStateException(
                     "Needs to be called from the EDT thread, not from " + Thread.currentThread().getName());
         }
@@ -403,7 +404,7 @@ public final class GuiHelper {
 
     /**
      * Return s new BasicStroke object with given thickness and style
-     * @param code = 3.5 -&gt; thickness=3.5px; 3.5 10 5 -&gt; thickness=3.5px, dashed: 10px filled + 5px empty
+     * @param code = 3.5 → thickness=3.5px; 3.5 10 5 → thickness=3.5px, dashed: 10px filled + 5px empty
      * @return stroke for drawing
      * @see StrokeProperty
      */

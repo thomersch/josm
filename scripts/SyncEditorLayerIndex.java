@@ -1,7 +1,6 @@
 // License: GPL. For details, see LICENSE file.
+
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.apache.commons.lang3.StringUtils.isBlank;
-import static org.apache.commons.lang3.StringUtils.isNotBlank;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -16,13 +15,13 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.text.DecimalFormat;
 import java.text.ParseException;
-import java.text.SimpleDateFormat;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.ResolverStyle;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Calendar;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -36,14 +35,6 @@ import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-
-import javax.json.Json;
-import javax.json.JsonArray;
-import javax.json.JsonNumber;
-import javax.json.JsonObject;
-import javax.json.JsonReader;
-import javax.json.JsonString;
-import javax.json.JsonValue;
 
 import org.openstreetmap.gui.jmapviewer.Coordinate;
 import org.openstreetmap.josm.data.Preferences;
@@ -63,24 +54,29 @@ import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.OptionParser;
 import org.openstreetmap.josm.tools.OptionParser.OptionCount;
 import org.openstreetmap.josm.tools.ReflectionUtils;
+import org.openstreetmap.josm.tools.Utils;
 import org.xml.sax.SAXException;
+
+import jakarta.json.Json;
+import jakarta.json.JsonArray;
+import jakarta.json.JsonNumber;
+import jakarta.json.JsonObject;
+import jakarta.json.JsonReader;
+import jakarta.json.JsonString;
+import jakarta.json.JsonValue;
 
 /**
  * Compare and analyse the differences of the editor layer index and the JOSM imagery list.
  * The goal is to keep both lists in sync.
- *
- * The editor layer index project (https://github.com/osmlab/editor-layer-index)
- * provides also a version in the JOSM format, but the GEOJSON is the original source
- * format, so we read that.
- *
- * How to run:
- * -----------
- *
- * Main JOSM binary needs to be in classpath, e.g.
- *
- * $ java -cp ../dist/josm-custom.jar SyncEditorLayerIndex
- *
- * Add option "-h" to show the available command line flags.
+ * <p>
+ * The <a href="https://github.com/osmlab/editor-layer-index">editor layer index</a> project
+ * provides also a version in the JOSM format, but the GEOJSON is the original source format, so we read that.
+ * <p>
+ * For running, the main JOSM binary needs to be in classpath, e.g.
+ * <p>
+ * {@code $ java -cp ../dist/josm-custom.jar SyncEditorLayerIndex}
+ * <p>
+ * Add option {@code -h} to show the available command line flags.
  */
 @SuppressWarnings("unchecked")
 public class SyncEditorLayerIndex {
@@ -89,14 +85,20 @@ public class SyncEditorLayerIndex {
 
     private List<ImageryInfo> josmEntries;
     private JsonArray eliEntries;
+    private JsonArray idEntries;
+    private JsonArray rapidEntries;
 
     private final Map<String, JsonObject> eliUrls = new HashMap<>();
+    private final Map<String, JsonObject> idUrls = new HashMap<>();
+    private final Map<String, JsonObject> rapidUrls = new HashMap<>();
     private final Map<String, ImageryInfo> josmUrls = new HashMap<>();
     private final Map<String, ImageryInfo> josmMirrors = new HashMap<>();
     private static final Map<String, String> oldproj = new HashMap<>();
     private static final List<String> ignoreproj = new LinkedList<>();
 
     private static String eliInputFile = "imagery_eli.geojson";
+    private static String idInputFile = "imagery_id.geojson";
+    private static String rapidInputFile = "imagery_rapid.geojson";
     private static String josmInputFile = "imagery_josm.imagery.xml";
     private static String ignoreInputFile = "imagery_josm.ignores.txt";
     private static Writer outputStream;
@@ -109,8 +111,8 @@ public class SyncEditorLayerIndex {
     private static String optionJosmXml;
     private static String optionEncoding;
     private static boolean optionNoEli;
-    private Map<String, String> skip = new HashMap<>();
-    private Map<String, String> skipStart = new HashMap<>();
+    private final Map<String, String> skip = new HashMap<>();
+    private final Map<String, String> skipStart = new HashMap<>();
 
     /**
      * Main method.
@@ -137,6 +139,7 @@ public class SyncEditorLayerIndex {
             }
         }
         script.loadELIEntries();
+        script.loadELIUsers();
         if (optionEliXml != null) {
             try (BufferedWriter writer = Files.newBufferedWriter(Paths.get(optionEliXml), UTF_8)) {
                 script.printentries(script.eliEntries, writer);
@@ -163,15 +166,19 @@ public class SyncEditorLayerIndex {
         "-c,--encoding <encoding>           output encoding (defaults to UTF-8 or cp850 on Windows)\n" +
         "-e,--eli_input <eli_input>         Input file for the editor layer index (geojson). " +
                                             "Default is imagery_eli.geojson (current directory).\n" +
+        "-d,--id_input <id_input>           Input file for the id index (geojson). " +
+                                            "Default is imagery_id.geojson (current directory).\n" +
         "-h,--help                          show this help\n" +
         "-i,--ignore_input <ignore_input>   Input file for the ignore list. Default is imagery_josm.ignores.txt (current directory).\n" +
         "-j,--josm_input <josm_input>       Input file for the JOSM imagery list (xml). " +
                                             "Default is imagery_josm.imagery.xml (current directory).\n" +
-        "-m,--noeli                         don't show output for ELI problems\n" +
+        "-m,--noeli                         don't show output for ELI, Rapid or iD problems\n" +
         "-n,--noskip                        don't skip known entries\n" +
         "-o,--output <output>               Output file, - prints to stdout (default: -)\n" +
         "-p,--elixml <elixml>               ELI entries for use in JOSM as XML file (incomplete)\n" +
         "-q,--josmxml <josmxml>             JOSM entries reoutput as XML file (incomplete)\n" +
+        "-r,--rapid_input <rapid_input>     Input file for the rapid index (geojson). " +
+                                            "Default is imagery_rapid.geojson (current directory).\n" +
         "-s,--shorten                       shorten the output, so it is easier to read in a console window\n" +
         "-x,--xhtmlbody                     create XHTML body for display in a web page\n" +
         "-X,--xhtml                         create XHTML for display in a web page\n";
@@ -190,6 +197,10 @@ public class SyncEditorLayerIndex {
                 .addShortAlias("output", "o")
                 .addArgumentParameter("eli_input", OptionCount.OPTIONAL, x -> eliInputFile = x)
                 .addShortAlias("eli_input", "e")
+                .addArgumentParameter("id_input", OptionCount.OPTIONAL, x -> idInputFile = x)
+                .addShortAlias("id_input", "d")
+                .addArgumentParameter("rapid_input", OptionCount.OPTIONAL, x -> rapidInputFile = x)
+                .addShortAlias("rapid_input", "r")
                 .addArgumentParameter("josm_input", OptionCount.OPTIONAL, x -> josmInputFile = x)
                 .addShortAlias("josm_input", "j")
                 .addArgumentParameter("ignore_input", OptionCount.OPTIONAL, x -> ignoreInputFile = x)
@@ -239,7 +250,7 @@ public class SyncEditorLayerIndex {
     }
 
     void loadSkip() throws IOException {
-        final Pattern pattern = Pattern.compile("^\\|\\| *(ELI|Ignore) *\\|\\| *\\{\\{\\{(.+)\\}\\}\\} *\\|\\|");
+        final Pattern pattern = Pattern.compile("^\\|\\| *(ELI|Ignore) *\\|\\| *\\{\\{\\{(.+)}}} *\\|\\|");
         try (BufferedReader fr = Files.newBufferedReader(Paths.get(ignoreInputFile), UTF_8)) {
             String line;
 
@@ -269,7 +280,7 @@ public class SyncEditorLayerIndex {
     void myprintlnfinal(String s) {
         if (outputStream != null) {
             try {
-                outputStream.write(s + System.getProperty("line.separator"));
+                outputStream.write(s + System.lineSeparator());
             } catch (IOException e) {
                 throw new JosmRuntimeException(e);
             }
@@ -292,11 +303,12 @@ public class SyncEditorLayerIndex {
 
     void myprintln(String s) {
         String color;
+        final String escaped = s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
         if ((color = isSkipString(s)) != null) {
             skip.remove(s);
             if (optionXhtmlBody || optionXhtml) {
                 s = "<pre style=\"margin:3px;color:"+color+"\">"
-                        + s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")+"</pre>";
+                        + escaped +"</pre>";
             }
             if (!optionNoSkip) {
                 return;
@@ -306,8 +318,9 @@ public class SyncEditorLayerIndex {
                     s.startsWith("***") ? "black" :
                         ((s.startsWith("+ ") || s.startsWith("+++ ELI")) ? "blue" :
                             (s.startsWith("#") ? "indigo" :
-                                (s.startsWith("!") ? "orange" : "red")));
-            s = "<pre style=\"margin:3px;color:"+color+"\">"+s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")+"</pre>";
+                                (s.startsWith("!") ? "orange" :
+                                    (s.startsWith("~") ? "red" : "brown"))));
+            s = "<pre style=\"margin:3px;color:"+color+"\">"+ escaped +"</pre>";
         }
         if ((s.startsWith("+ ") || s.startsWith("+++ ELI") || s.startsWith("#")) && optionNoEli) {
             return;
@@ -371,6 +384,29 @@ public class SyncEditorLayerIndex {
         myprintln("*** Loaded "+eliEntries.size()+" entries (ELI). ***");
     }
 
+    void loadELIUsers() throws IOException {
+        try (JsonReader jr = Json.createReader(Files.newBufferedReader(Paths.get(idInputFile), UTF_8))) {
+            idEntries = jr.readArray();
+        }
+        for (JsonValue e : idEntries) {
+            String url = getUrlStripped(e);
+            if (!eliUrls.containsKey(url))
+                myprintln("+++ iD-URL not in ELI: "+url);
+            idUrls.put(url, e.asJsonObject());
+        }
+        myprintln("*** Loaded "+idEntries.size()+" entries (iD). ***");
+        try (JsonReader jr = Json.createReader(Files.newBufferedReader(Paths.get(rapidInputFile), UTF_8))) {
+            rapidEntries = jr.readObject().getJsonArray("imagery");
+        }
+        for (JsonValue e : rapidEntries) {
+            String url = getUrlStripped(e);
+            if (!eliUrls.containsKey(url))
+                myprintln("+++ Rapid-URL not in ELI: "+url);
+            rapidUrls.put(url, e.asJsonObject());
+        }
+        myprintln("*** Loaded "+rapidEntries.size()+" entries (Rapid). ***");
+    }
+
     String cdata(String s) {
         return cdata(s, false);
     }
@@ -415,41 +451,41 @@ public class SyncEditorLayerIndex {
                 + (getOverlay(e) ? " overlay=\"true\"" : "")
                 + ">\n");
             String t;
-            if (isNotBlank(t = getName(e)))
+            if (!Utils.isStripEmpty(t = getName(e)))
                 stream.write("        <name>"+cdata(t, true)+"</name>\n");
-            if (isNotBlank(t = getId(e)))
+            if (!Utils.isStripEmpty(t = getId(e)))
                 stream.write("        <id>"+t+"</id>\n");
-            if (isNotBlank(t = getCategory(e)))
+            if (!Utils.isStripEmpty(t = getCategory(e)))
                 stream.write("        <category>"+t+"</category>\n");
-            if (isNotBlank(t = getDate(e)))
+            if (!Utils.isStripEmpty(t = getDate(e)))
                 stream.write("        <date>"+t+"</date>\n");
-            if (isNotBlank(t = getCountryCode(e)))
+            if (!Utils.isStripEmpty(t = getCountryCode(e)))
                 stream.write("        <country-code>"+t+"</country-code>\n");
             if ((getDefault(e)))
                 stream.write("        <default>true</default>\n");
             stream.write(maininfo(e, "        "));
-            if (isNotBlank(t = getAttributionText(e)))
+            if (!Utils.isStripEmpty(t = getAttributionText(e)))
                 stream.write("        <attribution-text mandatory=\"true\">"+cdata(t, true)+"</attribution-text>\n");
-            if (isNotBlank(t = getAttributionUrl(e)))
+            if (!Utils.isStripEmpty(t = getAttributionUrl(e)))
                 stream.write("        <attribution-url>"+cdata(t)+"</attribution-url>\n");
-            if (isNotBlank(t = getLogoImage(e)))
+            if (!Utils.isStripEmpty(t = getLogoImage(e)))
                 stream.write("        <logo-image>"+cdata(t, true)+"</logo-image>\n");
-            if (isNotBlank(t = getLogoUrl(e)))
+            if (!Utils.isStripEmpty(t = getLogoUrl(e)))
                 stream.write("        <logo-url>"+cdata(t)+"</logo-url>\n");
-            if (isNotBlank(t = getTermsOfUseText(e)))
+            if (!Utils.isStripEmpty(t = getTermsOfUseText(e)))
                 stream.write("        <terms-of-use-text>"+cdata(t, true)+"</terms-of-use-text>\n");
-            if (isNotBlank(t = getTermsOfUseUrl(e)))
+            if (!Utils.isStripEmpty(t = getTermsOfUseUrl(e)))
                 stream.write("        <terms-of-use-url>"+cdata(t)+"</terms-of-use-url>\n");
-            if (isNotBlank(t = getPermissionReferenceUrl(e)))
+            if (!Utils.isStripEmpty(t = getPermissionReferenceUrl(e)))
                 stream.write("        <permission-ref>"+cdata(t)+"</permission-ref>\n");
-            if (isNotBlank(t = getPrivacyPolicyUrl(e)))
+            if (!Utils.isStripEmpty(t = getPrivacyPolicyUrl(e)))
                 stream.write("        <privacy-policy-url>"+cdata(t)+"</privacy-policy-url>\n");
             if ((getValidGeoreference(e)))
                 stream.write("        <valid-georeference>true</valid-georeference>\n");
-            if (isNotBlank(t = getIcon(e)))
+            if (!Utils.isStripEmpty(t = getIcon(e)))
                 stream.write("        <icon>"+cdata(t)+"</icon>\n");
             for (Entry<String, String> d : getDescriptions(e).entrySet()) {
-                stream.write("        <description lang=\""+d.getKey()+"\">"+d.getValue()+"</description>\n");
+                stream.write("        <description lang=\""+d.getKey()+"\">"+cdata(d.getValue(), true)+"</description>\n");
             }
             for (ImageryInfo m : getMirrors(e)) {
                 stream.write("        <mirror>\n"+maininfo(m, "            ")+"        </mirror>\n");
@@ -478,8 +514,8 @@ public class SyncEditorLayerIndex {
                     }
                     shapes += sep + "</shape>\n";
                 }
-            } catch (IllegalArgumentException ignored) {
-                Logging.trace(ignored);
+            } catch (IllegalArgumentException illegalArgumentException) {
+                Logging.trace(illegalArgumentException);
             }
             if (!shapes.isEmpty()) {
                 stream.write("        <bounds min-lat='"+df.format(minlat)
@@ -500,25 +536,28 @@ public class SyncEditorLayerIndex {
         }
 
         for (ImageryInfo e : josmEntries) {
-            if (isBlank(getUrl(e))) {
-                myprintln("+++ JOSM-Entry without URL: " + getDescription(e));
+            if (!e.isValid()) {
+                myprintln("~~~ JOSM-Entry missing fields (" + String.join(", ", e.getMissingFields()) + "): " + getDescription(e));
+            }
+            if (Utils.isStripEmpty(getUrl(e))) {
+                myprintln("~~~ JOSM-Entry without URL: " + getDescription(e));
                 continue;
             }
-            if (isBlank(e.getDate()) && e.getDate() != null) {
-                myprintln("+++ JOSM-Entry with empty Date: " + getDescription(e));
+            if (Utils.isStripEmpty(e.getDate()) && e.getDate() != null) {
+                myprintln("~~~ JOSM-Entry with empty Date: " + getDescription(e));
                 continue;
             }
-            if (isBlank(getName(e))) {
-                myprintln("+++ JOSM-Entry without Name: " + getDescription(e));
+            if (Utils.isStripEmpty(getName(e))) {
+                myprintln("~~~ JOSM-Entry without Name: " + getDescription(e));
                 continue;
             }
             String url = getUrlStripped(e);
             if (url.contains("{z}")) {
-                myprintln("+++ JOSM-URL uses {z} instead of {zoom}: "+getDescription(e));
+                myprintln("~~~ JOSM-URL uses {z} instead of {zoom}: "+getDescription(e));
                 url = url.replace("{z}", "{zoom}");
             }
             if (josmUrls.containsKey(url)) {
-                myprintln("+++ JOSM-URL is not unique: "+url);
+                myprintln("~~~ JOSM-URL is not unique: "+url);
             } else {
                 josmUrls.put(url, e);
             }
@@ -528,7 +567,7 @@ public class SyncEditorLayerIndex {
                 ReflectionUtils.setObjectsAccessible(origNameField);
                 origNameField.set(m, m.getOriginalName().replaceAll(" mirror server( \\d+)?", ""));
                 if (josmUrls.containsKey(url)) {
-                    myprintln("+++ JOSM-Mirror-URL is not unique: "+url);
+                    myprintln("~~~ JOSM-Mirror-URL is not unique: "+url);
                 } else {
                     josmUrls.put(url, m);
                     josmMirrors.put(url, m);
@@ -538,12 +577,33 @@ public class SyncEditorLayerIndex {
         myprintln("*** Loaded "+josmEntries.size()+" entries (JOSM). ***");
     }
 
+    // catch reordered arguments, make them uppercase, and switches to WMS version 1.3.0
+    String unifyWMS(String url) {
+        String[] x = url.replaceAll("(?i)VERSION=[0-9.]+", "VERSION=x")
+                        .replaceAll("(?i)SRS=", "CRS=")
+                        .replaceAll("(?i)BBOX=", "BBOX=")
+                        .replaceAll("(?i)FORMAT=", "FORMAT=")
+                        .replaceAll("(?i)LAYERS=", "LAYERS=")
+                        .replaceAll("(?i)MAP=", "MAP=")
+                        .replaceAll("(?i)REQUEST=", "REQUEST=")
+                        .replaceAll("(?i)SERVICE=", "SERVICE=")
+                        .replaceAll("(?i)STYLES=", "STYLES=")
+                        .replaceAll("(?i)TRANSPARENT=FALSE", "TRANSPARENT=FALSE")
+                        .replaceAll("(?i)TRANSPARENT=TRUE", "TRANSPARENT=TRUE")
+                        .replaceAll("(?i)WIDTH=", "WIDTH=")
+                        .replaceAll("(?i)HEIGHT=", "HEIGHT=")
+                        .split("\\?");
+        return x[0] +"?" + Arrays.stream(x[1].split("&"))
+                                 .filter(s -> !s.endsWith("=")) // filter empty params
+                                 .sorted()
+                                 .collect(Collectors.joining("&"));
+    }
+
     void checkInOneButNotTheOther() {
         List<String> le = new LinkedList<>(eliUrls.keySet());
         List<String> lj = new LinkedList<>(josmUrls.keySet());
 
-        List<String> ke = new LinkedList<>(le);
-        for (String url : ke) {
+        for (String url : new LinkedList<>(le)) {
             if (lj.contains(url)) {
                 le.remove(url);
                 lj.remove(url);
@@ -551,7 +611,7 @@ public class SyncEditorLayerIndex {
         }
 
         if (!le.isEmpty() && !lj.isEmpty()) {
-            ke = new LinkedList<>(le);
+            List<String> ke = new LinkedList<>(le);
             for (String urle : ke) {
                 JsonObject e = eliUrls.get(urle);
                 String ide = getId(e);
@@ -562,22 +622,8 @@ public class SyncEditorLayerIndex {
                     eliUrls.remove(urle);
                     le.remove(urle);
                     lj.remove(urlhttps);
-                } else if (isNotBlank(ide)) {
-                    List<String> kj = new LinkedList<>(lj);
-                    for (String urlj : kj) {
-                        ImageryInfo j = josmUrls.get(urlj);
-                        String idj = getId(j);
-
-                        if (ide.equals(idj) && Objects.equals(getType(j), getType(e))) {
-                            myprintln("* URL for id "+idj+" differs ("+urle+"): "+getDescription(j));
-                            le.remove(urle);
-                            lj.remove(urlj);
-                            // replace key for this entry with JOSM URL
-                            eliUrls.remove(urle);
-                            eliUrls.put(urlj, e);
-                            break;
-                        }
-                    }
+                } else if (!Utils.isStripEmpty(ide)) {
+                    checkUrlsEquality(ide, e, urle, le, lj);
                 }
             }
         }
@@ -586,7 +632,14 @@ public class SyncEditorLayerIndex {
         Collections.sort(le);
         if (!le.isEmpty()) {
             for (String l : le) {
-                myprintln("-  " + getDescription(eliUrls.get(l)));
+                String e = "";
+                if (idUrls.get(l) != null && rapidUrls.get(l) != null)
+                    e = " **iD+Rapid**";
+                else if (idUrls.get(l) != null)
+                    e = " **iD**";
+                else if (rapidUrls.get(l) != null)
+                    e = " **Rapid**";
+                myprintln("-  " + getDescription(eliUrls.get(l)) + e);
             }
         }
         myprintln("*** URLs found in JOSM but not in ELI ("+lj.size()+"): ***");
@@ -596,6 +649,43 @@ public class SyncEditorLayerIndex {
                 myprintln("+  " + getDescription(josmUrls.get(l)));
             }
         }
+    }
+
+    void checkUrlsEquality(String ide, JsonObject e, String urle, List<String> le, List<String> lj) {
+        for (String urlj : new LinkedList<>(lj)) {
+            ImageryInfo j = josmUrls.get(urlj);
+            String idj = getId(j);
+
+            if (checkUrlEquality(ide, "id", idj, e, j, urle, urlj, le, lj)) {
+                return;
+            }
+            Collection<String> old = j.getOldIds();
+            if (old != null) {
+                for (String oidj : old) {
+                    if (checkUrlEquality(ide, "oldid", oidj, e, j, urle, urlj, le, lj)) {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    boolean checkUrlEquality(
+            String ide, String idtype, String idj, JsonObject e, ImageryInfo j, String urle, String urlj, List<String> le, List<String> lj) {
+        if (ide.equals(idj) && Objects.equals(getType(j), getType(e))) {
+            if (getType(j).equals("wms") && unifyWMS(urle).equals(unifyWMS(urlj))) {
+                myprintln("# WMS-URL for "+idtype+" "+idj+" modified: "+getDescription(j));
+            } else {
+                myprintln("* URL for "+idtype+" "+idj+" differs ("+urle+"): "+getDescription(j));
+            }
+            le.remove(urle);
+            lj.remove(urlj);
+            // replace key for this entry with JOSM URL
+            eliUrls.remove(urle);
+            eliUrls.put(urlj, e);
+            return true;
+        }
+        return false;
     }
 
     void checkCommonEntries() {
@@ -727,16 +817,15 @@ public class SyncEditorLayerIndex {
             String ed2 = ed;
             Matcher m = pattern.matcher(ed);
             if (m.matches()) {
-                Calendar cal = Calendar.getInstance();
-                cal.set(Integer.valueOf(m.group(2)),
-                        m.group(4) == null ? 0 : Integer.valueOf(m.group(4))-1,
-                        m.group(6) == null ? 1 : Integer.valueOf(m.group(6)));
-                cal.add(Calendar.DAY_OF_MONTH, -1);
-                ed2 = m.group(1) + cal.get(Calendar.YEAR);
+                int year = Integer.parseInt(m.group(2));
+                int month = (m.group(4) == null) ? 1 : Integer.parseInt(m.group(4));
+                int day = (m.group(6) == null) ? 1 : Integer.parseInt(m.group(6));
+                LocalDate date = LocalDate.of(year, month, day).minusDays(1);
+                ed2 = m.group(1) + date.getYear();
                 if (m.group(4) != null)
-                    ed2 += "-" + String.format("%02d", cal.get(Calendar.MONTH)+1);
+                    ed2 += "-" + String.format("%02d", date.getMonthValue());
                 if (m.group(6) != null)
-                    ed2 += "-" + String.format("%02d", cal.get(Calendar.DAY_OF_MONTH));
+                    ed2 += "-" + String.format("%02d", date.getDayOfMonth());
             }
             String ef2 = ed2.replaceAll("\\A-;", "").replaceAll(";-\\z", "").replaceAll("\\A([0-9-]+);\\1\\z", "$1");
             if (!ed.equals(jd) && !ef.equals(jd) && !ed2.equals(jd) && !ef2.equals(jd)) {
@@ -792,9 +881,9 @@ public class SyncEditorLayerIndex {
         String et = getPrivacyPolicyUrl(e);
         String jt = getPrivacyPolicyUrl(j);
         if (!Objects.equals(et, jt)) {
-            if (isBlank(jt)) {
+            if (Utils.isStripEmpty(jt)) {
                 myprintln("- Missing JOSM privacy policy URL ("+et+"): "+getDescription(j));
-            } else if (isNotBlank(et)) {
+            } else if (!Utils.isStripEmpty(et)) {
                 myprintln("* Privacy policy URL differs ('"+et+"' != '"+jt+"'): "+getDescription(j));
             } else if (!optionNoEli) {
                 myprintln("+ Missing ELI privacy policy URL ('"+jt+"'): "+getDescription(j));
@@ -806,13 +895,13 @@ public class SyncEditorLayerIndex {
         String et = getPermissionReferenceUrl(e);
         String jt = getPermissionReferenceUrl(j);
         String jt2 = getTermsOfUseUrl(j);
-        if (isBlank(jt)) jt = jt2;
+        if (Utils.isStripEmpty(jt)) jt = jt2;
         if (!Objects.equals(et, jt)) {
-            if (isBlank(jt)) {
+            if (Utils.isStripEmpty(jt)) {
                 myprintln("- Missing JOSM license URL ("+et+"): "+getDescription(j));
-            } else if (isNotBlank(et)) {
+            } else if (!Utils.isStripEmpty(et)) {
                 String ethttps = et.replace("http:", "https:");
-                if (isBlank(jt2) || !(jt2.equals(ethttps) || jt2.equals(et+"/") || jt2.equals(ethttps+"/"))) {
+                if (Utils.isStripEmpty(jt2) || !(jt2.equals(ethttps) || jt2.equals(et+"/") || jt2.equals(ethttps+"/"))) {
                     if (jt.equals(ethttps) || jt.equals(et+"/") || jt.equals(ethttps+"/")) {
                         myprintln("+ License URL differs ('"+et+"' != '"+jt+"'): "+getDescription(j));
                     } else {
@@ -834,9 +923,9 @@ public class SyncEditorLayerIndex {
         String et = getAttributionUrl(e);
         String jt = getAttributionUrl(j);
         if (!Objects.equals(et, jt)) {
-            if (isBlank(jt)) {
+            if (Utils.isStripEmpty(jt)) {
                 myprintln("- Missing JOSM attribution URL ("+et+"): "+getDescription(j));
-            } else if (isNotBlank(et)) {
+            } else if (!Utils.isStripEmpty(et)) {
                 String ethttps = et.replace("http:", "https:");
                 if (jt.equals(ethttps) || jt.equals(et+"/") || jt.equals(ethttps+"/")) {
                     myprintln("+ Attribution URL differs ('"+et+"' != '"+jt+"'): "+getDescription(j));
@@ -853,9 +942,9 @@ public class SyncEditorLayerIndex {
         String et = getAttributionText(e);
         String jt = getAttributionText(j);
         if (!Objects.equals(et, jt)) {
-            if (isBlank(jt)) {
+            if (Utils.isStripEmpty(jt)) {
                 myprintln("- Missing JOSM attribution text ("+et+"): "+getDescription(j));
-            } else if (isNotBlank(et)) {
+            } else if (!Utils.isStripEmpty(et)) {
                 myprintln("* Attribution text differs ('"+et+"' != '"+jt+"'): "+getDescription(j));
             } else if (!optionNoEli) {
                 myprintln("+ Missing ELI attribution text ('"+jt+"'): "+getDescription(j));
@@ -867,14 +956,14 @@ public class SyncEditorLayerIndex {
         String et = getProjections(e).stream().sorted().collect(Collectors.joining(" "));
         String jt = getProjections(j).stream().sorted().collect(Collectors.joining(" "));
         if (!Objects.equals(et, jt)) {
-            if (isBlank(jt)) {
+            if (Utils.isStripEmpty(jt)) {
                 String t = getType(e);
                 if ("wms_endpoint".equals(t) || "tms".equals(t)) {
                     myprintln("+ ELI projections for type "+t+": "+getDescription(j));
                 } else {
                     myprintln("- Missing JOSM projections ("+et+"): "+getDescription(j));
                 }
-            } else if (isNotBlank(et)) {
+            } else if (!Utils.isStripEmpty(et)) {
                 if ("EPSG:3857 EPSG:4326".equals(et) || "EPSG:3857".equals(et) || "EPSG:4326".equals(et)) {
                     myprintln("+ ELI has minimal projections ('"+et+"' != '"+jt+"'): "+getDescription(j));
                 } else {
@@ -914,9 +1003,9 @@ public class SyncEditorLayerIndex {
         Map<String, Set<String>> eh = getNoTileHeader(e);
         Map<String, Set<String>> jh = getNoTileHeader(j);
         if (!Objects.equals(eh, jh)) {
-            if (jh == null || jh.isEmpty()) {
+            if (Utils.isEmpty(jh)) {
                 myprintln("- Missing JOSM no tile headers ("+eh+"): "+getDescription(j));
-            } else if (eh != null && !eh.isEmpty()) {
+            } else if (!Utils.isEmpty(eh)) {
                 myprintln("* No tile headers differ ('"+eh+"' != '"+jh+"'): "+getDescription(j));
             } else if (!optionNoEli) {
                 myprintln("+ Missing ELI no tile headers ('"+jh+"'): "+getDescription(j));
@@ -932,11 +1021,12 @@ public class SyncEditorLayerIndex {
             for (Shape shape : getShapes(j)) {
                 List<Coordinate> p = shape.getPoints();
                 if (!p.get(0).equals(p.get(p.size()-1))) {
-                    myprintln("+++ JOSM shape "+num+" unclosed: "+getDescription(j));
+                    myprintln("~~~ JOSM shape "+num+" unclosed: "+getDescription(j));
                 }
                 for (int nump = 1; nump < p.size(); ++nump) {
                     if (Objects.equals(p.get(nump-1), p.get(nump))) {
-                        myprintln("+++ JOSM shape "+num+" double point at "+(nump-1)+": "+getDescription(j));
+                        myprintln("~~~ JOSM shape "+num+" double point at "+(nump-1)+" ("
+                        +p.get(nump).getLat()+", "+p.get(nump).getLon()+"): "+getDescription(j));
                     }
                 }
                 ++num;
@@ -962,7 +1052,7 @@ public class SyncEditorLayerIndex {
                 }
             } catch (IllegalArgumentException err) {
                 String desc = getDescription(e);
-                myprintln("* Invalid data in ELI geometry for "+desc+": "+err.getMessage());
+                myprintln("+++ ELI shape contains invalid data for "+desc+": "+err.getMessage());
             }
             if (s == null || !josmUrls.containsKey(url)) {
                 continue;
@@ -992,7 +1082,7 @@ public class SyncEditorLayerIndex {
                             for (int nump = 0; nump < ep.size() && !err; ++nump) {
                                 Coordinate ept = ep.get(nump);
                                 Coordinate jpt = jp.get(nump);
-                                if (Math.abs(ept.getLat()-jpt.getLat()) > 0.00001 || Math.abs(ept.getLon()-jpt.getLon()) > 0.00001)
+                                if (differentCoordinate(ept.getLat(), jpt.getLat()) || differentCoordinate(ept.getLon(), jpt.getLon()))
                                     err = true;
                             }
                             if (!err) {
@@ -1012,7 +1102,7 @@ public class SyncEditorLayerIndex {
                             for (int nump = 0; nump < ep.size() && !err; ++nump) {
                                 Coordinate ept = ep.get(nump);
                                 Coordinate jpt = jp.get(nump);
-                                if (Math.abs(ept.getLat()-jpt.getLat()) > 0.00001 || Math.abs(ept.getLon()-jpt.getLon()) > 0.00001) {
+                                if (differentCoordinate(ept.getLat(), jpt.getLat()) || differentCoordinate(ept.getLon(), jpt.getLon())) {
                                     String numtxt = Integer.toString(enums+1);
                                     if (enums != jnums) {
                                         numtxt += '/' + Integer.toString(jnums+1);
@@ -1048,6 +1138,11 @@ public class SyncEditorLayerIndex {
         }
     }
 
+    private boolean differentCoordinate(double v1, double v2) {
+        double epsilon = 0.00001;
+        return Math.abs(v1 - v2) > epsilon;
+    }
+
     void doMismatchingIcons() {
         myprintln("*** Mismatching icons: ***");
         doMismatching(this::compareIcons);
@@ -1069,8 +1164,8 @@ public class SyncEditorLayerIndex {
     void compareIcons(ImageryInfo j, JsonObject e) {
         String ij = getIcon(j);
         String ie = getIcon(e);
-        boolean ijok = isNotBlank(ij);
-        boolean ieok = isNotBlank(ie);
+        boolean ijok = !Utils.isStripEmpty(ij);
+        boolean ieok = !Utils.isStripEmpty(ie);
         if (ijok && !ieok) {
             if (!optionNoEli) {
                 myprintln("+ No ELI icon: "+getDescription(j));
@@ -1093,8 +1188,8 @@ public class SyncEditorLayerIndex {
     void compareCategories(ImageryInfo j, JsonObject e) {
         String cj = getCategory(j);
         String ce = getCategory(e);
-        boolean cjok = isNotBlank(cj);
-        boolean ceok = isNotBlank(ce);
+        boolean cjok = !Utils.isStripEmpty(cj);
+        boolean ceok = !Utils.isStripEmpty(ce);
         if (cjok && !ceok) {
             if (!optionNoEli) {
                 myprintln("+ No ELI category: "+getDescription(j));
@@ -1117,14 +1212,14 @@ public class SyncEditorLayerIndex {
             if ("wms".equals(getType(j))) {
                 String urlLc = url.toLowerCase(Locale.ENGLISH);
                 if (getProjections(j).isEmpty()) {
-                    myprintln("* WMS without projections: "+getDescription(j));
+                    myprintln("~ WMS without projections: "+getDescription(j));
                 } else {
                     List<String> unsupported = new LinkedList<>();
                     List<String> old = new LinkedList<>();
                     for (String p : getProjectionsUnstripped(j)) {
                         if ("CRS:84".equals(p)) {
                             if (!urlLc.contains("version=1.3")) {
-                                myprintln("* CRS:84 without WMS 1.3: "+getDescription(j));
+                                myprintln("~ CRS:84 without WMS 1.3: "+getDescription(j));
                             }
                         } else if (oldproj.containsKey(p)) {
                             old.add(p);
@@ -1133,17 +1228,17 @@ public class SyncEditorLayerIndex {
                         }
                     }
                     if (!unsupported.isEmpty()) {
-                        myprintln("* Projections "+String.join(", ", unsupported)+" not supported by JOSM: "+getDescription(j));
+                        myprintln("~ Projections "+String.join(", ", unsupported)+" not supported by JOSM: "+getDescription(j));
                     }
                     for (String o : old) {
-                        myprintln("* Projection "+o+" is an old unsupported code and has been replaced by "+oldproj.get(o)+": "
+                        myprintln("~ Projection "+o+" is an old unsupported code and has been replaced by "+oldproj.get(o)+": "
                                 + getDescription(j));
                     }
                 }
                 if (urlLc.contains("version=1.3") && !urlLc.contains("crs={proj}")) {
-                    myprintln("* WMS 1.3 with strange CRS specification: "+getDescription(j));
+                    myprintln("~ WMS 1.3 with strange CRS specification: "+getDescription(j));
                 } else if (urlLc.contains("version=1.1") && !urlLc.contains("srs={proj}")) {
-                    myprintln("* WMS 1.1 with strange SRS specification: "+getDescription(j));
+                    myprintln("~ WMS 1.1 with strange SRS specification: "+getDescription(j));
                 }
             }
             List<String> urls = new LinkedList<>();
@@ -1151,42 +1246,42 @@ public class SyncEditorLayerIndex {
                 urls.add(url);
             }
             String jt = getPermissionReferenceUrl(j);
-            if (isNotBlank(jt) && !"Public Domain".equalsIgnoreCase(jt))
+            if (!Utils.isStripEmpty(jt) && !"Public Domain".equalsIgnoreCase(jt))
                 urls.add(jt);
             jt = getTermsOfUseUrl(j);
-            if (isNotBlank(jt))
+            if (!Utils.isStripEmpty(jt))
                 urls.add(jt);
             jt = getAttributionUrl(j);
-            if (isNotBlank(jt))
+            if (!Utils.isStripEmpty(jt))
                 urls.add(jt);
             jt = getIcon(j);
-            if (isNotBlank(jt)) {
+            if (!Utils.isStripEmpty(jt)) {
                 if (!jt.startsWith("data:image/"))
                     urls.add(jt);
                 else {
                     try {
                         new ImageProvider(jt).get();
                     } catch (RuntimeException e) {
-                        myprintln("* Strange Icon: "+getDescription(j));
+                        myprintln("~ Strange Icon: "+getDescription(j));
                     }
                 }
             }
             Pattern patternU = Pattern.compile("^https?://([^/]+?)(:\\d+)?(/.*)?");
             for (String u : urls) {
                 if (!patternU.matcher(u).matches() || u.matches(".*[ \t]+$")) {
-                    myprintln("* Strange URL '"+u+"': "+getDescription(j));
+                    myprintln("~ Strange URL '"+u+"': "+getDescription(j));
                 } else {
                     try {
-                        URL jurl = new URL(u.replaceAll("\\{switch:[^\\}]*\\}", "x"));
+                        URL jurl = new URL(u.replaceAll("\\{switch:[^}]*}", "x"));
                         String domain = jurl.getHost();
                         int port = jurl.getPort();
                         if (!(domain.matches("^\\d+\\.\\d+\\.\\d+\\.\\d+$")) && !dv.isValid(domain))
-                            myprintln("* Strange Domain '"+domain+"': "+getDescription(j));
+                            myprintln("~ Strange Domain '"+domain+"': "+getDescription(j));
                         else if (80 == port || 443 == port) {
-                            myprintln("* Useless port '"+port+"': "+getDescription(j));
+                            myprintln("~ Useless port '"+port+"': "+getDescription(j));
                         }
                     } catch (MalformedURLException e) {
-                        myprintln("* Malformed URL '"+u+"': "+getDescription(j)+" => "+e.getMessage());
+                        myprintln("~ Malformed URL '"+u+"': "+getDescription(j)+" => "+e.getMessage());
                     }
                 }
             }
@@ -1194,39 +1289,39 @@ public class SyncEditorLayerIndex {
             if (josmMirrors.containsKey(url)) {
                 continue;
             }
-            if (isBlank(id)) {
-                myprintln("* No JOSM-ID: "+getDescription(j));
+            if (Utils.isStripEmpty(id)) {
+                myprintln("~ No JOSM-ID: "+getDescription(j));
             } else if (josmIds.containsKey(id)) {
-                myprintln("* JOSM-ID "+id+" not unique: "+getDescription(j));
+                myprintln("~ JOSM-ID "+id+" not unique: "+getDescription(j));
             } else {
                 josmIds.put(id, j);
             }
             String d = getDate(j);
-            if (isNotBlank(d)) {
+            if (!Utils.isStripEmpty(d)) {
                 Pattern patternD = Pattern.compile("^(-|(\\d\\d\\d\\d)(-(\\d\\d)(-(\\d\\d))?)?)(;(-|(\\d\\d\\d\\d)(-(\\d\\d)(-(\\d\\d))?)?))?$");
                 Matcher m = patternD.matcher(d);
                 if (!m.matches()) {
-                    myprintln("* JOSM-Date '"+d+"' is strange: "+getDescription(j));
+                    myprintln("~ JOSM-Date '"+d+"' is strange: "+getDescription(j));
                 } else {
                     try {
-                        Date first = verifyDate(m.group(2), m.group(4), m.group(6));
-                        Date second = verifyDate(m.group(9), m.group(11), m.group(13));
+                        LocalDate first = verifyDate(m.group(2), m.group(4), m.group(6));
+                        LocalDate second = verifyDate(m.group(9), m.group(11), m.group(13));
                         if (second.compareTo(first) < 0) {
-                            myprintln("* JOSM-Date '"+d+"' is strange (second earlier than first): "+getDescription(j));
+                            myprintln("~ JOSM-Date '"+d+"' is strange (second earlier than first): "+getDescription(j));
                         }
                     } catch (Exception e) {
-                        myprintln("* JOSM-Date '"+d+"' is strange ("+e.getMessage()+"): "+getDescription(j));
+                        myprintln("~ JOSM-Date '"+d+"' is strange ("+e.getMessage()+"): "+getDescription(j));
                     }
                 }
             }
-            if (isNotBlank(getAttributionUrl(j)) && isBlank(getAttributionText(j))) {
-                myprintln("* Attribution link without text: "+getDescription(j));
+            if (!Utils.isStripEmpty(getAttributionUrl(j)) && Utils.isStripEmpty(getAttributionText(j))) {
+                myprintln("~ Attribution link without text: "+getDescription(j));
             }
-            if (isNotBlank(getLogoUrl(j)) && isBlank(getLogoImage(j))) {
-                myprintln("* Logo link without image: "+getDescription(j));
+            if (!Utils.isStripEmpty(getLogoUrl(j)) && Utils.isStripEmpty(getLogoImage(j))) {
+                myprintln("~ Logo link without image: "+getDescription(j));
             }
-            if (isNotBlank(getTermsOfUseText(j)) && isBlank(getTermsOfUseUrl(j))) {
-                myprintln("* Terms of Use text without link: "+getDescription(j));
+            if (!Utils.isStripEmpty(getTermsOfUseText(j)) && Utils.isStripEmpty(getTermsOfUseUrl(j))) {
+                myprintln("~ Terms of Use text without link: "+getDescription(j));
             }
             List<Shape> js = getShapes(j);
             if (!js.isEmpty()) {
@@ -1245,8 +1340,11 @@ public class SyncEditorLayerIndex {
                     }
                 }
                 ImageryBounds b = j.getBounds();
-                if (b.getMinLat() != minlat || b.getMinLon() != minlon || b.getMaxLat() != maxlat || b.getMaxLon() != maxlon) {
-                    myprintln("* Bounds do not match shape (is "+b.getMinLat()+","+b.getMinLon()+","+b.getMaxLat()+","+b.getMaxLon()
+                if (differentCoordinate(b.getMinLat(), minlat)
+                        || differentCoordinate(b.getMinLon(), minlon)
+                        || differentCoordinate(b.getMaxLat(), maxlat)
+                        || differentCoordinate(b.getMaxLon(), maxlon)) {
+                    myprintln("~ Bounds do not match shape (is "+b.getMinLat()+","+b.getMinLon()+","+b.getMaxLat()+","+b.getMaxLon()
                         + ", calculated <bounds min-lat='"+minlat+"' min-lon='"+minlon+"' max-lat='"+maxlat+"' max-lon='"+maxlon+"'>): "
                         + getDescription(j));
                 }
@@ -1254,10 +1352,10 @@ public class SyncEditorLayerIndex {
             List<String> knownCategories = Arrays.asList(
                     "photo", "elevation", "map", "historicmap", "osmbasedmap", "historicphoto", "qa", "other");
             String cat = getCategory(j);
-            if (isBlank(cat)) {
-                myprintln("* No category: "+getDescription(j));
+            if (Utils.isStripEmpty(cat)) {
+                myprintln("~ No category: "+getDescription(j));
             } else if (!knownCategories.contains(cat)) {
-                myprintln("* Strange category "+cat+": "+getDescription(j));
+                myprintln("~ Strange category "+cat+": "+getDescription(j));
             }
         }
     }
@@ -1268,11 +1366,15 @@ public class SyncEditorLayerIndex {
 
     static String getUrl(Object e) {
         if (e instanceof ImageryInfo) return ((ImageryInfo) e).getUrl();
-        return ((Map<String, JsonObject>) e).get("properties").getString("url");
+        JsonObject p = ((Map<String, JsonObject>) e).get("properties");
+        if (p != null)
+            return p.getString("url");
+        else
+            return ((JsonObject) e).getString("template");
     }
 
     static String getUrlStripped(Object e) {
-        return getUrl(e).replaceAll("\\?(apikey|access_token)=.*", "");
+        return getUrl(e); //.replaceAll("\\?(apikey|access_token)=[^&?]*", "");
     }
 
     static String getDate(Object e) {
@@ -1289,16 +1391,16 @@ public class SyncEditorLayerIndex {
         return "";
     }
 
-    static Date verifyDate(String year, String month, String day) throws ParseException {
+    static LocalDate verifyDate(String year, String month, String day) throws ParseException {
         String date;
         if (year == null) {
             date = "3000-01-01";
         } else {
             date = year + "-" + (month == null ? "01" : month) + "-" + (day == null ? "01" : day);
         }
-        SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd");
-        df.setLenient(false);
-        return df.parse(date);
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("uuuu-MM-dd").withResolverStyle(ResolverStyle.STRICT);
+
+        return LocalDate.parse(date, formatter);
     }
 
     static String getId(Object e) {
@@ -1319,11 +1421,9 @@ public class SyncEditorLayerIndex {
     static List<String> getProjections(Object e) {
         List<String> r = new ArrayList<>();
         List<String> u = getProjectionsUnstripped(e);
-        if (u != null) {
-            for (String p : u) {
-                if (!oldproj.containsKey(p) && !("CRS:84".equals(p) && !(getUrlStripped(e).matches("(?i)version=1\\.3")))) {
-                    r.add(p);
-                }
+        for (String p : u) {
+            if (!oldproj.containsKey(p) && !("CRS:84".equals(p) && !(getUrlStripped(e).matches("(?i)version=1\\.3")))) {
+                r.add(p);
             }
         }
         return r;
@@ -1535,11 +1635,11 @@ public class SyncEditorLayerIndex {
         String name = getName(o);
         String id = getId(o);
         String d = cc;
-        if (name != null && !name.isEmpty()) {
+        if (!Utils.isEmpty(name)) {
             d += name;
-            if (id != null && !id.isEmpty())
+            if (!Utils.isEmpty(id))
               d += " ["+id+"]";
-        } else if (url != null && !url.isEmpty())
+        } else if (!Utils.isEmpty(url))
             d += url;
         if (optionShorten) {
             if (d.length() > MAXLEN) d = d.substring(0, MAXLEN-1) + "...";

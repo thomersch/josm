@@ -20,6 +20,7 @@ import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.ButtonGroup;
 import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -29,6 +30,7 @@ import javax.swing.JSlider;
 import org.apache.commons.jcs3.access.exception.InvalidArgumentException;
 import org.openstreetmap.josm.actions.ExpertToggleAction;
 import org.openstreetmap.josm.data.gpx.GpxData;
+import org.openstreetmap.josm.data.gpx.IGpxLayerPrefs;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.layer.GpxLayer;
 import org.openstreetmap.josm.gui.layer.gpx.GpxDrawHelper;
@@ -39,6 +41,7 @@ import org.openstreetmap.josm.gui.widgets.JosmTextField;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.Logging;
+import org.openstreetmap.josm.tools.Utils;
 import org.openstreetmap.josm.tools.template_engine.ParseError;
 import org.openstreetmap.josm.tools.template_engine.TemplateParser;
 
@@ -63,11 +66,17 @@ public class GPXSettingsPanel extends JPanel implements ValidationListener {
     private final JosmTextField drawLineWidth = new JosmTextField(2);
     private final JCheckBox forceRawGpsLines = new JCheckBox(tr("Force lines if no segments imported"));
     private final JCheckBox largeGpsPoints = new JCheckBox(tr("Draw large GPS points"));
-    private final JCheckBox hdopCircleGpsPoints = new JCheckBox(tr("Draw a circle from HDOP value"));
+    private final JCheckBox circleGpsPoints = new JCheckBox(tr("Draw a circle from value"));
+    private final JComboBox<String> circleDataSource = new JosmComboBox<>(new String[] {
+        tr("HDOP"),
+        tr("Horizontal deviation estimate"),
+        tr("Age of correction data")}); 
     private final JRadioButton colorTypeVelocity = new JRadioButton(tr("Velocity (red = slow, green = fast)"));
     private final JRadioButton colorTypeDirection = new JRadioButton(tr("Direction (red = west, yellow = north, green = east, blue = south)"));
     private final JRadioButton colorTypeDilution = new JRadioButton(tr("Dilution of Position (red = high, green = low, if available)"));
     private final JRadioButton colorTypeQuality = new JRadioButton(tr("Quality (RTKLib only, if available)"));
+    private final JRadioButton colorTypeFix = new JRadioButton(tr("GPS fix value"));
+    private final JRadioButton colorTypeRef = new JRadioButton(tr("GPS reference ID"));
     private final JRadioButton colorTypeTime = new JRadioButton(tr("Track date"));
     private final JRadioButton colorTypeHeatMap = new JRadioButton(tr("Heat Map (dark = few, bright = many)"));
     private final JRadioButton colorTypeNone = new JRadioButton(tr("Single Color (can be customized in the layer manager)"));
@@ -128,7 +137,8 @@ public class GPXSettingsPanel extends JPanel implements ValidationListener {
         m.put("markers.show-text", true);
         m.put("markers.pattern", Marker.LABEL_PATTERN_AUTO);
         m.put("markers.audio.pattern", "?{ '{name}' | '{desc}' | '{" + Marker.MARKER_FORMATTED_OFFSET + "}' }");
-        m.put("points.hdopcircle", false);
+        m.put("points.circle", false);
+        m.put("points.circle.data.source", 0);
         m.put("points.large", false);
         m.put("points.large.alpha", -1); //Expert mode only
         m.put("points.large.size", 3); //Expert mode only
@@ -142,7 +152,7 @@ public class GPXSettingsPanel extends JPanel implements ValidationListener {
     public GPXSettingsPanel(List<GpxLayer> layers) {
         super(new GridBagLayout());
         this.layers = layers;
-        if (layers == null || layers.isEmpty()) {
+        if (Utils.isEmpty(layers)) {
             throw new InvalidArgumentException("At least one layer required");
         }
         firstLayer = layers.get(0);
@@ -172,6 +182,18 @@ public class GPXSettingsPanel extends JPanel implements ValidationListener {
      * @return the value
      */
     public static String getLayerPref(GpxLayer layer, String key) {
+        GpxData data = layer != null ? layer.data : null;
+        return getDataPref(data, key);
+    }
+
+    /**
+     * Reads the preference for the given layer or the default preference if not available
+     * @param data the data. Can be <code>null</code>, default preference will be returned then
+     * @param key the drawing key to be read, without "draw.rawgps."
+     * @return the value
+     * @since 18287
+     */
+    public static String getDataPref(IGpxLayerPrefs data, String key) {
         Object d = DEFAULT_PREFS.get(key);
         String ds;
         if (d != null) {
@@ -180,7 +202,7 @@ public class GPXSettingsPanel extends JPanel implements ValidationListener {
             Logging.warn("No default value found for layer preference \"" + key + "\".");
             ds = null;
         }
-        return Optional.ofNullable(tryGetLayerPrefLocal(layer, key)).orElse(Config.getPref().get("draw.rawgps." + key, ds));
+        return Optional.ofNullable(tryGetDataPrefLocal(data, key)).orElse(Config.getPref().get("draw.rawgps." + key, ds));
     }
 
     /**
@@ -190,7 +212,19 @@ public class GPXSettingsPanel extends JPanel implements ValidationListener {
      * @return the integer value
      */
     public static int getLayerPrefInt(GpxLayer layer, String key) {
-        String s = getLayerPref(layer, key);
+        GpxData data = layer != null ? layer.data : null;
+        return getDataPrefInt(data, key);
+    }
+
+    /**
+     * Reads the integer preference for the given data or the default preference if not available
+     * @param data the data. Can be <code>null</code>, default preference will be returned then
+     * @param key the drawing key to be read, without "draw.rawgps."
+     * @return the integer value
+     * @since 18287
+     */
+    public static int getDataPrefInt(IGpxLayerPrefs data, String key) {
+        String s = getDataPref(data, key);
         if (s != null) {
             try {
                 return Integer.parseInt(s);
@@ -213,7 +247,7 @@ public class GPXSettingsPanel extends JPanel implements ValidationListener {
      * @return the value or <code>null</code> if not found
      */
     public static String tryGetLayerPrefLocal(GpxLayer layer, String key) {
-        return layer != null ? tryGetLayerPrefLocal(layer.data, key) : null;
+        return layer != null ? tryGetDataPrefLocal(layer.data, key) : null;
     }
 
     /**
@@ -222,7 +256,7 @@ public class GPXSettingsPanel extends JPanel implements ValidationListener {
      * @param key the drawing key to be read, without "draw.rawgps."
      * @return the value or <code>null</code> if not found
      */
-    public static String tryGetLayerPrefLocal(GpxData data, String key) {
+    public static String tryGetDataPrefLocal(IGpxLayerPrefs data, String key) {
         return data != null ? data.getLayerPrefs().get(key) : null;
     }
 
@@ -236,7 +270,7 @@ public class GPXSettingsPanel extends JPanel implements ValidationListener {
         String v = value == null ? null : value.toString();
         if (layers != null) {
             for (GpxLayer l : layers) {
-                putLayerPrefLocal(l.data, key, v);
+                putDataPrefLocal(l.data, key, v);
             }
         } else {
             Config.getPref().put("draw.rawgps." + key, v);
@@ -250,8 +284,8 @@ public class GPXSettingsPanel extends JPanel implements ValidationListener {
      * @param value the value or <code>null</code> to remove key
      */
     public static void putLayerPrefLocal(GpxLayer layer, String key, String value) {
-        if (layer == null) return;
-        putLayerPrefLocal(layer.data, key, value);
+        if (layer == null || layer.data == null) return;
+        putDataPrefLocal(layer.data, key, value);
     }
 
     /**
@@ -259,9 +293,12 @@ public class GPXSettingsPanel extends JPanel implements ValidationListener {
      * @param data <code>GpxData</code> to put the drawingOptions. Must not be <code>null</code>
      * @param key the drawing key to be written, without "draw.rawgps."
      * @param value the value or <code>null</code> to remove key
+     * @since 18287
      */
-    public static void putLayerPrefLocal(GpxData data, String key, String value) {
-        if (value == null || value.trim().isEmpty() ||
+    public static void putDataPrefLocal(IGpxLayerPrefs data, String key, String value) {
+        if (data == null) return;
+        data.setModified(true);
+        if (Utils.isStripEmpty(value) ||
                 (getLayerPref(null, key).equals(value) && DEFAULT_PREFS.get(key) != null && DEFAULT_PREFS.get(key).toString().equals(value))) {
             data.getLayerPrefs().remove(key);
         } else {
@@ -389,10 +426,18 @@ public class GPXSettingsPanel extends JPanel implements ValidationListener {
         add(new JLabel(tr("Minimum distance (pixels)")), GBC.std().insets(40, 0, 0, 0));
         add(drawGpsArrowsMinDist, GBC.eol().fill(GBC.HORIZONTAL).insets(5, 0, 0, 5));
 
-        // hdopCircleGpsPoints
-        hdopCircleGpsPoints.setToolTipText(tr("Draw a circle from HDOP value"));
-        add(hdopCircleGpsPoints, GBC.eop().insets(20, 0, 0, 0));
-        ExpertToggleAction.addVisibilitySwitcher(hdopCircleGpsPoints);
+        // circleGpsPoints
+        circleGpsPoints.addItemListener(e -> {
+            circleDataSource.setEnabled(circleGpsPoints.isSelected());
+        });
+        circleGpsPoints.setToolTipText(tr("Draw a circle from value"));
+        circleDataSource.setToolTipText(tr("Source of the circle size"));
+        circleDataSource.setEnabled(false);
+
+        add(circleGpsPoints, GBC.std().insets(20, 0, 0, 0));
+        add(circleDataSource, GBC.eop().fill(GBC.HORIZONTAL).insets(5, 0, 0, 5));
+        ExpertToggleAction.addVisibilitySwitcher(circleGpsPoints);
+        ExpertToggleAction.addVisibilitySwitcher(circleDataSource);
 
         // largeGpsPoints
         largeGpsPoints.setToolTipText(tr("Draw larger dots for the GPS points."));
@@ -423,6 +468,8 @@ public class GPXSettingsPanel extends JPanel implements ValidationListener {
         colorGroup.add(colorTypeDirection);
         colorGroup.add(colorTypeDilution);
         colorGroup.add(colorTypeQuality);
+        colorGroup.add(colorTypeFix);
+        colorGroup.add(colorTypeRef);
         colorGroup.add(colorTypeTime);
         colorGroup.add(colorTypeHeatMap);
 
@@ -433,6 +480,8 @@ public class GPXSettingsPanel extends JPanel implements ValidationListener {
                 tr("Colors points and track segments by dilution of position (HDOP). Your capture device needs to log that information."));
         colorTypeQuality.setToolTipText(
                 tr("Colors points and track segments by RTKLib quality flag (Q). Your capture device needs to log that information."));
+        colorTypeFix.setToolTipText(tr("Colors points and track segments by GPS fix value."));
+        colorTypeRef.setToolTipText(tr("Colors points and track segments by GPS reference ID."));
         colorTypeTime.setToolTipText(tr("Colors points and track segments by its timestamp."));
         colorTypeHeatMap.setToolTipText(tr("Collected points and track segments for a position and displayed as heat map."));
 
@@ -454,6 +503,8 @@ public class GPXSettingsPanel extends JPanel implements ValidationListener {
         add(colorTypeDirection, GBC.eol().insets(40, 0, 0, 0));
         add(colorTypeDilution, GBC.eol().insets(40, 0, 0, 0));
         add(colorTypeQuality, GBC.eol().insets(40, 0, 0, 0));
+        add(colorTypeFix, GBC.eol().insets(40, 0, 0, 0));
+        add(colorTypeRef, GBC.eol().insets(40, 0, 0, 0));
         add(colorTypeTime, GBC.eol().insets(40, 0, 0, 0));
         add(colorTypeHeatMap, GBC.std().insets(40, 0, 0, 0));
         add(colorTypeHeatIconLabel, GBC.std().insets(5, 0, 0, 5));
@@ -522,8 +573,8 @@ public class GPXSettingsPanel extends JPanel implements ValidationListener {
         ExpertToggleAction.addVisibilitySwitcher(colorDynamic);
 
         if (global) {
-            // Setting waypoints for gpx layer doesn't make sense - waypoints are shown in marker layer that has different name - so show
-            // this only for global config
+            // Setting waypoints for gpx layer does not make sense - waypoints are shown in marker layer that has
+            // different name - so show this only for global config
 
             // waypointLabel
             label = new JLabel(tr("Waypoint labelling"));
@@ -585,7 +636,8 @@ public class GPXSettingsPanel extends JPanel implements ValidationListener {
         drawGpsArrows.setSelected(prefBool("lines.arrows"));
         drawGpsArrowsFast.setSelected(prefBool("lines.arrows.fast"));
         drawGpsArrowsMinDist.setText(pref("lines.arrows.min-distance"));
-        hdopCircleGpsPoints.setSelected(prefBool("points.hdopcircle"));
+        circleGpsPoints.setSelected(prefBool("points.circle"));
+        circleDataSource.setSelectedIndex(prefInt("points.circle.data.source"));
         largeGpsPoints.setSelected(prefBool("points.large"));
         useGpsAntialiasing.setSelected(Config.getPref().getBoolean("mappaint.gpx.use-antialiasing", false));
 
@@ -607,6 +659,8 @@ public class GPXSettingsPanel extends JPanel implements ValidationListener {
             case 4: colorTypeTime.setSelected(true); break;
             case 5: colorTypeHeatMap.setSelected(true); break;
             case 6: colorTypeQuality.setSelected(true); break;
+            case 7: colorTypeFix.setSelected(true); break;
+            case 8: colorTypeRef.setSelected(true); break;
             default: Logging.warn("Unknown color type: " + colorType);
             }
             int ccts = prefInt("colormode.velocity.tune");
@@ -659,7 +713,8 @@ public class GPXSettingsPanel extends JPanel implements ValidationListener {
             putPref("lines.arrows.min-distance", drawGpsArrowsMinDist.getText());
         }
 
-        putPref("points.hdopcircle", hdopCircleGpsPoints.isSelected());
+        putPref("points.circle", circleGpsPoints.isSelected());
+        putPref("points.circle.data.source", circleDataSource.getSelectedIndex());
         putPref("points.large", largeGpsPoints.isSelected());
         putPref("lines.width", drawLineWidth.getText());
         putPref("lines.alpha-blend", drawLineWithAlpha.isSelected());
@@ -683,6 +738,10 @@ public class GPXSettingsPanel extends JPanel implements ValidationListener {
             putPref("colormode", 5);
         } else if (colorTypeQuality.isSelected()) {
             putPref("colormode", 6);
+        } else if (colorTypeFix.isSelected()) {
+            putPref("colormode", 7);
+        } else if (colorTypeRef.isSelected()) {
+            putPref("colormode", 8);
         } else {
             putPref("colormode", 0);
         }
@@ -694,7 +753,7 @@ public class GPXSettingsPanel extends JPanel implements ValidationListener {
         putPref("colormode.heatmap.gain", colorTypeHeatMapGain.getValue());
         putPref("colormode.heatmap.lower-limit", colorTypeHeatMapLowerLimit.getValue());
 
-        if (!global && layers != null && !layers.isEmpty()) {
+        if (!global && !Utils.isEmpty(layers)) {
             layers.forEach(l -> l.data.invalidate());
         }
 

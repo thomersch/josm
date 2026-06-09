@@ -1,18 +1,18 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.io;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
-import org.junit.Rule;
-import org.junit.Test;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.osm.ChangesetDataSet;
 import org.openstreetmap.josm.data.osm.ChangesetDataSet.ChangesetModificationType;
 import org.openstreetmap.josm.data.osm.OsmPrimitiveType;
@@ -21,50 +21,27 @@ import org.openstreetmap.josm.data.osm.history.HistoryOsmPrimitive;
 import org.openstreetmap.josm.data.osm.history.HistoryRelation;
 import org.openstreetmap.josm.data.osm.history.HistoryWay;
 import org.openstreetmap.josm.gui.progress.NullProgressMonitor;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-import org.openstreetmap.josm.tools.Logging;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 import org.openstreetmap.josm.tools.XmlParsingException;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
  * Unit tests of {@link OsmChangesetContentParser}.
  */
-public class OsmChangesetContentParserTest {
-
-    /**
-     * Setup rule
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
-    private static void shouldFail(Runnable r) {
-        try {
-            r.run();
-            fail("should throw exception");
-        } catch (IllegalArgumentException e) {
-            Logging.trace(e);
-        }
-    }
-
+@BasicPreferences
+class OsmChangesetContentParserTest {
     /**
      * Test various constructor invocations
      */
     @Test
     @SuppressFBWarnings(value = "NP_NULL_PARAM_DEREF_NONVIRTUAL")
-    public void test_Constructor() {
+    void test_Constructor() {
 
         // should be OK
         new OsmChangesetContentParser(new ByteArrayInputStream("".getBytes(StandardCharsets.UTF_8)));
 
-        shouldFail(() -> {
-            new OsmChangesetContentParser((String) null);
-        });
+        assertThrows(IllegalArgumentException.class, () -> new OsmChangesetContentParser((String) null));
 
-        shouldFail(() -> {
-            new OsmChangesetContentParser((InputStream) null);
-        });
+        assertThrows(IllegalArgumentException.class, () -> new OsmChangesetContentParser((InputStream) null));
     }
 
     /**
@@ -72,7 +49,7 @@ public class OsmChangesetContentParserTest {
      * @throws XmlParsingException never
      */
     @Test
-    public void test_parse_arguments() throws XmlParsingException {
+    void test_parse_arguments() throws XmlParsingException {
         OsmChangesetContentParser parser;
 
         String doc = "<osmChange version=\"0.6\" generator=\"OpenStreetMap server\"></osmChange>";
@@ -95,7 +72,7 @@ public class OsmChangesetContentParserTest {
      * @throws XmlParsingException never
      */
     @Test
-    public void test_OK_OneCreatedNode() throws XmlParsingException {
+    void test_OK_OneCreatedNode() throws XmlParsingException {
         OsmChangesetContentParser parser;
 
         String doc =
@@ -115,7 +92,7 @@ public class OsmChangesetContentParserTest {
         assertEquals(1, p.getId());
         assertEquals(1, p.getVersion());
         assertEquals(1, p.getChangesetId());
-        assertNotNull(p.getTimestamp());
+        assertNotNull(p.getInstant());
         assertEquals(ChangesetModificationType.CREATED, ds.getModificationType(p.getPrimitiveId()));
         assertTrue(ds.isCreated(p.getPrimitiveId()));
     }
@@ -125,7 +102,7 @@ public class OsmChangesetContentParserTest {
      * @throws XmlParsingException never
      */
     @Test
-    public void test_OK_OneUpdatedNode() throws XmlParsingException {
+    void test_OK_OneUpdatedNode() throws XmlParsingException {
         OsmChangesetContentParser parser;
 
         String doc =
@@ -145,7 +122,7 @@ public class OsmChangesetContentParserTest {
         assertEquals(1, p.getId());
         assertEquals(1, p.getVersion());
         assertEquals(1, p.getChangesetId());
-        assertNotNull(p.getTimestamp());
+        assertNotNull(p.getInstant());
         assertEquals(ChangesetModificationType.UPDATED, ds.getModificationType(p.getPrimitiveId()));
         assertTrue(ds.isUpdated(p.getPrimitiveId()));
     }
@@ -155,7 +132,7 @@ public class OsmChangesetContentParserTest {
      * @throws XmlParsingException never
      */
     @Test
-    public void test_OK_OneDeletedNode() throws XmlParsingException {
+    void test_OK_OneDeletedNode() throws XmlParsingException {
         OsmChangesetContentParser parser;
 
         String doc =
@@ -175,7 +152,7 @@ public class OsmChangesetContentParserTest {
         assertEquals(1, p.getId());
         assertEquals(1, p.getVersion());
         assertEquals(1, p.getChangesetId());
-        assertNotNull(p.getTimestamp());
+        assertNotNull(p.getInstant());
         assertEquals(ChangesetModificationType.DELETED, ds.getModificationType(p.getPrimitiveId()));
         assertTrue(ds.isDeleted(p.getPrimitiveId()));
     }
@@ -185,7 +162,7 @@ public class OsmChangesetContentParserTest {
      * @throws XmlParsingException never
      */
     @Test
-    public void test_OK_ComplexTestCase() throws XmlParsingException {
+    void test_OK_ComplexTestCase() throws XmlParsingException {
         OsmChangesetContentParser parser;
 
         String doc =
@@ -217,7 +194,7 @@ public class OsmChangesetContentParserTest {
         assertEquals(1, p.getId());
         assertEquals(1, p.getVersion());
         assertEquals(1, p.getChangesetId());
-        assertNotNull(p.getTimestamp());
+        assertNotNull(p.getInstant());
         assertEquals(ChangesetModificationType.CREATED, ds.getModificationType(p.getPrimitiveId()));
         assertTrue(ds.isCreated(p.getPrimitiveId()));
         assertEquals("a.value", p.get("a.key"));
@@ -227,7 +204,7 @@ public class OsmChangesetContentParserTest {
         assertEquals(2, w.getId());
         assertEquals(2, w.getVersion());
         assertEquals(1, w.getChangesetId());
-        assertNotNull(w.getTimestamp());
+        assertNotNull(w.getInstant());
         assertEquals(ChangesetModificationType.UPDATED, ds.getModificationType(w.getPrimitiveId()));
         assertTrue(ds.isUpdated(w.getPrimitiveId()));
         assertEquals(2, w.getNumNodes());
@@ -238,7 +215,7 @@ public class OsmChangesetContentParserTest {
         assertEquals(3, r.getId());
         assertEquals(3, r.getVersion());
         assertEquals(1, r.getChangesetId());
-        assertNotNull(r.getTimestamp());
+        assertNotNull(r.getInstant());
         assertEquals(ChangesetModificationType.DELETED, ds.getModificationType(r.getPrimitiveId()));
         assertTrue(ds.isDeleted(r.getPrimitiveId()));
     }

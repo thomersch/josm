@@ -1,0 +1,40 @@
+name: "Checkstyle"
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    # The branches below must be a subset of the branches above
+    branches: [ master ]
+
+jobs:
+  analyze:
+    name: Analyze
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v6
+      with:
+          fetch-depth: 256
+
+    - name: Cache
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.ivy2/cache/
+          ~/work/josm/josm/tools/
+        key: ${{ runner.os }}-ivy2-${{ hashFiles('build.xml', 'ivy.xml', 'tools/ivy.xml') }}
+
+    - name: Run Checkstyle with Ant
+      run: |
+        ant checkstyle
+
+    - name: Upload report
+      uses: actions/upload-artifact@v7
+      with:
+        path: checkstyle-josm.xml
+
+    - uses: JOSM/JOSMPluginAction/actions/checkstyle@v3
+      with:
+        file: "checkstyle-josm.xml"

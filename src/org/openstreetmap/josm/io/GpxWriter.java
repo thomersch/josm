@@ -8,9 +8,9 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -35,7 +35,7 @@ import org.openstreetmap.josm.data.gpx.IWithAttributes;
 import org.openstreetmap.josm.data.gpx.WayPoint;
 import org.openstreetmap.josm.tools.JosmRuntimeException;
 import org.openstreetmap.josm.tools.Logging;
-import org.openstreetmap.josm.tools.date.DateUtils;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * Writes GPX files from GPX data or OSM data.
@@ -60,11 +60,30 @@ public class GpxWriter extends XmlWriter implements GpxConstants {
 
     private GpxData data;
     private String indent = "";
+    private Instant metaTime;
     private List<String> validprefixes;
 
     private static final int WAY_POINT = 0;
     private static final int ROUTE_POINT = 1;
     private static final int TRACK_POINT = 2;
+
+    /**
+     * Returns the forced metadata time information, if any.
+     * @return the forced metadata time information, or {@code null}
+     * @since 18219
+     */
+    public Instant getMetaTime() {
+        return metaTime;
+    }
+
+    /**
+     * Sets the forced metadata time information.
+     * @param metaTime the forced metadata time information, or {@code null} to use the current time
+     * @since 18219
+     */
+    public void setMetaTime(Instant metaTime) {
+        this.metaTime = metaTime;
+    }
 
     /**
      * Writes the given GPX data.
@@ -97,13 +116,14 @@ public class GpxWriter extends XmlWriter implements GpxConstants {
             GpxExtensionCollection layerExts = data.getExtensions().add("josm", "layerPreferences").getExtensions();
             data.getLayerPrefs().entrySet()
             .stream()
-            .sorted(Comparator.comparing(Map.Entry::getKey))
+            .sorted(Map.Entry.comparingByKey())
             .forEach(entry -> {
                 GpxExtension e = layerExts.add("josm", "entry");
                 e.put("key", entry.getKey());
                 e.put("value", entry.getValue());
             });
         }
+        data.put(META_TIME, (metaTime != null ? metaTime : Instant.now()).toString(), false);
         data.endUpdate();
 
         Collection<IWithAttributes> all = new ArrayList<>();
@@ -126,15 +146,19 @@ public class GpxWriter extends XmlWriter implements GpxConstants {
                 .filter(Objects::nonNull)
                 .collect(Collectors.toList());
 
-        validprefixes = namespaces.stream().map(n -> n.getPrefix()).collect(Collectors.toList());
+        validprefixes = namespaces.stream().map(XMLNamespace::getPrefix).collect(Collectors.toList());
 
+        data.creator = JOSM_CREATOR_NAME;
         out.println("<?xml version='1.0' encoding='UTF-8'?>");
-        out.println("<gpx version=\"1.1\" creator=\"JOSM GPX export\" xmlns=\"http://www.topografix.com/GPX/1/1\"");
+
+        out.print("<gpx version=\"1.1\" creator=\"");
+        out.print(JOSM_CREATOR_NAME);
+        out.println("\" xmlns=\"http://www.topografix.com/GPX/1/1\"");
 
         StringBuilder schemaLocations = new StringBuilder("http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd");
 
         for (XMLNamespace n : namespaces) {
-            if (n.getURI() != null && n.getPrefix() != null && !n.getPrefix().isEmpty()) {
+            if (n.getURI() != null && !Utils.isEmpty(n.getPrefix())) {
                 out.println(String.format("    xmlns:%s=\"%s\"", n.getPrefix(), n.getURI()));
                 if (n.getLocation() != null) {
                     schemaLocations.append(' ').append(n.getURI()).append(' ').append(n.getLocation());
@@ -169,7 +193,9 @@ public class GpxWriter extends XmlWriter implements GpxConstants {
                 } else {
                     Object val = obj.get(key);
                     if (val instanceof Date) {
-                        simpleTag(key, DateUtils.fromDate((Date) val));
+                        throw new IllegalStateException();
+                    } else if (val instanceof Instant) {
+                        simpleTag(key, String.valueOf(val));
                     } else if (val instanceof Number) {
                         simpleTag(key, val.toString());
                     } else if (val != null) {
@@ -232,6 +258,11 @@ public class GpxWriter extends XmlWriter implements GpxConstants {
             simpleTag("keywords", data.getString(META_KEYWORDS));
         }
 
+        // write the time
+        if (attr.containsKey(META_TIME)) {
+            simpleTag("time", data.getString(META_TIME));
+        }
+
         Bounds bounds = data.recalculateBounds();
         if (bounds != null) {
             String b = "minlat=\"" + bounds.getMinLat() + "\" minlon=\"" + bounds.getMinLon() +
@@ -262,7 +293,7 @@ public class GpxWriter extends XmlWriter implements GpxConstants {
     }
 
     private void writeTracks() {
-        for (IGpxTrack trk : data.getTracks()) {
+        for (IGpxTrack trk : data.getOrderedTracks()) {
             openln("trk");
             writeAttr(trk, RTE_TRK_KEYS);
             gpxExtensions(trk.getExtensions());
@@ -319,7 +350,7 @@ public class GpxWriter extends XmlWriter implements GpxConstants {
      * @param content content
      */
     private void simpleTag(String tag, String content) {
-        if (content != null && !content.isEmpty()) {
+        if (!Utils.isEmpty(content)) {
             open(tag);
             out.print(encode(content));
             out.println("</" + tag + '>');
@@ -328,7 +359,7 @@ public class GpxWriter extends XmlWriter implements GpxConstants {
     }
 
     private void simpleTag(String tag, String content, String attributes) {
-        if (content != null && !content.isEmpty()) {
+        if (!Utils.isEmpty(content)) {
             open(tag, attributes);
             out.print(encode(content));
             out.println("</" + tag + '>');
@@ -356,7 +387,7 @@ public class GpxWriter extends XmlWriter implements GpxConstants {
      */
     private void wayPoint(WayPoint pnt, int mode) {
         String type;
-        switch(mode) {
+        switch (mode) {
         case WAY_POINT:
             type = "wpt";
             break;

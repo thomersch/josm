@@ -1,33 +1,27 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.actions;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.gui.MainApplication;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
+import org.openstreetmap.josm.testutils.annotations.Main;
+import org.openstreetmap.josm.testutils.annotations.Projection;
 
 /**
  * Unit tests for class {@link SelectAllAction}.
  */
-public final class SelectAllActionTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules rules = new JOSMTestRules().preferences().projection().main();
-
+@BasicPreferences
+@Main
+@Projection
+final class SelectAllActionTest {
     /**
      * Unit test of {@link SelectAllAction#actionPerformed} method.
      */
     @Test
-    public void testActionPerformed() {
+    void testActionPerformed() {
         SelectByInternalPointActionTest.initDataSet();
         DataSet ds = MainApplication.getLayerManager().getEditDataSet();
 

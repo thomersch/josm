@@ -48,7 +48,7 @@ public class RelationMemberListTableCellRenderer extends JLabel implements Table
         String text = member == null ? "" : member.getRole();
         setText(text);
         setToolTipText(text);
-        setHorizontalAlignment(LEFT);
+        setHorizontalAlignment(LEADING);
         renderIcon(null);
     }
 
@@ -56,7 +56,7 @@ public class RelationMemberListTableCellRenderer extends JLabel implements Table
         String text = "";
         RelationMemberData member = (RelationMemberData) diffItem.value;
         if (member != null) {
-            switch(member.getMemberType()) {
+            switch (member.getMemberType()) {
             case NODE: text = tr("Node {0}", member.getMemberId()); break;
             case WAY: text = tr("Way {0}", member.getMemberId()); break;
             case RELATION: text = tr("Relation {0}", member.getMemberId()); break;
@@ -65,7 +65,7 @@ public class RelationMemberListTableCellRenderer extends JLabel implements Table
         }
         setText(text);
         setToolTipText(text);
-        setHorizontalAlignment(LEFT);
+        setHorizontalAlignment(LEADING);
         renderIcon((RelationMemberData) diffItem.value);
     }
 
@@ -77,7 +77,7 @@ public class RelationMemberListTableCellRenderer extends JLabel implements Table
         if (value == null) return this;
         Item member = (TwoColumnDiff.Item) value;
         Item.DiffItemType type = member.state;
-        switch(column) {
+        switch (column) {
         case RelationMemberTableColumnModel.INDEX_COLUMN:
             type = Item.DiffItemType.EMPTY;
             renderIndex(((DiffTableModel) table.getModel()), row);

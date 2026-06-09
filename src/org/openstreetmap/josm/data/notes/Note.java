@@ -3,14 +3,15 @@ package org.openstreetmap.josm.data.notes;
 
 import static org.openstreetmap.josm.tools.I18n.tr;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.Date;
 import java.util.List;
 import java.util.Objects;
 
 import org.openstreetmap.josm.data.coor.LatLon;
-import org.openstreetmap.josm.tools.date.DateUtils;
+
+import jakarta.annotation.Nullable;
 
 /**
  * A map note. It always has at least one comment since a comment is required to create a note on osm.org.
@@ -28,9 +29,11 @@ public class Note {
 
     /**
      * Sorts notes in the following order:
-     * 1) Open notes
-     * 2) Closed notes
-     * 3) New notes
+     * <ol>
+     *     <li>Open notes</li>
+     *     <li>Closed notes</li>
+     *     <li>New notes</li>
+     * </ol>
      * Within each subgroup it sorts by ID
      */
     public static final Comparator<Note> DEFAULT_COMPARATOR = (n1, n2) -> {
@@ -53,20 +56,16 @@ public class Note {
     public static final Comparator<Note> DATE_COMPARATOR = Comparator.comparing(n -> n.createdAt);
 
     /** Sorts notes by user, then creation date */
-    public static final Comparator<Note> USER_COMPARATOR = (n1, n2) -> {
-        String n1User = n1.getFirstComment().getUser().getName();
-        String n2User = n2.getFirstComment().getUser().getName();
-        return n1User.equals(n2User) ? DATE_COMPARATOR.compare(n1, n2) : n1User.compareTo(n2User);
-    };
+    public static final Comparator<Note> USER_COMPARATOR =
+            Comparator.comparing(Note::getUserName, Comparator.nullsLast(Comparator.naturalOrder())).thenComparing(DATE_COMPARATOR);
 
     /** Sorts notes by the last modified date */
-    public static final Comparator<Note> LAST_ACTION_COMPARATOR =
-            (n1, n2) -> NoteComment.DATE_COMPARATOR.compare(n1.getLastComment(), n2.getLastComment());
+    public static final Comparator<Note> LAST_ACTION_COMPARATOR = Comparator.comparing(Note::getLastComment, NoteComment.DATE_COMPARATOR);
 
     private long id;
     private LatLon latLon;
-    private Date createdAt;
-    private Date closedAt;
+    private Instant createdAt;
+    private Instant closedAt;
     private State state;
     private List<NoteComment> comments = new ArrayList<>();
 
@@ -106,32 +105,32 @@ public class Note {
      * Returns the date at which this note was submitted.
      * @return Date that this note was submitted
      */
-    public Date getCreatedAt() {
-        return DateUtils.cloneDate(createdAt);
+    public Instant getCreatedAt() {
+        return createdAt;
     }
 
     /**
      * Sets date at which this note has been created.
      * @param createdAt date at which this note has been created
      */
-    public void setCreatedAt(Date createdAt) {
-        this.createdAt = DateUtils.cloneDate(createdAt);
+    public void setCreatedAt(Instant createdAt) {
+        this.createdAt = createdAt;
     }
 
     /**
      * Returns the date at which this note was closed.
      * @return Date that this note was closed. Null if it is still open.
      */
-    public Date getClosedAt() {
-        return DateUtils.cloneDate(closedAt);
+    public Instant getClosedAt() {
+        return closedAt;
     }
 
     /**
      * Sets date at which this note has been closed.
      * @param closedAt date at which this note has been closed
      */
-    public void setClosedAt(Date closedAt) {
-        this.closedAt = DateUtils.cloneDate(closedAt);
+    public void setClosedAt(Instant closedAt) {
+        this.closedAt = closedAt;
     }
 
     /**
@@ -163,6 +162,7 @@ public class Note {
      * @return the last comment, or {@code null}
      * @since 11821
      */
+    @Nullable
     public NoteComment getLastComment() {
         return comments.isEmpty() ? null : comments.get(comments.size()-1);
     }
@@ -179,8 +179,14 @@ public class Note {
      * Returns the comment that was submitted by the user when creating the note
      * @return First comment object
      */
+    @Nullable
     public NoteComment getFirstComment() {
         return comments.isEmpty() ? null : comments.get(0);
+    }
+
+    @Nullable
+    private String getUserName() {
+        return getFirstComment() == null ? null : getFirstComment().getUser().getName();
     }
 
     /**
@@ -190,7 +196,7 @@ public class Note {
      */
     public void updateWith(Note note) {
         this.comments = note.comments;
-        this.createdAt = DateUtils.cloneDate(note.createdAt);
+        this.createdAt = note.createdAt;
         this.id = note.id;
         this.state = note.state;
         this.latLon = note.latLon;

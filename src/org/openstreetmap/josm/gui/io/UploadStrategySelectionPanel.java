@@ -10,16 +10,15 @@ import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
+import java.awt.event.FocusListener;
 import java.awt.event.ItemEvent;
 import java.awt.event.ItemListener;
-import java.beans.PropertyChangeEvent;
-import java.beans.PropertyChangeListener;
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.Map.Entry;
 
+import javax.swing.BorderFactory;
 import javax.swing.ButtonGroup;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -39,11 +38,11 @@ import org.openstreetmap.josm.tools.Logging;
 
 /**
  * UploadStrategySelectionPanel is a panel for selecting an upload strategy.
- *
+ * <p>
  * Clients can listen for property change events for the property
  * {@link #UPLOAD_STRATEGY_SPECIFICATION_PROP}.
  */
-public class UploadStrategySelectionPanel extends JPanel implements PropertyChangeListener {
+public class UploadStrategySelectionPanel extends JPanel {
 
     /**
      * The property for the upload strategy
@@ -53,13 +52,10 @@ public class UploadStrategySelectionPanel extends JPanel implements PropertyChan
 
     private transient Map<UploadStrategy, JRadioButton> rbStrategy;
     private transient Map<UploadStrategy, JLabel> lblNumRequests;
-    private transient Map<UploadStrategy, JMultilineLabel> lblStrategies;
     private final JosmTextField tfChunkSize = new JosmTextField(4);
     private final JPanel pnlMultiChangesetPolicyPanel = new JPanel(new GridBagLayout());
-    private final JRadioButton rbFillOneChangeset = new JRadioButton(
-            tr("Fill up one changeset and return to the Upload Dialog"));
-    private final JRadioButton rbUseMultipleChangesets = new JRadioButton(
-            tr("Open and use as many new changesets as necessary"));
+    private final JRadioButton rbFillOneChangeset = new JRadioButton();
+    private final JRadioButton rbUseMultipleChangesets = new JRadioButton();
     private JMultilineLabel lblMultiChangesetPoliciesHeader;
 
     private long numUploadedObjects;
@@ -73,101 +69,54 @@ public class UploadStrategySelectionPanel extends JPanel implements PropertyChan
 
     protected JPanel buildUploadStrategyPanel() {
         JPanel pnl = new JPanel(new GridBagLayout());
+        pnl.setBorder(BorderFactory.createTitledBorder(tr("Please select the upload strategy:")));
         ButtonGroup bgStrategies = new ButtonGroup();
         rbStrategy = new EnumMap<>(UploadStrategy.class);
-        lblStrategies = new EnumMap<>(UploadStrategy.class);
         lblNumRequests = new EnumMap<>(UploadStrategy.class);
         for (UploadStrategy strategy: UploadStrategy.values()) {
             rbStrategy.put(strategy, new JRadioButton());
             lblNumRequests.put(strategy, new JLabel());
-            lblStrategies.put(strategy, new JMultilineLabel(""));
             bgStrategies.add(rbStrategy.get(strategy));
         }
 
-        // -- headline
+        // -- single request strategy
         GridBagConstraints gc = new GridBagConstraints();
         gc.gridx = 0;
-        gc.gridy = 0;
-        gc.weightx = 1.0;
+        gc.gridy = 1;
+        gc.weightx = 0.0;
         gc.weighty = 0.0;
-        gc.gridwidth = 4;
+        gc.gridwidth = 1;
         gc.fill = GridBagConstraints.HORIZONTAL;
-        gc.insets = new Insets(0, 0, 3, 0);
+        gc.insets = new Insets(3, 3, 3, 3);
         gc.anchor = GridBagConstraints.FIRST_LINE_START;
-        pnl.add(new JMultilineLabel(tr("Please select the upload strategy:")), gc);
-
-        // -- single request strategy
-        gc.gridx = 0;
-        gc.gridy = 1;
-        gc.weightx = 0.0;
-        gc.weighty = 0.0;
-        gc.gridwidth = 1;
-        gc.anchor = GridBagConstraints.FIRST_LINE_START;
-        pnl.add(rbStrategy.get(UploadStrategy.SINGLE_REQUEST_STRATEGY), gc);
-        gc.gridx = 1;
-        gc.gridy = 1;
+        JRadioButton radioButton = rbStrategy.get(UploadStrategy.SINGLE_REQUEST_STRATEGY);
+        radioButton.setText(tr("Upload all objects in one request"));
+        pnl.add(radioButton, gc);
+        gc.gridx = 2;
         gc.weightx = 1.0;
-        gc.weighty = 0.0;
-        gc.gridwidth = 2;
-        JMultilineLabel lbl = lblStrategies.get(UploadStrategy.SINGLE_REQUEST_STRATEGY);
-        lbl.setText(tr("Upload data in one request"));
-        pnl.add(lbl, gc);
-        gc.gridx = 3;
-        gc.gridy = 1;
-        gc.weightx = 0.0;
-        gc.weighty = 0.0;
-        gc.gridwidth = 1;
         pnl.add(lblNumRequests.get(UploadStrategy.SINGLE_REQUEST_STRATEGY), gc);
 
         // -- chunked dataset strategy
+        gc.gridy++;
         gc.gridx = 0;
-        gc.gridy = 2;
         gc.weightx = 0.0;
-        gc.weighty = 0.0;
-        pnl.add(rbStrategy.get(UploadStrategy.CHUNKED_DATASET_STRATEGY), gc);
+        radioButton = rbStrategy.get(UploadStrategy.CHUNKED_DATASET_STRATEGY);
+        radioButton.setText(tr("Upload objects in chunks of size: "));
+        pnl.add(radioButton, gc);
         gc.gridx = 1;
-        gc.gridy = 2;
-        gc.weightx = 1.0;
-        gc.weighty = 0.0;
-        gc.gridwidth = 1;
-        lbl = lblStrategies.get(UploadStrategy.CHUNKED_DATASET_STRATEGY);
-        lbl.setText(tr("Upload data in chunks of objects. Chunk size: "));
-        pnl.add(lbl, gc);
-        gc.gridx = 2;
-        gc.gridy = 2;
-        gc.weightx = 0.0;
-        gc.weighty = 0.0;
-        gc.gridwidth = 1;
         pnl.add(tfChunkSize, gc);
-        gc.gridx = 3;
-        gc.gridy = 2;
-        gc.weightx = 0.0;
-        gc.weighty = 0.0;
-        gc.gridwidth = 1;
+        gc.gridx = 2;
         pnl.add(lblNumRequests.get(UploadStrategy.CHUNKED_DATASET_STRATEGY), gc);
 
         // -- single request strategy
+        gc.gridy++;
         gc.gridx = 0;
-        gc.gridy = 3;
-        gc.weightx = 0.0;
-        gc.weighty = 0.0;
-        pnl.add(rbStrategy.get(UploadStrategy.INDIVIDUAL_OBJECTS_STRATEGY), gc);
-        gc.gridx = 1;
-        gc.gridy = 3;
-        gc.weightx = 1.0;
-        gc.weighty = 0.0;
-        gc.gridwidth = 2;
-        lbl = lblStrategies.get(UploadStrategy.INDIVIDUAL_OBJECTS_STRATEGY);
-        lbl.setText(tr("Upload each object individually"));
-        pnl.add(lbl, gc);
-        gc.gridx = 3;
-        gc.gridy = 3;
-        gc.weightx = 0.0;
-        gc.weighty = 0.0;
-        gc.gridwidth = 1;
+        radioButton = rbStrategy.get(UploadStrategy.INDIVIDUAL_OBJECTS_STRATEGY);
+        radioButton.setText(tr("Upload each object individually"));
+        pnl.add(radioButton, gc);
+        gc.gridx = 2;
         pnl.add(lblNumRequests.get(UploadStrategy.INDIVIDUAL_OBJECTS_STRATEGY), gc);
 
-        tfChunkSize.addFocusListener(new TextFieldFocusHandler());
         new ChunkSizeValidator(tfChunkSize);
 
         StrategyChangeListener strategyChangeListener = new StrategyChangeListener();
@@ -186,15 +135,18 @@ public class UploadStrategySelectionPanel extends JPanel implements PropertyChan
         gc.gridy = 0;
         gc.fill = GridBagConstraints.HORIZONTAL;
         gc.anchor = GridBagConstraints.FIRST_LINE_START;
+        gc.insets = new Insets(3, 3, 3, 3);
         gc.weightx = 1.0;
         lblMultiChangesetPoliciesHeader = new JMultilineLabel(
-                tr("<html>There are <strong>multiple changesets</strong> necessary in order to upload {0} objects. " +
-                   "Which strategy do you want to use?</html>",
+                tr("<html><strong>Multiple changesets</strong> are necessary to upload {0} objects. " +
+                   "Please select a strategy:</html>",
                         numUploadedObjects));
         pnlMultiChangesetPolicyPanel.add(lblMultiChangesetPoliciesHeader, gc);
-        gc.gridy = 1;
+        gc.gridy++;
+        rbFillOneChangeset.setText(tr("Fill up one changeset and return to the Upload Dialog"));
         pnlMultiChangesetPolicyPanel.add(rbFillOneChangeset, gc);
-        gc.gridy = 2;
+        gc.gridy++;
+        rbUseMultipleChangesets.setText(tr("Open and use as many new changesets as necessary"));
         pnlMultiChangesetPolicyPanel.add(rbUseMultipleChangesets, gc);
 
         ButtonGroup bgMultiChangesetPolicies = new ButtonGroup();
@@ -212,18 +164,10 @@ public class UploadStrategySelectionPanel extends JPanel implements PropertyChan
         gc.weightx = 1.0;
         gc.weighty = 0.0;
         gc.anchor = GridBagConstraints.NORTHWEST;
-        gc.insets = new Insets(3, 3, 3, 3);
 
         add(buildUploadStrategyPanel(), gc);
         gc.gridy = 1;
         add(buildMultiChangesetPolicyPanel(), gc);
-
-        // consume remaining space
-        gc.gridy = 2;
-        gc.fill = GridBagConstraints.BOTH;
-        gc.weightx = 1.0;
-        gc.weighty = 1.0;
-        add(new JPanel(), gc);
 
         Capabilities capabilities = OsmApi.getOsmApi().getCapabilities();
         int maxChunkSize = capabilities != null ? capabilities.getMaxChangesetSize() : -1;
@@ -267,7 +211,7 @@ public class UploadStrategySelectionPanel extends JPanel implements PropertyChan
         UploadStrategy strategy = getUploadStrategy();
         UploadStrategySpecification spec = new UploadStrategySpecification();
         if (strategy != null) {
-            switch(strategy) {
+            switch (strategy) {
             case CHUNKED_DATASET_STRATEGY:
                 spec.setStrategy(strategy).setChunkSize(getChunkSize());
                 break;
@@ -339,8 +283,8 @@ public class UploadStrategySelectionPanel extends JPanel implements PropertyChan
         int maxChunkSize = OsmApi.getOsmApi().getCapabilities().getMaxChangesetSize();
         if (maxChunkSize > 0 && numUploadedObjects > maxChunkSize) {
             rbStrategy.get(UploadStrategy.SINGLE_REQUEST_STRATEGY).setEnabled(false);
-            JMultilineLabel lbl = lblStrategies.get(UploadStrategy.SINGLE_REQUEST_STRATEGY);
-            lbl.setText(tr("Upload in one request not possible (too many objects to upload)"));
+            JRadioButton lbl = rbStrategy.get(UploadStrategy.SINGLE_REQUEST_STRATEGY);
+            lbl.setEnabled(false);
             lbl.setToolTipText(tr("<html>Cannot upload {0} objects in one request because the<br>"
                     + "max. changeset size {1} on server ''{2}'' is exceeded.</html>",
                     numUploadedObjects, maxChunkSize, OsmApi.getOsmApi().getBaseUrl()
@@ -360,8 +304,8 @@ public class UploadStrategySelectionPanel extends JPanel implements PropertyChan
 
         } else {
             rbStrategy.get(UploadStrategy.SINGLE_REQUEST_STRATEGY).setEnabled(true);
-            JMultilineLabel lbl = lblStrategies.get(UploadStrategy.SINGLE_REQUEST_STRATEGY);
-            lbl.setText(tr("Upload data in one request"));
+            JRadioButton lbl = rbStrategy.get(UploadStrategy.SINGLE_REQUEST_STRATEGY);
+            lbl.setEnabled(true);
             lbl.setToolTipText(null);
             lblNumRequests.get(UploadStrategy.SINGLE_REQUEST_STRATEGY).setVisible(true);
 
@@ -394,24 +338,6 @@ public class UploadStrategySelectionPanel extends JPanel implements PropertyChan
      */
     public void initEditingOfChunkSize() {
         tfChunkSize.requestFocusInWindow();
-    }
-
-    @Override
-    public void propertyChange(PropertyChangeEvent evt) {
-        if (evt.getPropertyName().equals(UploadedObjectsSummaryPanel.NUM_OBJECTS_TO_UPLOAD_PROP)) {
-            setNumUploadedObjects((Integer) evt.getNewValue());
-        }
-    }
-
-    static class TextFieldFocusHandler extends FocusAdapter {
-        @Override
-        public void focusGained(FocusEvent e) {
-            Component c = e.getComponent();
-            if (c instanceof JosmTextField) {
-                JosmTextField tf = (JosmTextField) c;
-                tf.selectAll();
-            }
-        }
     }
 
     class ChunkSizeValidator extends AbstractTextComponentValidator {
@@ -451,7 +377,7 @@ public class UploadStrategySelectionPanel extends JPanel implements PropertyChan
         }
     }
 
-    class StrategyChangeListener extends FocusAdapter implements ItemListener, ActionListener {
+    class StrategyChangeListener implements FocusListener, ItemListener, ActionListener {
 
         protected void notifyStrategy() {
             firePropertyChange(UPLOAD_STRATEGY_SPECIFICATION_PROP, null, getUploadStrategySpecification());
@@ -462,15 +388,26 @@ public class UploadStrategySelectionPanel extends JPanel implements PropertyChan
             UploadStrategy strategy = getUploadStrategy();
             if (strategy == null)
                 return;
-            switch(strategy) {
+            switch (strategy) {
             case CHUNKED_DATASET_STRATEGY:
                 tfChunkSize.setEnabled(true);
                 tfChunkSize.requestFocusInWindow();
                 break;
+            case SINGLE_REQUEST_STRATEGY:
+            case INDIVIDUAL_OBJECTS_STRATEGY:
             default:
                 tfChunkSize.setEnabled(false);
             }
             notifyStrategy();
+        }
+
+        @Override
+        public void focusGained(FocusEvent e) {
+            Component c = e.getComponent();
+            if (c instanceof JosmTextField) {
+                JosmTextField tf = (JosmTextField) c;
+                tf.selectAll();
+            }
         }
 
         @Override

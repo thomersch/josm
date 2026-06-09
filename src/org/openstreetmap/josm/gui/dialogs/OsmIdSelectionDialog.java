@@ -29,6 +29,7 @@ import org.openstreetmap.josm.data.osm.OsmPrimitiveType;
 import org.openstreetmap.josm.data.osm.PrimitiveId;
 import org.openstreetmap.josm.data.osm.SimplePrimitiveId;
 import org.openstreetmap.josm.gui.ExtendedDialog;
+import org.openstreetmap.josm.gui.Notification;
 import org.openstreetmap.josm.gui.datatransfer.ClipboardUtils;
 import org.openstreetmap.josm.gui.widgets.HistoryComboBox;
 import org.openstreetmap.josm.gui.widgets.HtmlPanel;
@@ -178,8 +179,7 @@ public class OsmIdSelectionDialog extends ExtendedDialog implements WindowListen
      * @param cbHistory the {@link HistoryComboBox} to which the history is restored to
      */
     protected void restorePrimitivesHistory(HistoryComboBox cbHistory) {
-        cbHistory.setPossibleItemsTopDown(
-                Config.getPref().getList(getClass().getName() + ".primitivesHistory", Collections.emptyList()));
+        cbHistory.getModel().prefs().load(getClass().getName() + ".primitivesHistory");
     }
 
     /**
@@ -189,7 +189,7 @@ public class OsmIdSelectionDialog extends ExtendedDialog implements WindowListen
      */
     protected void remindPrimitivesHistory(HistoryComboBox cbHistory) {
         cbHistory.addCurrentItemToHistory();
-        Config.getPref().putList(getClass().getName() + ".primitivesHistory", cbHistory.getHistory());
+        cbHistory.getModel().prefs().save(getClass().getName() + ".primitivesHistory");
     }
 
     /**
@@ -221,8 +221,15 @@ public class OsmIdSelectionDialog extends ExtendedDialog implements WindowListen
 
     protected void tryToPasteFromClipboard(OsmIdTextField tfId, OsmPrimitiveTypesComboBox cbType) {
         String buf = ClipboardUtils.getClipboardStringContent();
-        if (buf == null || buf.isEmpty()) return;
-        if (buf.length() > Config.getPref().getInt("downloadprimitive.max-autopaste-length", 2000)) return;
+        if (Utils.isEmpty(buf)) return;
+        final int maxPasteLength = Config.getPref().getInt("downloadprimitive.max-autopaste-length", 2000);
+        if (buf.length() > maxPasteLength) {
+            new Notification(tr("Clipboard has more than {0} characters. Not auto-pasting.\n" +
+                    "You may want to use Overpass instead.", maxPasteLength))
+                    .setIcon(JOptionPane.WARNING_MESSAGE)
+                    .show();
+            return;
+        }
         final List<SimplePrimitiveId> ids = SimplePrimitiveId.fuzzyParse(buf);
         if (!ids.isEmpty()) {
             final String parsedText = ids.stream().map(x -> x.getType().getAPIName().charAt(0) + String.valueOf(x.getUniqueId()))

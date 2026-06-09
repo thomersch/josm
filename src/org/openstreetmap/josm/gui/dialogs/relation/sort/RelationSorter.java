@@ -15,6 +15,8 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 import org.openstreetmap.josm.data.osm.DefaultNameFormatter;
+import org.openstreetmap.josm.data.osm.IPrimitive;
+import org.openstreetmap.josm.data.osm.IRelationMember;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Relation;
 import org.openstreetmap.josm.data.osm.RelationMember;
@@ -45,7 +47,7 @@ public class RelationSorter {
      * Class that sorts the {@code street} members of
      * {@code type=associatedStreet} and {@code type=street} relations.
      */
-    private static class AssociatedStreetRoleStreetSorter implements AdditionalSorter {
+    private static final class AssociatedStreetRoleStreetSorter implements AdditionalSorter {
 
         @Override
         public boolean acceptsMember(List<RelationMember> relationMembers, RelationMember m) {
@@ -62,7 +64,7 @@ public class RelationSorter {
      * Class that sorts the {@code address} and {@code house} members of
      * {@code type=associatedStreet} and {@code type=street} relations.
      */
-    private static class AssociatedStreetRoleAddressHouseSorter implements AdditionalSorter {
+    private static final class AssociatedStreetRoleAddressHouseSorter implements AdditionalSorter {
 
         @Override
         public boolean acceptsMember(List<RelationMember> relationMembers, RelationMember m) {
@@ -90,7 +92,7 @@ public class RelationSorter {
      * Class that sorts the {@code platform} and {@code stop} members of
      * {@code type=public_transport} relations.
      */
-    private static class PublicTransportRoleStopPlatformSorter implements AdditionalSorter {
+    private static final class PublicTransportRoleStopPlatformSorter implements AdditionalSorter {
 
         @Override
         public boolean acceptsMember(List<RelationMember> relationMembers, RelationMember m) {
@@ -137,7 +139,7 @@ public class RelationSorter {
      * Class that sorts the {@code from}, {@code via} and {@code to} members of
      * {@code type=restriction} relations.
      */
-    private static class FromViaToSorter implements AdditionalSorter {
+    private static final class FromViaToSorter implements AdditionalSorter {
 
         private static final List<String> ROLES = Arrays.asList("from", "via", "to");
 
@@ -194,12 +196,12 @@ public class RelationSorter {
      * Sorts a list of members by connectivity
      * @param defaultMembers The members to sort
      * @return A sorted list of the same members
+     * @since 17862 (signature change, generics)
      */
-    public static List<RelationMember> sortMembersByConnectivity(List<RelationMember> defaultMembers) {
+    public static <T extends IRelationMember<? extends IPrimitive>> List<T> sortMembersByConnectivity(List<T> defaultMembers) {
+        List<T> newMembers;
 
-        List<RelationMember> newMembers;
-
-        RelationNodeMap map = new RelationNodeMap(defaultMembers);
+        RelationNodeMap<T> map = new RelationNodeMap<>(defaultMembers);
         // List of groups of linked members
         //
         List<LinkedList<Integer>> allGroups = new ArrayList<>();

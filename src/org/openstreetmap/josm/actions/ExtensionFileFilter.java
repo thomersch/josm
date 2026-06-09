@@ -22,11 +22,13 @@ import org.openstreetmap.josm.gui.io.importexport.FileExporter;
 import org.openstreetmap.josm.gui.io.importexport.FileImporter;
 import org.openstreetmap.josm.gui.io.importexport.GeoJSONImporter;
 import org.openstreetmap.josm.gui.io.importexport.GpxImporter;
-import org.openstreetmap.josm.gui.io.importexport.JpgImporter;
+import org.openstreetmap.josm.gui.io.importexport.ImageImporter;
 import org.openstreetmap.josm.gui.io.importexport.NMEAImporter;
 import org.openstreetmap.josm.gui.io.importexport.NoteImporter;
 import org.openstreetmap.josm.gui.io.importexport.OsmChangeImporter;
 import org.openstreetmap.josm.gui.io.importexport.OsmImporter;
+import org.openstreetmap.josm.gui.io.importexport.OsmPbfImporter;
+import org.openstreetmap.josm.gui.io.importexport.OziWptImporter;
 import org.openstreetmap.josm.gui.io.importexport.RtkLibImporter;
 import org.openstreetmap.josm.gui.io.importexport.WMSLayerImporter;
 import org.openstreetmap.josm.gui.widgets.AbstractFileChooser;
@@ -64,12 +66,14 @@ public class ExtensionFileFilter extends FileFilter implements java.io.FileFilte
         final List<Class<? extends FileImporter>> importerNames = Arrays.asList(
                 OsmImporter.class,
                 OsmChangeImporter.class,
+                OsmPbfImporter.class,
                 GeoJSONImporter.class,
                 GpxImporter.class,
                 NMEAImporter.class,
+                OziWptImporter.class,
                 RtkLibImporter.class,
                 NoteImporter.class,
-                JpgImporter.class,
+                ImageImporter.class,
                 WMSLayerImporter.class,
                 AllFormatsImporter.class,
                 SessionImporter.class

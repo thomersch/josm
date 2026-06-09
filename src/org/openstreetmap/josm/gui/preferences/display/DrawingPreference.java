@@ -15,6 +15,7 @@ import org.openstreetmap.josm.actions.ExpertToggleAction;
 import org.openstreetmap.josm.data.preferences.BooleanProperty;
 import org.openstreetmap.josm.gui.autofilter.AutoFilterManager;
 import org.openstreetmap.josm.gui.autofilter.AutoFilterRule;
+import org.openstreetmap.josm.gui.help.HelpUtil;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.preferences.DefaultTabPreferenceSetting;
 import org.openstreetmap.josm.gui.preferences.PreferenceSetting;
@@ -124,7 +125,7 @@ public class DrawingPreference extends DefaultTabPreferenceSetting {
         useWireframeAntialiasing.setSelected(Config.getPref().getBoolean("mappaint.wireframe.use-antialiasing", false));
 
         // highlighting
-        useHighlighting.setToolTipText(tr("Hightlight target nodes and ways while drawing or selecting"));
+        useHighlighting.setToolTipText(tr("Highlight target nodes and ways while drawing or selecting"));
         useHighlighting.setSelected(Config.getPref().getBoolean("draw.target-highlight", true));
 
         drawHelperLine.setToolTipText(tr("Draw rubber-band helper line"));
@@ -230,4 +231,8 @@ public class DrawingPreference extends DefaultTabPreferenceSetting {
         return false;
     }
 
+    @Override
+    public String getHelpContext() {
+        return HelpUtil.ht("/Preferences/DrawingPreference");
+    }
 }

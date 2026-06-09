@@ -207,13 +207,14 @@ public final class KeyboardUtils {
                 result.add('ˆ'); // U+02C6 : dead/modifier circumflex
                 break;
             case "cs": // Czech
-            case "he": // Hebrew
+            case "he": // Hebrew starting from Java 17 - https://bugs.openjdk.java.net/browse/JDK-8263202
+            case "iw": // Hebrew before Java 17
                 // https://en.wikipedia.org/wiki/QWERTZ#Czech_(QWERTZ)
                 // https://en.wikipedia.org/wiki/Hebrew_keyboard
                 result.add(';');
                 break;
             case "hu":
-                // Hungary, https://en.wikipedia.org/wiki/QWERTZ#Hungary
+                // Hungarian, https://en.wikipedia.org/wiki/QWERTZ#Hungary
                 result.add('0');
                 break;
             case "bs": // Bosnian

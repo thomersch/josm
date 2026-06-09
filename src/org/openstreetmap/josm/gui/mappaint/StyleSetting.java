@@ -14,10 +14,10 @@ import org.openstreetmap.josm.tools.Logging;
 
 /**
  * Setting to customize a MapPaint style.
- *
+ * <p>
  * Can be changed by the user in the right click menu of the mappaint style
  * dialog.
- *
+ * <p>
  * Defined in the MapCSS style, e.g.
  * <pre>
  * setting::highway_casing {
@@ -32,6 +32,7 @@ import org.openstreetmap.josm.tools.Logging;
  * }
  * </pre>
  */
+@SuppressWarnings("PMD.ImplicitFunctionalInterface")
 public interface StyleSetting {
 
     /**
@@ -118,6 +119,10 @@ public interface StyleSetting {
         }
     }
 
+    /**
+     * A setting for a style
+     * @param <T> The property type
+     */
     class PropertyStyleSetting<T> extends LabeledStyleSetting implements StyleSetting {
         private final Class<T> type;
         private final AbstractToStringProperty<T> property;

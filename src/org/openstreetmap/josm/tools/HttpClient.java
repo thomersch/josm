@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.CookieHandler;
 import java.net.CookieManager;
+import java.net.CookiePolicy;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -35,7 +36,7 @@ import org.openstreetmap.josm.io.auth.DefaultAuthenticator;
 import org.openstreetmap.josm.spi.preferences.Config;
 
 /**
- * Provides a uniform access for a HTTP/HTTPS server. This class should be used in favour of {@link HttpURLConnection}.
+ * Provides uniform access for a HTTP/HTTPS server. This class should be used in favour of {@link HttpURLConnection}.
  * @since 9168
  */
 public abstract class HttpClient {
@@ -83,7 +84,7 @@ public abstract class HttpClient {
 
     static {
         try {
-            CookieHandler.setDefault(new CookieManager());
+            CookieHandler.setDefault(new CookieManager(null, CookiePolicy.ACCEPT_ALL));
         } catch (SecurityException e) {
             Logging.log(Logging.LEVEL_ERROR, "Unable to set default cookie handler", e);
         }
@@ -132,6 +133,19 @@ public abstract class HttpClient {
      * @since 9179
      */
     public final Response connect(ProgressMonitor progressMonitor) throws IOException {
+        return connect(progressMonitor, null, null);
+    }
+
+    /**
+     * Opens the HTTP connection.
+     * @param progressMonitor progress monitor
+     * @param authRedirectLocation The location where we will be redirected for authentication
+     * @param authRequestProperty The authorization header to set when being redirected to the auth location
+     * @return HTTP response
+     * @throws IOException if any I/O error occurs
+     * @since 18913
+     */
+    public final Response connect(ProgressMonitor progressMonitor, String authRedirectLocation, String authRequestProperty) throws IOException {
         if (progressMonitor == null) {
             progressMonitor = NullProgressMonitor.INSTANCE;
         }
@@ -146,9 +160,9 @@ public abstract class HttpClient {
                     Logging.debug("REQUEST HEADERS: {0}", headers);
                 }
                 cr = performConnection();
-                final boolean hasReason = reasonForRequest != null && !reasonForRequest.isEmpty();
+                final boolean hasReason = !Utils.isEmpty(reasonForRequest);
                 logRequest("{0} {1}{2} -> {3} {4} ({5}{6})",
-                        getRequestMethod(), getURL(), hasReason ? (" (" + reasonForRequest + ')') : "",
+                        getRequestMethod(), TextUtils.stripUrl(getURL().toString()), hasReason ? (" (" + reasonForRequest + ')') : "",
                         cr.getResponseVersion(), cr.getResponseCode(),
                         stopwatch,
                         cr.getContentLengthLong() > 0
@@ -166,7 +180,7 @@ public abstract class HttpClient {
                     DefaultAuthenticator.getInstance().addFailedCredentialHost(url.getHost());
                 }
             } catch (IOException | RuntimeException e) {
-                logRequest("{0} {1} -> !!! ({2})", requestMethod, url, stopwatch);
+                logRequest("{0} {1} -> !!! ({2})", requestMethod, TextUtils.stripUrl(url.toString()), stopwatch);
                 Logging.warn(e);
                 //noinspection ThrowableResultOfMethodCallIgnored
                 NetworkManager.addNetworkError(url, Utils.getRootCause(e));
@@ -179,9 +193,18 @@ public abstract class HttpClient {
                     throw new IOException(tr("Unexpected response from HTTP server. Got {0} response without ''Location'' header." +
                             " Can''t redirect. Aborting.", cr.getResponseCode()));
                 } else if (maxRedirects > 0) {
+                    final URL oldUrl = url;
                     url = new URL(url, redirectLocation);
                     maxRedirects--;
                     logRequest(tr("Download redirected to ''{0}''", redirectLocation));
+                    if (authRedirectLocation != null && authRequestProperty != null && redirectLocation.startsWith(authRedirectLocation)) {
+                        setHeader("Authorization", authRequestProperty);
+                    } else if (!Objects.equals(oldUrl.getHost(), this.url.getHost()) && this.getRequestHeader("Authorization") != null) {
+                        // Fix JOSM #21935: Avoid leaking `Authorization` header on redirects.
+                        logRequest(tr("Download redirected to different host (''{0}'' -> ''{1}''), removing authorization headers",
+                                oldUrl.getHost(), url.getHost()));
+                        this.headers.remove("Authorization");
+                    }
                     response = connect();
                     successfulConnection = true;
                     return response;
@@ -378,15 +401,13 @@ public abstract class HttpClient {
          * @see HttpURLConnection#getInputStream()
          * @see HttpURLConnection#getErrorStream()
          */
-        @SuppressWarnings("resource")
         public final InputStream getContent() throws IOException {
-            InputStream in = getInputStream();
-            in = new ProgressInputStream(in, getContentLength(), monitor);
-            in = "gzip".equalsIgnoreCase(getContentEncoding())
-                    ? new GZIPInputStream(in)
-                    : "deflate".equalsIgnoreCase(getContentEncoding())
-                    ? new InflaterInputStream(in)
-                    : in;
+            InputStream in = new ProgressInputStream(getInputStream(), getContentLength(), monitor);
+            if ("gzip".equalsIgnoreCase(getContentEncoding())) {
+                in = new GZIPInputStream(in);
+            } else if ("deflate".equalsIgnoreCase(getContentEncoding())) {
+                in = new InflaterInputStream(in);
+            }
             Compression compression = Compression.NONE;
             if (uncompress) {
                 final String contentType = getContentType();

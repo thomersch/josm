@@ -1,10 +1,12 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.actions;
 
+import static javax.swing.JFileChooser.FILES_AND_DIRECTORIES;
 import static org.openstreetmap.josm.gui.help.HelpUtil.ht;
 import static org.openstreetmap.josm.tools.I18n.tr;
 import static org.openstreetmap.josm.tools.I18n.trn;
 
+import java.awt.GraphicsEnvironment;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
 import java.io.BufferedReader;
@@ -16,14 +18,17 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.Future;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
@@ -37,8 +42,13 @@ import org.openstreetmap.josm.gui.Notification;
 import org.openstreetmap.josm.gui.PleaseWaitRunnable;
 import org.openstreetmap.josm.gui.io.importexport.AllFormatsImporter;
 import org.openstreetmap.josm.gui.io.importexport.FileImporter;
+import org.openstreetmap.josm.gui.io.importexport.Options;
+import org.openstreetmap.josm.gui.layer.Layer;
+import org.openstreetmap.josm.gui.layer.geoimage.GeoImageLayer;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.widgets.AbstractFileChooser;
+import org.openstreetmap.josm.gui.widgets.FileChooserManager;
+import org.openstreetmap.josm.gui.widgets.NativeFileChooser;
 import org.openstreetmap.josm.io.OsmTransferException;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.Logging;
@@ -73,12 +83,21 @@ public class OpenFileAction extends DiskAccessAction {
 
     @Override
     public void actionPerformed(ActionEvent e) {
-        AbstractFileChooser fc = createAndOpenFileChooser(true, true, null);
+        final AbstractFileChooser fc;
+        // If the user explicitly wants native file dialogs, let them use it.
+        // Rather unfortunately, this means that they will not be able to select files and directories.
+        if (Boolean.TRUE.equals(FileChooserManager.PROP_USE_NATIVE_FILE_DIALOG.get())
+                // This is almost redundant, as the JDK currently doesn't support this with (all?) native file choosers.
+                && !NativeFileChooser.supportsSelectionMode(FILES_AND_DIRECTORIES)) {
+            fc = createAndOpenFileChooser(true, true, null);
+        } else {
+            fc = createAndOpenFileChooser(true, true, null, null, FILES_AND_DIRECTORIES, true, null);
+        }
         if (fc == null)
             return;
         File[] files = fc.getSelectedFiles();
         OpenFileTask task = new OpenFileTask(Arrays.asList(files), fc.getFileFilter());
-        task.setRecordHistory(true);
+        task.setOptions(Options.RECORD_HISTORY);
         MainApplication.worker.submit(task);
     }
 
@@ -95,19 +114,19 @@ public class OpenFileAction extends DiskAccessAction {
      * @since 11986 (return task)
      */
     public static Future<?> openFiles(List<File> fileList) {
-        return openFiles(fileList, false);
+        return openFiles(fileList, (Options[]) null);
     }
 
     /**
      * Open a list of files. The complete list will be passed to batch importers.
      * @param fileList A list of files
-     * @param recordHistory {@code true} to save filename in history (default: false)
+     * @param options The options to use
      * @return the future task
-     * @since 11986 (return task)
+     * @since 17534 ({@link Options})
      */
-    public static Future<?> openFiles(List<File> fileList, boolean recordHistory) {
+    public static Future<?> openFiles(List<File> fileList, Options... options) {
         OpenFileTask task = new OpenFileTask(fileList, null);
-        task.setRecordHistory(recordHistory);
+        task.setOptions(options);
         return MainApplication.worker.submit(task);
     }
 
@@ -121,7 +140,7 @@ public class OpenFileAction extends DiskAccessAction {
         private final Set<String> failedAll = new HashSet<>();
         private final FileFilter fileFilter;
         private boolean canceled;
-        private boolean recordHistory;
+        private final EnumSet<Options> options = EnumSet.noneOf(Options.class);
 
         /**
          * Constructs a new {@code OpenFileTask}.
@@ -150,7 +169,7 @@ public class OpenFileAction extends DiskAccessAction {
                 } else {
                     String message = tr("Unable to locate file  ''{0}''.", file.getPath());
                     Logging.warn(message);
-                    new Notification(message).show();
+                    new Notification(message).setIcon(JOptionPane.WARNING_MESSAGE).show();
                 }
             }
         }
@@ -165,11 +184,16 @@ public class OpenFileAction extends DiskAccessAction {
         }
 
         /**
-         * Sets whether to save filename in history (for list of recently opened files).
-         * @param recordHistory {@code true} to save filename in history (default: false)
+         * Set the options for the task.
+         * @param options The options to set
+         * @see Options
+         * @since 17556
          */
-        public void setRecordHistory(boolean recordHistory) {
-            this.recordHistory = recordHistory;
+        public void setOptions(Options... options) {
+            this.options.clear();
+            if (options != null) {
+                Stream.of(options).filter(Objects::nonNull).forEach(this.options::add);
+            }
         }
 
         /**
@@ -177,7 +201,16 @@ public class OpenFileAction extends DiskAccessAction {
          * @return {@code true} if filename must be saved in history
          */
         public boolean isRecordHistory() {
-            return recordHistory;
+            return this.options.contains(Options.RECORD_HISTORY);
+        }
+
+        /**
+         * Get the options for this task
+         * @return A set of options
+         * @since 17534
+         */
+        public Set<Options> getOptions() {
+            return Collections.unmodifiableSet(this.options);
         }
 
         @Override
@@ -217,7 +250,7 @@ public class OpenFileAction extends DiskAccessAction {
         }
 
         protected void alertFilesWithUnknownImporter(Collection<File> files) {
-            final StringBuilder msg = new StringBuilder(128).append("<html>").append(
+            final StringBuilder msg = new StringBuilder(115 + 30 * files.size()).append("<html>").append(
                     trn("Cannot open {0} file because file does not exist or no suitable file importer is available.",
                         "Cannot open {0} files because files do not exist or no suitable file importer is available.",
                         files.size(),
@@ -242,9 +275,10 @@ public class OpenFileAction extends DiskAccessAction {
 
         @Override
         protected void realRun() throws SAXException, IOException, OsmTransferException {
-            if (files == null || files.isEmpty()) return;
+            if (Utils.isEmpty(files)) return;
+            List<Layer> oldLayers = MainApplication.getLayerManager().getLayers();
 
-            /**
+            /*
              * Find the importer with the chosen file filter
              */
             FileImporter chosenImporter = null;
@@ -255,7 +289,7 @@ public class OpenFileAction extends DiskAccessAction {
                     }
                 }
             }
-            /**
+            /*
              * If the filter hasn't been changed in the dialog, chosenImporter is null now.
              * When the filter has been set explicitly to AllFormatsImporter, treat this the same.
              */
@@ -339,7 +373,7 @@ public class OpenFileAction extends DiskAccessAction {
                 }
             }
 
-            if (recordHistory) {
+            if (this.options.contains(Options.RECORD_HISTORY)) {
                 Collection<String> oldFileHistory = Config.getPref().getList("file-open.history");
                 fileHistory.addAll(oldFileHistory);
                 // remove the files which failed to load from the list
@@ -347,6 +381,27 @@ public class OpenFileAction extends DiskAccessAction {
                 int maxsize = Math.max(0, Config.getPref().getInt("file-open.history.max-size", 15));
                 PreferencesUtils.putListBounded(Config.getPref(), "file-open.history", maxsize, new ArrayList<>(fileHistory));
             }
+            if (!canceled && !GraphicsEnvironment.isHeadless()) {
+                checkNewLayers(oldLayers);
+            }
+        }
+
+        private static void checkNewLayers(List<Layer> oldLayers) {
+            // We do have to wrap the EDT call in a worker call, since layers may be created in the EDT.
+            // And the layer(s) must be added to the layer list in order for the dialog to work properly.
+            MainApplication.worker.execute(() -> GuiHelper.runInEDT(() -> {
+                List<Layer> newLayers = MainApplication.getLayerManager().getLayers();
+                // see #23728: open first image of topmost new image layer
+                for (Layer l : newLayers) {
+                    if (oldLayers.contains(l))
+                        return;
+                    if (l instanceof GeoImageLayer) {
+                        GeoImageLayer imageLayer = (GeoImageLayer) l;
+                        imageLayer.jumpToNextMarker();
+                        return;
+                    }
+                }
+            }));
         }
 
         /**
@@ -355,6 +410,7 @@ public class OpenFileAction extends DiskAccessAction {
          * @param files data files to import
          */
         public void importData(FileImporter importer, List<File> files) {
+            importer.setOptions(this.options.toArray(new Options[0]));
             if (importer.isBatchImporter()) {
                 if (canceled) return;
                 String msg = trn("Opening {0} file...", "Opening {0} files...", files.size(), files.size());
@@ -372,7 +428,7 @@ public class OpenFileAction extends DiskAccessAction {
                     }
                 }
             }
-            if (recordHistory && !importer.isBatchImporter()) {
+            if (this.options.contains(Options.RECORD_HISTORY) && !importer.isBatchImporter()) {
                 for (File f : files) {
                     try {
                         if (successfullyOpenedFiles.contains(f)) {

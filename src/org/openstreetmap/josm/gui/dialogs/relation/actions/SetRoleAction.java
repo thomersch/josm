@@ -14,6 +14,7 @@ import org.openstreetmap.josm.gui.ConditionalOptionPaneUtil;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.tagging.ac.AutoCompletingTextField;
 import org.openstreetmap.josm.tools.ImageProvider;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * Sets a role for the selected members
@@ -43,7 +44,7 @@ public class SetRoleAction extends AbstractRelationEditorAction implements Docum
     }
 
     protected boolean isEmptyRole() {
-        return tfRole.getText() == null || tfRole.getText().trim().isEmpty();
+        return Utils.isStripEmpty(tfRole.getText());
     }
 
     protected boolean confirmSettingEmptyRole(int onNumMembers) {
@@ -68,7 +69,7 @@ public class SetRoleAction extends AbstractRelationEditorAction implements Docum
                 options,
                 options[0]
         );
-        switch(ret) {
+        switch (ret) {
         case JOptionPane.YES_OPTION:
         case ConditionalOptionPaneUtil.DIALOG_DISABLED_OPTION:
             return true;
@@ -82,7 +83,7 @@ public class SetRoleAction extends AbstractRelationEditorAction implements Docum
         if (isEmptyRole() && !confirmSettingEmptyRole(editorAccess.getMemberTable().getSelectedRowCount())) {
             return;
         }
-        editorAccess.getMemberTableModel().updateRole(editorAccess.getMemberTable().getSelectedRows(), tfRole.getText());
+        editorAccess.getMemberTableModel().updateRole(editorAccess.getMemberTable().getSelectedRows(), Utils.strip(tfRole.getText()));
     }
 
     @Override

@@ -4,7 +4,6 @@ package org.openstreetmap.josm.tools;
 import java.lang.ref.WeakReference;
 import java.text.MessageFormat;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Stream;
@@ -40,7 +39,7 @@ public class ListenerList<T> {
 
         @Override
         public boolean equals(Object obj) {
-            if (obj != null && obj.getClass() == WeakListener.class) {
+            if (obj instanceof WeakListener) {
                 return Objects.equals(listener.get(), ((WeakListener<?>) obj).listener.get());
             } else {
                 return false;
@@ -72,16 +71,15 @@ public class ListenerList<T> {
 
     /**
      * Adds a listener. The listener will not prevent the object from being garbage collected.
-     *
+     * <p>
      * This should be used with care. It is better to add good cleanup code.
      * @param listener The listener.
      */
     public synchronized void addWeakListener(T listener) {
         if (ensureNotInList(listener)) {
             // clean the weak listeners, just to be sure...
-            while (weakListeners.remove(new WeakListener<T>(null))) {
-                // continue
-            }
+            WeakListener<T> nullListener = new WeakListener<>(null);
+            weakListeners.removeIf(nullListener::equals);
             weakListeners.add(new WeakListener<>(listener));
         }
     }
@@ -144,7 +142,7 @@ public class ListenerList<T> {
      * @return <code>true</code> if any are registered.
      */
     public boolean hasListeners() {
-        return !listeners.isEmpty();
+        return !listeners.isEmpty() || weakListeners.stream().map(l -> l.listener.get()).anyMatch(Objects::nonNull);
     }
 
     /**
@@ -155,8 +153,7 @@ public class ListenerList<T> {
         for (T l : listeners) {
             eventFirerer.fire(l);
         }
-        for (Iterator<WeakListener<T>> iterator = weakListeners.iterator(); iterator.hasNext();) {
-            WeakListener<T> weakLink = iterator.next();
+        for (WeakListener<T> weakLink : weakListeners) {
             T l = weakLink.listener.get();
             if (l != null) {
                 // cleanup during add() should be enough to not cause memory leaks
@@ -225,7 +222,7 @@ public class ListenerList<T> {
         }
     }
 
-    private static class UncheckedListenerList<T> extends ListenerList<T> {
+    private static final class UncheckedListenerList<T> extends ListenerList<T> {
         @Override
         protected void failAdd(T listener) {
             Logging.warn("Listener was already added: {0}", listener);

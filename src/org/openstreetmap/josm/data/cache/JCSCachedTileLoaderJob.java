@@ -1,11 +1,15 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.cache;
 
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.file.Files;
 import java.security.SecureRandom;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -16,8 +20,6 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 
-import org.apache.commons.jcs3.access.behavior.ICacheAccess;
-import org.apache.commons.jcs3.engine.behavior.ICacheElement;
 import org.openstreetmap.josm.data.cache.ICachedLoaderListener.LoadResult;
 import org.openstreetmap.josm.data.imagery.TileJobOptions;
 import org.openstreetmap.josm.data.preferences.IntegerProperty;
@@ -25,6 +27,9 @@ import org.openstreetmap.josm.tools.CheckParameterUtil;
 import org.openstreetmap.josm.tools.HttpClient;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.Utils;
+
+import org.apache.commons.jcs3.access.behavior.ICacheAccess;
+import org.apache.commons.jcs3.engine.behavior.ICacheElement;
 
 /**
  * Generic loader for HTTP based tiles. Uses custom attribute, to check, if entry has expired
@@ -71,7 +76,7 @@ public abstract class JCSCachedTileLoaderJob<K, V extends CacheEntry> implements
             30, // keepalive for thread
             TimeUnit.SECONDS,
             // make queue of LIFO type - so recently requested tiles will be loaded first (assuming that these are which user is waiting to see)
-            new LinkedBlockingDeque<Runnable>(),
+            new LinkedBlockingDeque<>(),
             Utils.newThreadFactory("JCS-downloader-%d", Thread.NORM_PRIORITY)
             );
 
@@ -80,7 +85,7 @@ public abstract class JCSCachedTileLoaderJob<K, V extends CacheEntry> implements
 
     protected final long now; // when the job started
 
-    private final ICacheAccess<K, V> cache;
+    protected final ICacheAccess<K, V> cache;
     private ICacheElement<K, V> cacheElement;
     protected V cacheData;
     protected CacheEntryAttributes attributes;
@@ -186,10 +191,12 @@ public abstract class JCSCachedTileLoaderJob<K, V extends CacheEntry> implements
     /**
      * Simple implementation. All errors should be cached as empty. Though some JDK (JDK8 on Windows for example)
      * doesn't return 4xx error codes, instead they do throw an FileNotFoundException or IOException
+     * @param headerFields headers sent by server
+     * @param responseCode http status code
      *
      * @return true if we should put empty object into cache, regardless of what remote resource has returned
      */
-    protected boolean cacheAsEmpty() {
+    protected boolean cacheAsEmpty(Map<String, List<String>> headerFields, int responseCode) {
         return attributes.getResponseCode() < 500;
     }
 
@@ -285,12 +292,52 @@ public abstract class JCSCachedTileLoaderJob<K, V extends CacheEntry> implements
     }
 
     /**
-     * @return true if object was successfully downloaded, false, if there was a loading failure
+     * Load an cache object
+     * @return {@code true} if object was successfully downloaded, false, if there was a loading failure
+     * @since 18831
      */
-    private boolean loadObject() {
+    protected boolean loadObject() {
         if (attributes == null) {
             attributes = new CacheEntryAttributes();
         }
+        final URL url = this.getUrlNoException();
+        if (url == null) {
+            return false;
+        }
+
+        if (url.getProtocol().contains("http")) {
+            return loadObjectHttp();
+        }
+        if (url.getProtocol().contains("file")) {
+            return loadObjectFile(url);
+        }
+
+        return false;
+    }
+
+    private boolean loadObjectFile(URL url) {
+        String fileName = url.toExternalForm();
+        File file = new File(fileName.substring("file:/".length() - 1));
+        if (!file.exists()) {
+            file = new File(fileName.substring("file://".length() - 1));
+        }
+        try (InputStream fileInputStream = Files.newInputStream(file.toPath())) {
+            cacheData = createCacheEntry(fileInputStream.readAllBytes());
+            cache.put(getCacheKey(), cacheData, attributes);
+            return true;
+        } catch (IOException e) {
+            Logging.error(e);
+            attributes.setError(e);
+            attributes.setException(e);
+        }
+        return false;
+    }
+
+    /**
+     * Load an cache object via HTTP
+     * @return {@code true} if object was successfully downloaded via http, false, if there was a loading failure
+     */
+    private boolean loadObjectHttp() {
         try {
             // if we have object in cache, and host doesn't support If-Modified-Since nor If-None-Match
             // then just use HEAD request and check returned values
@@ -346,7 +393,9 @@ public abstract class JCSCachedTileLoaderJob<K, V extends CacheEntry> implements
                 attributes.setResponseCode(urlConn.getResponseCode());
                 byte[] raw;
                 if (urlConn.getResponseCode() == HttpURLConnection.HTTP_OK) {
-                    raw = Utils.readBytesFromStream(urlConn.getContent());
+                    try (InputStream is = urlConn.getContent()) {
+                        raw = is.readAllBytes();
+                    }
                 } else {
                     raw = new byte[]{};
                     try {
@@ -370,7 +419,7 @@ public abstract class JCSCachedTileLoaderJob<K, V extends CacheEntry> implements
                     Logging.debug("JCS - downloaded key: {0}, length: {1}, url: {2}",
                             getCacheKey(), raw.length, getUrl());
                     return true;
-                } else if (cacheAsEmpty()) {
+                } else if (cacheAsEmpty(urlConn.getHeaderFields(), urlConn.getResponseCode())) {
                     cacheData = createCacheEntry(new byte[]{});
                     cache.put(getCacheKey(), cacheData, attributes);
                     Logging.debug("JCS - Caching empty object {0}", getUrl());
@@ -385,7 +434,7 @@ public abstract class JCSCachedTileLoaderJob<K, V extends CacheEntry> implements
             attributes.setResponseCode(404);
             attributes.setError(e);
             attributes.setException(e);
-            boolean doCache = isResponseLoadable(null, 404, null) || cacheAsEmpty();
+            boolean doCache = isResponseLoadable(null, 404, null) || cacheAsEmpty(Collections.emptyMap(), 404);
             if (doCache) {
                 cacheData = createCacheEntry(new byte[]{});
                 cache.put(getCacheKey(), cacheData, attributes);
@@ -426,7 +475,7 @@ public abstract class JCSCachedTileLoaderJob<K, V extends CacheEntry> implements
     /**
      * Check if the object is loadable. This means, if the data will be parsed, and if this response
      * will finish as successful retrieve.
-     *
+     * <p>
      * This simple implementation doesn't load empty response, nor client (4xx) and server (5xx) errors
      *
      * @param headerFields headers sent by server
@@ -496,10 +545,7 @@ public abstract class JCSCachedTileLoaderJob<K, V extends CacheEntry> implements
             urlConn.setHeaders(headers);
         }
 
-        final boolean noCache = force
-                // To remove when switching to Java 11
-                // Workaround for https://bugs.openjdk.java.net/browse/JDK-8146450
-                || (Utils.getJavaVersion() == 8 && Utils.isRunningJavaWebStart());
+        final boolean noCache = force;
         urlConn.useCache(!noCache);
 
         return urlConn;
@@ -550,6 +596,7 @@ public abstract class JCSCachedTileLoaderJob<K, V extends CacheEntry> implements
         try {
             return getUrl();
         } catch (IOException e) {
+            Logging.trace(e);
             return null;
         }
     }

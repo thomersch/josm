@@ -1,15 +1,6 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.coor;
 
-import static java.lang.Math.PI;
-import static java.lang.Math.asin;
-import static java.lang.Math.atan2;
-import static java.lang.Math.cos;
-import static java.lang.Math.sin;
-import static java.lang.Math.sqrt;
-import static org.openstreetmap.josm.data.projection.Ellipsoid.WGS84;
-import static org.openstreetmap.josm.tools.Utils.toRadians;
-
 import java.awt.geom.Area;
 import java.text.DecimalFormat;
 import java.text.NumberFormat;
@@ -17,9 +8,6 @@ import java.util.Locale;
 import java.util.Objects;
 
 import org.openstreetmap.josm.data.Bounds;
-import org.openstreetmap.josm.data.osm.Node;
-import org.openstreetmap.josm.data.projection.ProjectionRegistry;
-import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.Utils;
 
 /**
@@ -45,7 +33,7 @@ public class LatLon extends Coordinate implements ILatLon {
      * Minimum difference in location to not be represented as the same position.
      * The API returns 7 decimals.
      */
-    public static final double MAX_SERVER_PRECISION = 1e-7;
+    public static final double MAX_SERVER_PRECISION = ILatLon.MAX_SERVER_PRECISION;
     /**
      * The inverse of the server precision
      * @see #MAX_SERVER_PRECISION
@@ -70,14 +58,14 @@ public class LatLon extends Coordinate implements ILatLon {
     /**
      * The number format used for high precision coordinates
      */
-    public static final DecimalFormat cDdHighPecisionFormatter;
+    public static final DecimalFormat cDdHighPrecisionFormatter;
     static {
         // Don't use the localized decimal separator. This way we can present
         // a comma separated list of coordinates.
         cDdFormatter = (DecimalFormat) NumberFormat.getInstance(Locale.UK);
         cDdFormatter.applyPattern("###0.0######");
-        cDdHighPecisionFormatter = (DecimalFormat) NumberFormat.getInstance(Locale.UK);
-        cDdHighPecisionFormatter.applyPattern("###0.0##########");
+        cDdHighPrecisionFormatter = (DecimalFormat) NumberFormat.getInstance(Locale.UK);
+        cDdHighPrecisionFormatter.applyPattern("###0.0##########");
     }
 
     /**
@@ -181,29 +169,6 @@ public class LatLon extends Coordinate implements ILatLon {
     }
 
     /**
-     * Determines if the other point has almost the same lat/lon values.
-     * @param other other lat/lon
-     * @return <code>true</code> if the other point has almost the same lat/lon
-     * values, only differing by no more than 1 / {@link #MAX_SERVER_PRECISION MAX_SERVER_PRECISION}.
-     */
-    public boolean equalsEpsilon(LatLon other) {
-        double p = MAX_SERVER_PRECISION / 2;
-        return Math.abs(lat()-other.lat()) <= p && Math.abs(lon()-other.lon()) <= p;
-    }
-
-    /**
-     * Determines if this lat/lon is outside of the world
-     * @return <code>true</code>, if the coordinate is outside the world, compared by using lat/lon.
-     * @deprecated use {@link Node#isOutSideWorld} instead, see also #13538.
-     */
-    @Deprecated
-    public boolean isOutSideWorld() {
-        Bounds b = ProjectionRegistry.getProjection().getWorldBoundsLatLon();
-        return lat() < b.getMinLat() || lat() > b.getMaxLat() ||
-                lon() < b.getMinLon() || lon() > b.getMaxLon();
-    }
-
-    /**
      * Determines if this lat/lon is within the given bounding box.
      * @param b bounding box
      * @return <code>true</code> if this is within the given bounding box.
@@ -223,58 +188,6 @@ public class LatLon extends Coordinate implements ILatLon {
     }
 
     /**
-     * Computes the distance between this lat/lon and another point on the earth.
-     * Uses <a href="https://en.wikipedia.org/wiki/Haversine_formula">Haversine formula</a>.
-     * @param other the other point.
-     * @return distance in metres.
-     */
-    public double greatCircleDistance(LatLon other) {
-        double sinHalfLat = sin(toRadians(other.lat() - this.lat()) / 2);
-        double sinHalfLon = sin(toRadians(other.lon() - this.lon()) / 2);
-        double d = 2 * WGS84.a * asin(
-                sqrt(sinHalfLat*sinHalfLat +
-                        cos(toRadians(this.lat()))*cos(toRadians(other.lat()))*sinHalfLon*sinHalfLon));
-        // For points opposite to each other on the sphere,
-        // rounding errors could make the argument of asin greater than 1
-        // (This should almost never happen.)
-        if (Double.isNaN(d)) {
-            Logging.error("NaN in greatCircleDistance: {0} {1}", this, other);
-            d = PI * WGS84.a;
-        }
-        return d;
-    }
-
-    /**
-     * Returns bearing from this point to another.
-     *
-     * Angle starts from north and increases clockwise, PI/2 means east.
-     *
-     * Please note that reverse bearing (from other point to this point) should NOT be
-     * calculated from return value of this method, because great circle path
-     * between the two points have different bearings at each position.
-     *
-     * To get bearing from another point to this point call other.bearing(this)
-     *
-     * @param other the "destination" position
-     * @return heading in radians in the range 0 &lt;= hd &lt; 2*PI
-     * @since 9796
-     */
-    public double bearing(LatLon other) {
-        double lat1 = toRadians(this.lat());
-        double lat2 = toRadians(other.lat());
-        double dlon = toRadians(other.lon() - this.lon());
-        double bearing = atan2(
-            sin(dlon) * cos(lat2),
-            cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dlon)
-        );
-        bearing %= 2 * PI;
-        if (bearing < 0) {
-            bearing += 2 * PI;
-        }
-        return bearing;
-    }
-
-    /**
      * Returns this lat/lon pair in human-readable format.
      *
      * @return String in the format "lat=1.23456 deg, lon=2.34567 deg"
@@ -286,15 +199,18 @@ public class LatLon extends Coordinate implements ILatLon {
     }
 
     /**
-     * Interpolate between this and a other latlon
+     * Interpolate between this and a other latlon. If you don't care about the return type, use {@link ILatLon#interpolate(ILatLon, double)}
+     * instead.
      * @param ll2 The other lat/lon object
      * @param proportion The proportion to interpolate
      * @return a new latlon at this position if proportion is 0, at the other position it proportion is 1 and linearly interpolated otherwise.
      */
     public LatLon interpolate(LatLon ll2, double proportion) {
-        // this is an alternate form of this.lat() + proportion * (ll2.lat() - this.lat()) that is slightly faster
-        return new LatLon((1 - proportion) * this.lat() + proportion * ll2.lat(),
-                (1 - proportion) * this.lon() + proportion * ll2.lon());
+        ILatLon interpolated = ILatLon.super.interpolate(ll2, proportion);
+        if (interpolated instanceof LatLon) {
+            return (LatLon) interpolated;
+        }
+        return new LatLon(interpolated);
     }
 
     /**

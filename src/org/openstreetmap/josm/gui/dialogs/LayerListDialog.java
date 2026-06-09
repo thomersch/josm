@@ -89,7 +89,6 @@ import org.openstreetmap.josm.gui.widgets.JosmTextField;
 import org.openstreetmap.josm.gui.widgets.PopupMenuLauncher;
 import org.openstreetmap.josm.gui.widgets.ScrollableTable;
 import org.openstreetmap.josm.spi.preferences.Config;
-import org.openstreetmap.josm.tools.ArrayUtils;
 import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.ImageProvider.ImageSizes;
 import org.openstreetmap.josm.tools.InputMapUtils;
@@ -174,6 +173,10 @@ public class LayerListDialog extends ToggleDialog implements DisplaySettingsChan
      */
     private final transient MainLayerManager layerManager;
 
+    private PopupMenuHandler popupHandler;
+
+    private LayerListModelListener modelListener;
+
     /**
      * registers (shortcut to toggle right hand side toggle dialogs)+(number keys) shortcuts
      * to toggle the visibility of the first ten layers.
@@ -211,7 +214,8 @@ public class LayerListDialog extends ToggleDialog implements DisplaySettingsChan
         layerList = new LayerList(model);
         TableHelper.setFont(layerList, getClass());
         layerList.setSelectionModel(selectionModel);
-        layerList.addMouseListener(new PopupMenuHandler());
+        popupHandler = new PopupMenuHandler();
+        layerList.addMouseListener(popupHandler);
         layerList.setBackground(UIManager.getColor("Button.background"));
         layerList.putClientProperty("terminateEditOnFocusLost", Boolean.TRUE);
         layerList.putClientProperty("JTable.autoStartsEdit", Boolean.FALSE);
@@ -273,20 +277,20 @@ public class LayerListDialog extends ToggleDialog implements DisplaySettingsChan
         //
         model.populate();
         model.setSelectedLayer(layerManager.getActiveLayer());
-        model.addLayerListModelListener(
-                new LayerListModelListener() {
-                    @Override
-                    public void makeVisible(int row, Layer layer) {
-                        layerList.scrollToVisible(row, 0);
-                        layerList.repaint();
-                    }
+        modelListener = new LayerListModelListener() {
+            @Override
+            public void makeVisible(int row, Layer layer) {
+                layerList.scrollToVisible(row, 0);
+                layerList.repaint();
+            }
 
-                    @Override
-                    public void refresh() {
-                        layerList.repaint();
-                    }
-                }
-                );
+            @Override
+            public void refresh() {
+                layerList.repaint();
+            }
+        };
+
+        model.addLayerListModelListener(modelListener);
 
         // -- move up action
         MoveUpAction moveUpAction = new MoveUpAction(model);
@@ -397,11 +401,14 @@ public class LayerListDialog extends ToggleDialog implements DisplaySettingsChan
         MultikeyActionsHandler.getInstance().removeAction(showHideLayerAction);
         JumpToMarkerActions.unregisterActions();
         layerList.setTransferHandler(null);
+        layerList.removeMouseListener(popupHandler);
         DISPLAY_NUMBERS.removeListener(visibilityWidthListener);
         ExpertToggleAction.removeExpertModeChangeListener(visibilityWidthListener);
         layerManager.removeLayerChangeListener(visibilityWidthListener);
+        activateLayerAction.destroy();
         cycleLayerUpAction.destroy();
         cycleLayerDownAction.destroy();
+        model.removeLayerListModelListener(modelListener);
         super.destroy();
         instance = null;
     }
@@ -687,9 +694,9 @@ public class LayerListDialog extends ToggleDialog implements DisplaySettingsChan
         }
     }
 
-    private class LayerNameCellRenderer extends DefaultTableCellRenderer {
+    private final class LayerNameCellRenderer extends DefaultTableCellRenderer {
 
-        protected boolean isActiveLayer(Layer layer) {
+        boolean isActiveLayer(Layer layer) {
             return getLayerManager().getActiveLayer() == layer;
         }
 
@@ -699,7 +706,7 @@ public class LayerListDialog extends ToggleDialog implements DisplaySettingsChan
                 return this;
             Layer layer = (Layer) value;
             JLabel label = (JLabel) super.getTableCellRendererComponent(table,
-                    layer.getName(), isSelected, hasFocus, row, column);
+                    layer.getLabel(), isSelected, hasFocus, row, column);
             if (isActiveLayer(layer)) {
                 label.setFont(label.getFont().deriveFont(Font.BOLD));
             }
@@ -741,7 +748,6 @@ public class LayerListDialog extends ToggleDialog implements DisplaySettingsChan
          * @param layer the layer
          */
         void makeVisible(int index, Layer layer);
-
 
         /**
          * Fired when something has changed in the layer list model.
@@ -883,7 +889,7 @@ public class LayerListDialog extends ToggleDialog implements DisplaySettingsChan
          * @return  the list of indices of the selected rows. Never null, but may be empty.
          */
         public List<Integer> getSelectedRows() {
-            return ArrayUtils.toList(TableHelper.getSelectedIndices(selectionModel));
+            return TableHelper.selectedIndices(selectionModel).boxed().collect(Collectors.toList());
         }
 
         /**
@@ -896,14 +902,17 @@ public class LayerListDialog extends ToggleDialog implements DisplaySettingsChan
                 return;
             layer.removePropertyChangeListener(this);
             final int size = getRowCount();
-            final int[] rows = TableHelper.getSelectedIndices(selectionModel);
 
-            if (rows.length == 0 && size > 0) {
+            if (selectionModel.isSelectionEmpty() && size > 0) {
                 selectionModel.setSelectionInterval(size-1, size-1);
             }
             fireTableDataChanged();
             fireRefresh();
             ensureActiveSelected();
+            if (layer instanceof AbstractTileSourceLayer<?>) {
+                ((AbstractTileSourceLayer<?>) layer).getDisplaySettings().removeSettingsChangeListener(LayerListDialog.getInstance());
+            }
+
         }
 
         /**

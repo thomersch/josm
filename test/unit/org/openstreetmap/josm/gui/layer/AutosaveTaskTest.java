@@ -1,11 +1,11 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.layer;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.BufferedWriter;
 import java.io.File;
@@ -15,41 +15,35 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
-import java.util.Date;
 import java.util.List;
 
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.layer.AutosaveTask.AutosaveLayerInfo;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
+import org.openstreetmap.josm.testutils.annotations.Projection;
 
 /**
  * Unit tests for class {@link AutosaveTask}.
  */
-public class AutosaveTaskTest {
-    /**
-     * We need preferences and a home directory for this.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences().projection();
-
+/* We need preferences and a home directory for this. */
+@BasicPreferences
+@Projection
+class AutosaveTaskTest {
     private AutosaveTask task;
 
     /**
      * Setup test.
      * @throws IOException if autosave directory cannot be created
      */
-    @Before
+    @BeforeEach
     public void setUp() throws IOException {
         task = new AutosaveTask();
     }
@@ -58,7 +52,7 @@ public class AutosaveTaskTest {
      * Unit test to {@link AutosaveTask#getUnsavedLayersFiles} - empty case
      */
     @Test
-    public void testGetUnsavedLayersFilesEmpty() {
+    void testGetUnsavedLayersFilesEmpty() {
         assertTrue(task.getUnsavedLayersFiles().isEmpty());
     }
 
@@ -67,7 +61,7 @@ public class AutosaveTaskTest {
      * @throws IOException in case of I/O error
      */
     @Test
-    public void testGetUnsavedLayersFilesNotEmpty() throws IOException {
+    void testGetUnsavedLayersFilesNotEmpty() throws IOException {
         Files.createDirectories(task.getAutosaveDir());
         String autodir = task.getAutosaveDir().toString();
         File layer1 = Files.createFile(Paths.get(autodir, "layer1.osm")).toFile();
@@ -89,10 +83,10 @@ public class AutosaveTaskTest {
      * @throws IOException in case of I/O error
      */
     @Test
-    public void testGetNewLayerFile() throws IOException {
+    void testGetNewLayerFile() throws IOException {
         Files.createDirectories(task.getAutosaveDir());
         AutosaveLayerInfo<?> info = new AutosaveLayerInfo<>(new OsmDataLayer(new DataSet(), "layer", null));
-        Date fixed = Date.from(ZonedDateTime.of(2016, 1, 1, 1, 2, 3, 456_000_000, ZoneId.systemDefault()).toInstant());
+        Instant fixed = ZonedDateTime.of(2016, 1, 1, 1, 2, 3, 456_000_000, ZoneId.systemDefault()).toInstant();
 
         AutosaveTask.PROP_INDEX_LIMIT.put(5);
         for (int i = 0; i <= AutosaveTask.PROP_INDEX_LIMIT.get() + 2; i++) {
@@ -126,7 +120,7 @@ public class AutosaveTaskTest {
      * Tests if {@link AutosaveTask#schedule()} creates the directories.
      */
     @Test
-    public void testScheduleCreatesDirectories() {
+    void testScheduleCreatesDirectories() {
         try {
             task.schedule();
             assertTrue(task.getAutosaveDir().toFile().isDirectory());
@@ -139,7 +133,7 @@ public class AutosaveTaskTest {
      * Tests that {@link AutosaveTask#run()} saves every layer
      */
     @Test
-    public void testAutosaveIgnoresUnmodifiedLayer() {
+    void testAutosaveIgnoresUnmodifiedLayer() {
         OsmDataLayer layer = new OsmDataLayer(new DataSet(), "OsmData", null);
         MainApplication.getLayerManager().addLayer(layer);
         try {
@@ -161,7 +155,7 @@ public class AutosaveTaskTest {
      * Tests that {@link AutosaveTask#run()} saves every layer.
      */
     @Test
-    public void testAutosaveSavesLayer() {
+    void testAutosaveSavesLayer() {
         runAutosaveTaskSeveralTimes(1);
     }
 
@@ -169,7 +163,7 @@ public class AutosaveTaskTest {
      * Tests that {@link AutosaveTask#run()} saves every layer.
      */
     @Test
-    public void testAutosaveSavesLayerMultipleTimes() {
+    void testAutosaveSavesLayerMultipleTimes() {
         AutosaveTask.PROP_FILES_PER_LAYER.put(3);
         runAutosaveTaskSeveralTimes(5);
     }
@@ -198,7 +192,7 @@ public class AutosaveTaskTest {
      * @throws IOException in case of I/O error
      */
     @Test
-    public void testDiscardUnsavedLayersIgnoresCurrentInstance() throws IOException {
+    void testDiscardUnsavedLayersIgnoresCurrentInstance() throws IOException {
         runAutosaveTaskSeveralTimes(1);
         try (BufferedWriter file = Files.newBufferedWriter(
                 new File(task.getAutosaveDir().toFile(), "any_other_file.osm").toPath(), StandardCharsets.UTF_8)) {
@@ -214,7 +208,7 @@ public class AutosaveTaskTest {
      * Tests that {@link AutosaveTask#run()} handles duplicate layers
      */
     @Test
-    public void testAutosaveHandlesDuplicateNames() {
+    void testAutosaveHandlesDuplicateNames() {
         DataSet data1 = new DataSet();
         OsmDataLayer layer1 = new OsmDataLayer(data1, "OsmData", null);
         MainApplication.getLayerManager().addLayer(layer1);
@@ -242,7 +236,7 @@ public class AutosaveTaskTest {
      * @throws Exception in case of error
      */
     @Test
-    public void testRecoverLayers() throws Exception {
+    void testRecoverLayers() throws Exception {
         runAutosaveTaskSeveralTimes(1);
         try (BufferedWriter file = Files.newBufferedWriter(
                 new File(task.getAutosaveDir().toFile(), "any_other_file.osm").toPath(), StandardCharsets.UTF_8)) {

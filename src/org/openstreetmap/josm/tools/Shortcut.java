@@ -3,6 +3,7 @@ package org.openstreetmap.josm.tools;
 
 import static org.openstreetmap.josm.tools.I18n.tr;
 
+import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -20,7 +21,6 @@ import javax.swing.AbstractButton;
 import javax.swing.Action;
 import javax.swing.JMenu;
 import javax.swing.KeyStroke;
-import javax.swing.UIManager;
 import javax.swing.text.JTextComponent;
 
 import org.openstreetmap.josm.data.Preferences;
@@ -28,13 +28,13 @@ import org.openstreetmap.josm.spi.preferences.Config;
 
 /**
  * Global shortcut class.
- *
+ * <p>
  * Note: This class represents a single shortcut, contains the factory to obtain
  *       shortcut objects from, manages shortcuts and shortcut collisions, and
  *       finally manages loading and saving shortcuts to/from the preferences.
- *
+ * <p>
  * Action authors: You only need the {@link #registerShortcut} factory. Ignore everything else.
- *
+ * <p>
  * All: Use only public methods that are also marked to be used. The others are
  *      public so the shortcut preferences can use them.
  * @since 1084
@@ -246,7 +246,7 @@ public final class Shortcut {
      */
     public void setAccelerator(AbstractAction action) {
         if (getKeyStroke() != null) {
-            action.putValue(AbstractAction.ACCELERATOR_KEY, getKeyStroke());
+            action.putValue(Action.ACCELERATOR_KEY, getKeyStroke());
         }
     }
 
@@ -266,8 +266,8 @@ public final class Shortcut {
      */
     public static String getKeyText(KeyStroke keyStroke) {
         if (keyStroke == null) return "";
-        String modifText = KeyEvent.getModifiersExText(keyStroke.getModifiers());
-        if ("".equals(modifText)) return KeyEvent.getKeyText(keyStroke.getKeyCode());
+        String modifText = InputEvent.getModifiersExText(keyStroke.getModifiers());
+        if (modifText.isEmpty()) return KeyEvent.getKeyText(keyStroke.getKeyCode());
         return modifText + '+' + KeyEvent.getKeyText(keyStroke.getKeyCode());
     }
 
@@ -307,7 +307,7 @@ public final class Shortcut {
     // here we store our shortcuts
     private static final ShortcutCollection shortcuts = new ShortcutCollection();
 
-    private static class ShortcutCollection extends CopyOnWriteArrayList<Shortcut> {
+    private static final class ShortcutCollection extends CopyOnWriteArrayList<Shortcut> {
         private static final long serialVersionUID = 1L;
         @Override
         public boolean add(Shortcut shortcut) {
@@ -398,15 +398,15 @@ public final class Shortcut {
         initdone = true;
         int commandDownMask = PlatformManager.getPlatform().getMenuShortcutKeyMaskEx();
         groups.put(NONE, -1);
-        groups.put(MNEMONIC, KeyEvent.ALT_DOWN_MASK);
+        groups.put(MNEMONIC, InputEvent.ALT_DOWN_MASK);
         groups.put(DIRECT, 0);
-        groups.put(ALT, KeyEvent.ALT_DOWN_MASK);
-        groups.put(SHIFT, KeyEvent.SHIFT_DOWN_MASK);
+        groups.put(ALT, InputEvent.ALT_DOWN_MASK);
+        groups.put(SHIFT, InputEvent.SHIFT_DOWN_MASK);
         groups.put(CTRL, commandDownMask);
-        groups.put(ALT_SHIFT, KeyEvent.ALT_DOWN_MASK | KeyEvent.SHIFT_DOWN_MASK);
-        groups.put(ALT_CTRL, KeyEvent.ALT_DOWN_MASK | commandDownMask);
-        groups.put(CTRL_SHIFT, commandDownMask | KeyEvent.SHIFT_DOWN_MASK);
-        groups.put(ALT_CTRL_SHIFT, KeyEvent.ALT_DOWN_MASK | commandDownMask | KeyEvent.SHIFT_DOWN_MASK);
+        groups.put(ALT_SHIFT, InputEvent.ALT_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK);
+        groups.put(ALT_CTRL, InputEvent.ALT_DOWN_MASK | commandDownMask);
+        groups.put(CTRL_SHIFT, commandDownMask | InputEvent.SHIFT_DOWN_MASK);
+        groups.put(ALT_CTRL_SHIFT, InputEvent.ALT_DOWN_MASK | commandDownMask | InputEvent.SHIFT_DOWN_MASK);
 
         // (1) System reserved shortcuts
         PlatformManager.getPlatform().initSystemShortcuts();
@@ -433,6 +433,11 @@ public final class Shortcut {
     }
 
     // shutdown handling
+
+    /**
+     * Save shortcuts to preferences
+     * @return {@code true} if preferences were changed
+     */
     public static boolean savePrefs() {
         return shortcuts.stream()
                 .map(Shortcut::save)
@@ -485,7 +490,7 @@ public final class Shortcut {
         for (Character c : characters) {
             Integer code = (int) c;
             result.add(registerShortcut(
-                    new StringBuilder(shortText).append(" (").append(i).append(')').toString(), longText,
+                    shortText + " (" + i + ')', longText,
                     // Add extended keyCode if not a regular one
                     regularKeyCodes.containsKey(code) ? regularKeyCodes.get(code) :
                         isDeadKey(code) ? code : c | KeyboardUtils.EXTENDED_KEYCODE_FLAG,
@@ -501,7 +506,7 @@ public final class Shortcut {
 
     /**
      * Register a shortcut.
-     *
+     * <p>
      * Here you get your shortcuts from. The parameters are:
      *
      * @param shortText an ID. re-use a {@code "system:*"} ID if possible, else use something unique.
@@ -522,7 +527,7 @@ public final class Shortcut {
     // and now the workhorse. same parameters as above, just one more
     private static Shortcut registerShortcut(String shortText, String longText, int requestedKey, int requestedGroup, Integer modifier) {
         doInit();
-        Integer defaultModifier = findModifier(requestedGroup, modifier);
+        int defaultModifier = findModifier(requestedGroup, modifier);
         final Optional<Shortcut> existing = findShortcutByKeyOrShortText(requestedKey, defaultModifier, shortText);
         if (existing.isPresent() && shortText.equals(existing.get().getShortText())) {
             // a re-register? maybe a sc already read from the preferences?
@@ -536,7 +541,7 @@ public final class Shortcut {
                 // Try to reassign Meta to Ctrl
                 int newmodifier = findNewOsxModifier(requestedGroup);
                 if (!findShortcut(requestedKey, newmodifier).isPresent()) {
-                    Logging.info("Reassigning OSX shortcut '" + shortText + "' from Meta to Ctrl because of conflict with " + conflict);
+                    Logging.info("Reassigning macOS shortcut '" + shortText + "' from Meta to Ctrl because of conflict with " + conflict);
                     return reassignShortcut(shortText, longText, requestedKey, conflict, requestedGroup, requestedKey, newmodifier);
                 }
             }
@@ -562,10 +567,10 @@ public final class Shortcut {
 
     private static int findNewOsxModifier(int requestedGroup) {
         switch (requestedGroup) {
-            case CTRL: return KeyEvent.CTRL_DOWN_MASK;
-            case ALT_CTRL: return KeyEvent.ALT_DOWN_MASK | KeyEvent.CTRL_DOWN_MASK;
-            case CTRL_SHIFT: return KeyEvent.CTRL_DOWN_MASK | KeyEvent.SHIFT_DOWN_MASK;
-            case ALT_CTRL_SHIFT: return KeyEvent.ALT_DOWN_MASK | KeyEvent.CTRL_DOWN_MASK | KeyEvent.SHIFT_DOWN_MASK;
+            case CTRL: return InputEvent.CTRL_DOWN_MASK;
+            case ALT_CTRL: return InputEvent.ALT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK;
+            case CTRL_SHIFT: return InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK;
+            case ALT_CTRL_SHIFT: return InputEvent.ALT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK;
             default: return 0;
         }
     }
@@ -623,10 +628,10 @@ public final class Shortcut {
 
     /**
      * Returns the tooltip text plus the {@linkplain #getKeyText(KeyStroke) key stroke text}.
-     *
+     * <p>
      * Tooltips are usually not system dependent, unless the
      * JVM is too dumb to provide correct names for all the keys.
-     *
+     * <p>
      * Some LAFs don't understand HTML, such as the OSX LAFs.
      *
      * @param tooltip Tooltip text to display
@@ -639,9 +644,7 @@ public final class Shortcut {
                 .map(Shortcut::getKeyText)
                 .filter(text -> !text.isEmpty());
 
-        final String laf = UIManager.getLookAndFeel().getID();
-        // "Mac" is the native LAF, "Aqua" is Quaqua. Both use native menus with native tooltips.
-        final boolean canHtml = !(PlatformManager.isPlatformOsx() && (laf.contains("Mac") || laf.contains("Aqua")));
+        final boolean canHtml = PlatformManager.getPlatform().isHtmlSupportedInMenuTooltips();
 
         StringBuilder result = new StringBuilder(48);
         if (canHtml) {
@@ -663,5 +666,4 @@ public final class Shortcut {
         }
         return result.toString();
     }
-
 }

@@ -1,34 +1,27 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.osm;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
+import org.openstreetmap.josm.TestUtils;
 
 /**
  * Unit tests of the {@code AbstractPrimitive} class.
  */
-public class AbstractPrimitiveTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+class AbstractPrimitiveTest {
     /**
      * Unit test of {@link AbstractPrimitive#isUndeleted} method.
      */
     @Test
-    public void testIsUndeleted() {
+    void testIsUndeleted() {
         AbstractPrimitive p = new Node(1);
         p.setVisible(false);
         p.setDeleted(false);
@@ -59,7 +52,7 @@ public class AbstractPrimitiveTest {
      * Unit test of {@link AbstractPrimitive#hasTagDifferent} methods.
      */
     @Test
-    public void testHasTagDifferent() {
+    void testHasTagDifferent() {
         AbstractPrimitive p = new Node();
 
         assertFalse(p.hasTagDifferent("foo", "bar"));
@@ -76,5 +69,68 @@ public class AbstractPrimitiveTest {
         assertTrue(p.hasTagDifferent("foo", "bar"));
         assertTrue(p.hasTagDifferent("foo", "bar", "baz"));
         assertTrue(p.hasTagDifferent("foo", Collections.singleton("bar")));
+    }
+
+    /**
+     * Unit test of {@link AbstractPrimitive#putAll}
+     */
+    @Test
+    void testPutAllInsert() {
+        AbstractPrimitive p = new Node();
+        Map<String, String> tags = new HashMap<>();
+
+        tags.put("a", "va1");
+        tags.put("b", "vb1");
+        p.putAll(tags);
+        assertEquals("va1", p.get("a"));
+        assertEquals("vb1", p.get("b"));
+
+    }
+
+    /**
+     * Unit test of {@link AbstractPrimitive#putAll}
+     */
+    @Test
+    void testPutAllChange() {
+        AbstractPrimitive p = TestUtils.newNode("a=va1 b=vb1");
+        Map<String, String> tags = new HashMap<>();
+
+        tags.put("a", "va2");
+        p.putAll(tags);
+        assertEquals("va2", p.get("a"));
+        assertEquals("vb1", p.get("b"));
+    }
+
+    /**
+     * Unit test of {@link AbstractPrimitive#putAll}
+     */
+    @Test
+    void testPutAllChangeAndInsert() {
+        AbstractPrimitive p = TestUtils.newNode("a=va2 b=vb1");
+        Map<String, String> tags = new HashMap<>();
+
+        tags.put("b", "vb3");
+        tags.put("c", "vc3");
+        p.putAll(tags);
+        assertEquals("va2", p.get("a"));
+        assertEquals("vb3", p.get("b"));
+        assertEquals("vc3", p.get("c"));
+    }
+
+    /**
+     * Unit test of {@link AbstractPrimitive#putAll}
+     */
+    @Test
+    void testPutAllChangeAndRemove() {
+        AbstractPrimitive p = TestUtils.newNode("a=va2 b=vb3 c=vc3");
+        Map<String, String> tags = new HashMap<>();
+
+        tags.put("a", "va4");
+        tags.put("b", null);
+        tags.put(null, null);
+        p.putAll(tags);
+        assertEquals("va4", p.get("a"));
+        assertNull(p.get("b"));
+        assertEquals("vc3", p.get("c"));
     }
 }

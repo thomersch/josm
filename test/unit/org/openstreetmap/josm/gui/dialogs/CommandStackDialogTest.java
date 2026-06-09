@@ -1,11 +1,10 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.dialogs;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.command.Command;
 import org.openstreetmap.josm.data.UndoRedoHandler;
@@ -13,27 +12,22 @@ import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.MapFrame;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
+import org.openstreetmap.josm.testutils.annotations.Main;
+import org.openstreetmap.josm.testutils.annotations.Projection;
 
 /**
  * Unit tests of {@link CommandStackDialog} class.
  */
-public class CommandStackDialogTest {
-
-    /**
-     * Setup tests
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().main().projection();
-
+@BasicPreferences
+@Main
+@Projection
+class CommandStackDialogTest {
     /**
      * Unit test of {@link CommandStackDialog} class - empty case.
      */
     @Test
-    public void testCommandStackDialogEmpty() {
+    void testCommandStackDialogEmpty() {
         CommandStackDialog dlg = new CommandStackDialog();
         dlg.showDialog();
         assertTrue(dlg.isVisible());
@@ -45,7 +39,7 @@ public class CommandStackDialogTest {
      * Unit test of {@link CommandStackDialog} class - not empty case.
      */
     @Test
-    public void testCommandStackDialogNotEmpty() {
+    void testCommandStackDialogNotEmpty() {
         DataSet ds = new DataSet();
         OsmDataLayer layer = new OsmDataLayer(ds, "", null);
         MainApplication.getLayerManager().addLayer(layer);
@@ -78,7 +72,7 @@ public class CommandStackDialogTest {
      * Non-regression test for <a href="https://josm.openstreetmap.de/ticket/16911">Bug #16911</a>.
      */
     @Test
-    public void testCommandStackDialogUndoAddCommand() {
+    void testCommandStackDialogUndoAddCommand() {
         DataSet ds = new DataSet();
         OsmDataLayer layer = new OsmDataLayer(ds, "", null);
         MainApplication.getLayerManager().addLayer(layer);

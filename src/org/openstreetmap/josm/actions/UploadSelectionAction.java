@@ -13,6 +13,7 @@ import java.util.Set;
 import java.util.Stack;
 import java.util.stream.Collectors;
 
+import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 
 import org.openstreetmap.josm.data.APIDataSet;
@@ -22,6 +23,10 @@ import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Relation;
 import org.openstreetmap.josm.data.osm.Way;
+import org.openstreetmap.josm.data.osm.event.AbstractDatasetChangedEvent;
+import org.openstreetmap.josm.data.osm.event.DataSetListenerAdapter;
+import org.openstreetmap.josm.data.osm.event.DatasetEventManager;
+import org.openstreetmap.josm.data.osm.event.DatasetEventManager.FireMode;
 import org.openstreetmap.josm.data.osm.visitor.OsmPrimitiveVisitor;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.Notification;
@@ -33,13 +38,16 @@ import org.openstreetmap.josm.io.OsmTransferException;
 import org.openstreetmap.josm.tools.CheckParameterUtil;
 import org.openstreetmap.josm.tools.ExceptionUtil;
 import org.openstreetmap.josm.tools.Shortcut;
+import org.openstreetmap.josm.tools.Utils;
 import org.xml.sax.SAXException;
 
 /**
  * Uploads the current selection to the server.
  * @since 2250
  */
-public class UploadSelectionAction extends AbstractUploadAction {
+public class UploadSelectionAction extends AbstractUploadAction implements DataSetListenerAdapter.Listener {
+    private final transient DataSetListenerAdapter dataChangedAdapter = new DataSetListenerAdapter(this);
+
     /**
      * Constructs a new {@code UploadSelectionAction}.
      */
@@ -53,6 +61,7 @@ public class UploadSelectionAction extends AbstractUploadAction {
                 // CHECKSTYLE.ON: LineLength
                 true);
         setHelpId(ht("/Action/UploadSelection"));
+        DatasetEventManager.getInstance().addDatasetListener(dataChangedAdapter, FireMode.IMMEDIATELY);
     }
 
     @Override
@@ -95,7 +104,7 @@ public class UploadSelectionAction extends AbstractUploadAction {
         Collection<OsmPrimitive> modifiedCandidates = getModifiedPrimitives(editLayer.data.getAllSelected());
         Collection<OsmPrimitive> deletedCandidates = getDeletedPrimitives(editLayer.getDataSet());
         if (modifiedCandidates.isEmpty() && deletedCandidates.isEmpty()) {
-            new Notification(tr("No changes to upload.")).show();
+            new Notification(tr("No changes to upload.")).setIcon(JOptionPane.INFORMATION_MESSAGE).show();
             return;
         }
         UploadSelectionDialog dialog = new UploadSelectionDialog();
@@ -108,7 +117,7 @@ public class UploadSelectionAction extends AbstractUploadAction {
             return;
         Collection<OsmPrimitive> toUpload = new UploadHullBuilder().build(dialog.getSelectedPrimitives());
         if (toUpload.isEmpty()) {
-            new Notification(tr("No changes to upload.")).show();
+            new Notification(tr("No changes to upload.")).setIcon(JOptionPane.INFORMATION_MESSAGE).show();
             return;
         }
         uploadPrimitives(editLayer, toUpload);
@@ -134,10 +143,10 @@ public class UploadSelectionAction extends AbstractUploadAction {
      * deleted parents in order to avoid precondition violations on the server.
      *
      * @param layer the data layer from which we upload a subset of primitives
-     * @param toUpload the primitives to upload. If null or empty returns immediatelly
+     * @param toUpload the primitives to upload. If null or empty returns immediately
      */
     public void uploadPrimitives(OsmDataLayer layer, Collection<OsmPrimitive> toUpload) {
-        if (toUpload == null || toUpload.isEmpty()) return;
+        if (Utils.isEmpty(toUpload)) return;
         UploadHullBuilder builder = new UploadHullBuilder();
         toUpload = builder.build(toUpload);
         if (hasPrimitivesToDelete(toUpload)) {
@@ -318,5 +327,17 @@ public class UploadSelectionAction extends AbstractUploadAction {
                 lastException = e;
             }
         }
+    }
+
+    @Override
+    public void destroy() {
+        super.destroy();
+        DatasetEventManager.getInstance().removeDatasetListener(dataChangedAdapter);
+
+    }
+
+    @Override
+    public void processDatasetEvent(AbstractDatasetChangedEvent event) {
+        updateEnabledStateOnCurrentSelection();
     }
 }

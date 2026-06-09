@@ -7,15 +7,16 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Date;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
-import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 import org.openstreetmap.josm.command.AddPrimitivesCommand;
@@ -31,7 +32,6 @@ import org.openstreetmap.josm.data.validation.Test;
 import org.openstreetmap.josm.data.validation.TestError;
 import org.openstreetmap.josm.tools.LanguageInfo;
 import org.openstreetmap.josm.tools.Logging;
-import org.openstreetmap.josm.tools.date.DateUtils;
 
 /**
  * Class to write a collection of validator errors out to XML.
@@ -63,8 +63,9 @@ public class ValidatorErrorWriter extends XmlWriter {
      * @throws IOException in case of I/O error
      */
     public void write(Collection<TestError> validationErrors) throws IOException {
-        Set<Test> analysers = validationErrors.stream().map(TestError::getTester).collect(Collectors.toCollection(TreeSet::new));
-        String timestamp = DateUtils.fromDate(new Date());
+        Set<Test> analysers = validationErrors.stream().map(TestError::getTester)
+                .sorted(Comparator.comparing(t -> t.getSource().toString())).collect(Collectors.toCollection(LinkedHashSet::new));
+        String timestamp = Instant.now().toString();
 
         out.println("<?xml version='1.0' encoding='UTF-8'?>");
         out.println("<analysers generator='JOSM' timestamp='"+timestamp+"'>");
@@ -100,6 +101,7 @@ public class ValidatorErrorWriter extends XmlWriter {
                         osmWriter.writeLatLon(ll);
                         out.println("/>");
                         for (OsmPrimitive p : error.getPrimitives()) {
+                            out.print("    ");
                             p.accept(osmWriter);
                         }
                         out.println("      <text lang='" + XmlWriter.encode(lang) +
@@ -126,10 +128,10 @@ public class ValidatorErrorWriter extends XmlWriter {
 
                 out.println("  </analyser>");
             }
-        }
 
-        out.println("</analysers>");
-        out.flush();
+            out.println("</analysers>");
+            out.flush();
+        }
     }
 
     private static class ErrorClass {

@@ -85,7 +85,7 @@ public class SourceInfo<T extends ISourceCategory<?>, U extends ISourceType<?>, 
     /**
       * creation date of the source (in the form YYYY-MM-DD;YYYY-MM-DD, where
       * DD and MM as well as a second date are optional).
-      *
+      * <p>
       * Also used as time filter for WMS time={time} parameter (such as Sentinel-2)
       * @since 11570
       */
@@ -105,7 +105,7 @@ public class SourceInfo<T extends ISourceCategory<?>, U extends ISourceType<?>, 
     protected T category;
     /** category of the imagery (input string, not saved, copied or used otherwise except for error checks) */
     protected String categoryOriginalString;
-    /** when adding a field, also adapt the:
+    /* when adding a field, also adapt the:
      * {@link #ImageryPreferenceEntry ImageryPreferenceEntry object}
      * {@link #ImageryPreferenceEntry#ImageryPreferenceEntry(ImageryInfo) ImageryPreferenceEntry constructor}
      * {@link #ImageryInfo(ImageryPreferenceEntry) ImageryInfo constructor}
@@ -148,7 +148,7 @@ public class SourceInfo<T extends ISourceCategory<?>, U extends ISourceType<?>, 
     /**
      * Check if this object equals another SourceInfo with respect to the properties
      * that get written to the preference file.
-     *
+     * <p>
      * This should be overridden and called in subclasses.
      *
      * @param other the SourceInfo object to compare to
@@ -164,7 +164,7 @@ public class SourceInfo<T extends ISourceCategory<?>, U extends ISourceType<?>, 
                 Objects.equals(this.name, other.name) &&
                 Objects.equals(this.id, other.id) &&
                 Objects.equals(this.url, other.url) &&
-                Objects.equals(this.modTileFeatures, other.modTileFeatures) &&
+                this.modTileFeatures == other.modTileFeatures &&
                 Objects.equals(this.cookies, other.cookies) &&
                 Objects.equals(this.eulaAcceptanceRequired, other.eulaAcceptanceRequired) &&
                 Objects.equals(this.sourceType, other.sourceType) &&
@@ -218,13 +218,12 @@ public class SourceInfo<T extends ISourceCategory<?>, U extends ISourceType<?>, 
     @Override
     public String toString() {
         // Used in imagery preferences filtering, so must be efficient
-        return new StringBuilder(name)
-                .append('[').append(countryCode)
+        return name +
+                '[' + countryCode +
                 // appending the localized country in toString() allows us to filter imagery preferences table with it!
-                .append("] ('").append(getLocalizedCountry(countryCode)).append(')')
-                .append(" - ").append(url)
-                .append(" - ").append(sourceType)
-                .toString();
+                "] ('" + getLocalizedCountry(countryCode) + ')' +
+                " - " + url +
+                " - " + sourceType;
     }
 
     @Override
@@ -489,7 +488,7 @@ public class SourceInfo<T extends ISourceCategory<?>, U extends ISourceType<?>, 
      * @param <W> The type of active id to get
      * @param clazz The class of the type of id
      * @return sorted list of activated source IDs
-     * @since 13536, xxx (extracted)
+     * @since 13536, 16545 (extracted)
      */
     public static <W extends SourceInfo<?, ?, ?, ?>> Collection<String> getActiveIds(Class<W> clazz) {
         IPreferences pref = Config.getPref();
@@ -501,7 +500,7 @@ public class SourceInfo<T extends ISourceCategory<?>, U extends ISourceType<?>, 
             return Collections.emptyList();
         }
         return entries.stream()
-                .filter(prefEntry -> prefEntry.id != null && !prefEntry.id.isEmpty())
+                .filter(prefEntry -> !Utils.isEmpty(prefEntry.id))
                 .map(prefEntry -> prefEntry.id)
                 .sorted()
                 .collect(Collectors.toList());
@@ -516,7 +515,7 @@ public class SourceInfo<T extends ISourceCategory<?>, U extends ISourceType<?>, 
         StringBuilder res = new StringBuilder(getName());
         boolean html = false;
         String dateStr = getDate();
-        if (dateStr != null && !dateStr.isEmpty()) {
+        if (!Utils.isEmpty(dateStr)) {
             res.append("<br>").append(tr("Date of imagery: {0}", dateStr));
             html = true;
         }
@@ -525,7 +524,7 @@ public class SourceInfo<T extends ISourceCategory<?>, U extends ISourceType<?>, 
             html = true;
         }
         String desc = getDescription();
-        if (desc != null && !desc.isEmpty()) {
+        if (!Utils.isEmpty(desc)) {
             res.append("<br>").append(Utils.escapeReservedCharactersHTML(desc));
             html = true;
         }
@@ -729,7 +728,7 @@ public class SourceInfo<T extends ISourceCategory<?>, U extends ISourceType<?>, 
      * @since 9613
      */
     public void setNoTileHeaders(MultiMap<String, String> noTileHeaders) {
-       if (noTileHeaders == null || noTileHeaders.isEmpty()) {
+       if (Utils.isEmpty(noTileHeaders)) {
            this.noTileHeaders = null;
        } else {
             this.noTileHeaders = noTileHeaders.toMap();
@@ -749,7 +748,7 @@ public class SourceInfo<T extends ISourceCategory<?>, U extends ISourceType<?>, 
      * @since 9613
      */
     public void setNoTileChecksums(MultiMap<String, String> noTileChecksums) {
-        if (noTileChecksums == null || noTileChecksums.isEmpty()) {
+        if (Utils.isEmpty(noTileChecksums)) {
             this.noTileChecksums = null;
         } else {
             this.noTileChecksums = noTileChecksums.toMap();
@@ -769,7 +768,7 @@ public class SourceInfo<T extends ISourceCategory<?>, U extends ISourceType<?>, 
      * @since 8418
      */
     public void setMetadataHeaders(Map<String, String> metadataHeaders) {
-        if (metadataHeaders == null || metadataHeaders.isEmpty()) {
+        if (Utils.isEmpty(metadataHeaders)) {
             this.metadataHeaders = null;
         } else {
             this.metadataHeaders = metadataHeaders;

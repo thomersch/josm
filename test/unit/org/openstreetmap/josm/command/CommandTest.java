@@ -3,8 +3,7 @@ package org.openstreetmap.josm.command;
 
 import java.util.Arrays;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.DataSet;
@@ -15,29 +14,25 @@ import org.openstreetmap.josm.data.osm.User;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.gui.mappaint.ElemStyles;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
+import org.openstreetmap.josm.testutils.annotations.I18n;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import nl.jqno.equalsverifier.EqualsVerifier;
 import nl.jqno.equalsverifier.Warning;
 
 /**
  * Unit tests of {@link Command} class.
  */
+@I18n
+// We need prefs for nodes / data sets.
+@BasicPreferences
 public class CommandTest {
-
-    /**
-     * We need prefs for nodes / data sets.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences().i18n();
-
     /**
      * Unit test of methods {@link Command#equals} and {@link Command#hashCode}.
      */
     @Test
-    public void testEqualsContract() {
+    void testEqualsContract() {
         TestUtils.assumeWorkingEqualsVerifier();
         EqualsVerifier.forClass(Command.class).usingGetClass()
             .withPrefabValues(DataSet.class,
@@ -46,6 +41,8 @@ public class CommandTest {
                     User.createOsmUser(1, "foo"), User.createOsmUser(2, "bar"))
             .withPrefabValues(OsmDataLayer.class,
                 new OsmDataLayer(new DataSet(), "1", null), new OsmDataLayer(new DataSet(), "2", null))
+            .withPrefabValues(ElemStyles.class,
+                new ElemStyles(), new ElemStyles())
             .suppress(Warning.NONFINAL_FIELDS)
             .verify();
     }
@@ -79,10 +76,10 @@ public class CommandTest {
             layer = new OsmDataLayer(new DataSet(), "layer", null);
             MainApplication.getLayerManager().addLayer(layer);
 
-            existingNode = createNode(5);
-            existingNode2 = createNode(6);
+            existingNode = createNode(5, layer);
+            existingNode2 = createNode(6, layer);
 
-            existingWay = createWay(10, existingNode, existingNode2);
+            existingWay = createWay(10, layer, existingNode, existingNode2);
         }
 
         /**
@@ -91,10 +88,15 @@ public class CommandTest {
          * @return The node.
          */
         public Node createNode(long id) {
+            return createNode(id, layer);
+        }
+
+        public static Node createNode(long id, OsmDataLayer layer) {
             Node node = new Node();
             node.setOsmId(id, 1);
             node.setCoor(LatLon.ZERO);
             node.put("existing", "existing");
+            node.setReferrersDownloaded(true);
             layer.data.addPrimitive(node);
             return node;
         }
@@ -105,11 +107,16 @@ public class CommandTest {
          * @param nodes The nodes
          * @return The way.
          */
-        public Way createWay(int id, Node...nodes) {
+        public Way createWay(int id, Node... nodes) {
+            return createWay(id, layer, nodes);
+        }
+
+        public static Way createWay(int id, OsmDataLayer layer, Node... nodes) {
             Way way = new Way();
             way.setOsmId(id, 1);
             way.setNodes(Arrays.asList(nodes));
             way.put("existing", "existing");
+            way.setReferrersDownloaded(true);
             layer.data.addPrimitive(way);
             return way;
         }
@@ -120,12 +127,17 @@ public class CommandTest {
          * @param members The members
          * @return The relation.
          */
-        public Relation createRelation(int id, RelationMember...members) {
+        public Relation createRelation(int id, RelationMember... members) {
+            return createRelation(id, layer, members);
+        }
+        
+        public static Relation createRelation(int id, OsmDataLayer layer, RelationMember... members) {
             Relation relation = new Relation(id, 1);
             for (RelationMember member : members) {
                 relation.addMember(member);
             }
             relation.put("existing", "existing");
+            relation.setReferrersDownloaded(true);
             layer.data.addPrimitive(relation);
             return relation;
         }
@@ -145,7 +157,7 @@ public class CommandTest {
          * Creates the new test data and adds {@link #layer} to the layer manager.
          */
         public CommandTestDataWithRelation() {
-            existingRelation = createRelation(20, new RelationMember("node", existingNode), new RelationMember("way", existingWay));
+            existingRelation = createRelation(20, layer, new RelationMember("node", existingNode), new RelationMember("way", existingWay));
         }
     }
 }

@@ -1,17 +1,19 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.ImageData.ImageDataUpdateListener;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.gui.layer.geoimage.ImageEntry;
@@ -19,61 +21,66 @@ import org.openstreetmap.josm.gui.layer.geoimage.ImageEntry;
 import mockit.Expectations;
 import mockit.Mock;
 import mockit.MockUp;
-import mockit.Mocked;
-import mockit.Verifications;
 
 /**
  * Unit tests for class {@link ImageData}.
  */
-public class ImageDataTest {
+class ImageDataTest {
+
+    private static ImageEntry newImageEntry(String file, Instant exifTime) {
+        ImageEntry entry = new ImageEntry(new File(file));
+        entry.setExifTime(exifTime);
+        return entry;
+    }
 
     private static List<ImageEntry> getOneImage() {
         ArrayList<ImageEntry> list = new ArrayList<>();
-        list.add(new ImageEntry(new File("test")));
+        list.add(newImageEntry("test", null));
         return list;
     }
 
     @Test
-    public void testWithNullData() {
+    void testWithNullData() {
         ImageData data = new ImageData();
         assertEquals(0, data.getImages().size());
         assertNull(data.getSelectedImage());
-        data.selectFirstImage();
+        data.setSelectedImage(data.getFirstImage());
         assertNull(data.getSelectedImage());
-        data.selectLastImage();
+        data.setSelectedImage(data.getLastImage());
         assertNull(data.getSelectedImage());
-        data.selectFirstImage();
+        data.setSelectedImage(data.getFirstImage());
         assertNull(data.getSelectedImage());
-        data.selectPreviousImage();
+        data.setSelectedImage(data.getPreviousImage());
         assertNull(data.getSelectedImage());
         assertFalse(data.hasNextImage());
         assertFalse(data.hasPreviousImage());
-        data.removeSelectedImage();
+        data.removeSelectedImages();
     }
 
     @Test
-    public void testImageEntryWithImages() {
+    void testImageEntryWithImages() {
         assertEquals(1, new ImageData(getOneImage()).getImages().size());
     }
 
     @Test
-    public void testSortData(@Mocked Collections ignore) {
-        List<ImageEntry> list = getOneImage();
+    void testSortData() {
+        ImageEntry entry1 = newImageEntry("test1", Instant.ofEpochMilli(1_000_000));
+        ImageEntry entry2 = newImageEntry("test2", Instant.ofEpochMilli(2_000_000));
 
-        new ImageData(list);
+        ArrayList<ImageEntry> list = new ArrayList<>();
+        list.add(entry2);
+        list.add(entry1);
 
-        new Verifications() {{
-            Collections.sort(list);
-        }};
+        assertEquals(Arrays.asList(entry1, entry2), new ImageData(list).getImages());
     }
 
     @Test
-    public void testIsModifiedFalse() {
+    void testIsModifiedFalse() {
         assertFalse(new ImageData(getOneImage()).isModified());
     }
 
     @Test
-    public void testIsModifiedTrue() {
+    void testIsModifiedTrue() {
         List<ImageEntry> list = getOneImage();
 
         new Expectations(list.get(0)) {{
@@ -84,58 +91,58 @@ public class ImageDataTest {
     }
 
     @Test
-    public void testSelectFirstImage() {
+    void testSelectFirstImage() {
         List<ImageEntry> list = getOneImage();
 
         ImageData data = new ImageData(list);
-        data.selectFirstImage();
+        data.setSelectedImage(data.getFirstImage());
         assertEquals(1, data.getSelectedImages().size());
         assertEquals(list.get(0), data.getSelectedImages().get(0));
     }
 
     @Test
-    public void testSelectLastImage() {
+    void testSelectLastImage() {
         List<ImageEntry> list = getOneImage();
         list.add(new ImageEntry());
 
         ImageData data = new ImageData(list);
-        data.selectLastImage();
+        data.setSelectedImage(data.getLastImage());
         assertEquals(1, data.getSelectedImages().size());
         assertEquals(list.get(1), data.getSelectedImages().get(0));
     }
 
     @Test
-    public void testSelectNextImage() {
+    void testSelectNextImage() {
         List<ImageEntry> list = getOneImage();
 
         ImageData data = new ImageData(list);
         assertTrue(data.hasNextImage());
-        data.selectNextImage();
+        data.setSelectedImage(data.getNextImage());
         assertEquals(1, data.getSelectedImages().size());
         assertEquals(list.get(0), data.getSelectedImages().get(0));
         assertFalse(data.hasNextImage());
-        data.selectNextImage();
-        assertEquals(list.get(0), data.getSelectedImages().get(0));
+        data.setSelectedImage(data.getNextImage());
+        assertTrue(data.getSelectedImages().isEmpty());
     }
 
     @Test
-    public void testSelectPreviousImage() {
+    void testSelectPreviousImage() {
         List<ImageEntry> list = getOneImage();
         list.add(new ImageEntry());
 
         ImageData data = new ImageData(list);
         assertFalse(data.hasPreviousImage());
-        data.selectLastImage();
+        data.setSelectedImage(data.getLastImage());
         assertTrue(data.hasPreviousImage());
-        data.selectPreviousImage();
+        data.setSelectedImage(data.getPreviousImage());
         assertEquals(1, data.getSelectedImages().size());
         assertEquals(list.get(0), data.getSelectedImages().get(0));
-        data.selectPreviousImage();
-        assertEquals(list.get(0), data.getSelectedImages().get(0));
+        data.setSelectedImage(data.getPreviousImage());
+        assertTrue(data.getSelectedImages().isEmpty());
     }
 
     @Test
-    public void testSetSelectedImage() {
+    void testSetSelectedImage() {
         List<ImageEntry> list = getOneImage();
 
         ImageData data = new ImageData(list);
@@ -145,7 +152,7 @@ public class ImageDataTest {
     }
 
     @Test
-    public void testClearSelectedImages() {
+    void testClearSelectedImages() {
         List<ImageEntry> list = getOneImage();
 
         ImageData data = new ImageData(list);
@@ -155,7 +162,7 @@ public class ImageDataTest {
     }
 
     @Test
-    public void testSelectionListener() {
+    void testSelectionListener() {
         List<ImageEntry> list = getOneImage();
         ImageData data = new ImageData(list);
         ImageDataUpdateListener listener = new ImageDataUpdateListener() {
@@ -169,27 +176,17 @@ public class ImageDataTest {
             listener.selectedImageChanged(data); times = 1;
         }};
         data.addImageDataUpdateListener(listener);
-        data.selectFirstImage();
-        data.selectFirstImage();
+        data.setSelectedImage(data.getFirstImage());
+        data.setSelectedImage(data.getFirstImage());
     }
 
     @Test
-    public void testRemoveSelectedImage() {
-        List<ImageEntry> list = getOneImage();
-        ImageData data = new ImageData(list);
-        data.selectFirstImage();
-        data.removeSelectedImage();
-        assertEquals(0, data.getImages().size());
-        assertEquals(0, data.getSelectedImages().size());
-    }
-
-    @Test
-    public void testRemoveSelectedImages() {
+    void testRemoveSelectedImages() {
         List<ImageEntry> list = getOneImage();
         list.add(new ImageEntry());
 
         ImageData data = new ImageData(list);
-        data.selectFirstImage();
+        data.setSelectedImage(data.getFirstImage());
         data.addImageToSelection(list.get(1));
         data.removeSelectedImages();
         assertEquals(0, data.getImages().size());
@@ -197,13 +194,15 @@ public class ImageDataTest {
     }
 
     @Test
-    public void testRemoveSelectedImagesWithRemainingImages() {
+    void testRemoveSelectedImagesWithRemainingImages() {
         List<ImageEntry> list = getOneImage();
         list.add(new ImageEntry());
         list.add(new ImageEntry());
+        // The images cannot be equal -- otherwise, some code gives us the wrong result.
+        list.get(1).setPos(LatLon.NORTH_POLE);
 
         ImageData data = new ImageData(list);
-        data.selectLastImage();
+        data.setSelectedImage(data.getLastImage());
         data.addImageToSelection(list.get(1));
         data.removeSelectedImages();
         assertEquals(1, data.getImages().size());
@@ -211,12 +210,12 @@ public class ImageDataTest {
     }
 
     @Test
-    public void testSelectImageAfterRemove() {
+    void testSelectImageAfterRemove() {
         List<ImageEntry> list = getOneImage();
         list.add(new ImageEntry());
 
         ImageData data = new ImageData(list);
-        data.selectFirstImage();
+        data.setSelectedImage(data.getFirstImage());
         data.removeSelectedImages();
         assertEquals(1, data.getImages().size());
         assertEquals(1, data.getSelectedImages().size());
@@ -224,12 +223,12 @@ public class ImageDataTest {
     }
 
     @Test
-    public void testSelectImageAfterRemoveWhenTheLastIsSelected() {
+    void testSelectImageAfterRemoveWhenTheLastIsSelected() {
         List<ImageEntry> list = getOneImage();
         list.add(new ImageEntry());
 
         ImageData data = new ImageData(list);
-        data.selectLastImage();
+        data.setSelectedImage(data.getLastImage());
         data.removeSelectedImages();
         assertEquals(1, data.getImages().size());
         assertEquals(1, data.getSelectedImages().size());
@@ -237,7 +236,7 @@ public class ImageDataTest {
     }
 
     @Test
-    public void testRemoveSelectedImageTriggerListener() {
+    void testRemoveSelectedImageTriggerListener() {
         List<ImageEntry> list = getOneImage();
         list.add(new ImageEntry());
         ImageData data = new ImageData(list);
@@ -252,12 +251,12 @@ public class ImageDataTest {
             listener.selectedImageChanged(data); times = 2;
         }};
         data.addImageDataUpdateListener(listener);
-        data.selectFirstImage();
-        data.removeSelectedImage();
+        data.setSelectedImage(data.getFirstImage());
+        data.removeSelectedImages();
     }
 
     @Test
-    public void testRemoveSelectedImagesTriggerListener() {
+    void testRemoveSelectedImagesTriggerListener() {
         List<ImageEntry> list = getOneImage();
         list.add(new ImageEntry());
         ImageData data = new ImageData(list);
@@ -272,12 +271,12 @@ public class ImageDataTest {
             listener.selectedImageChanged(data); times = 2;
         }};
         data.addImageDataUpdateListener(listener);
-        data.selectFirstImage();
+        data.setSelectedImage(data.getFirstImage());
         data.removeSelectedImages();
     }
 
     @Test
-    public void testRemoveImageAndTriggerListener() {
+    void testRemoveImageAndTriggerListener() {
         List<ImageEntry> list = getOneImage();
         ImageData data = new ImageData(list);
         ImageDataUpdateListener listener = new ImageDataUpdateListener() {
@@ -296,7 +295,7 @@ public class ImageDataTest {
     }
 
     @Test
-    public void testMergeFrom() {
+    void testMergeFrom() {
         ImageEntry image = new ImageEntry(new File("test2"));
         List<ImageEntry> list1 = getOneImage();
         list1.add(image);
@@ -322,7 +321,7 @@ public class ImageDataTest {
     }
 
     @Test
-    public void testMergeFromSelectedImage() {
+    void testMergeFromSelectedImage() {
         ImageEntry image = new ImageEntry(new File("test2"));
         List<ImageEntry> list1 = getOneImage();
         list1.add(image);
@@ -339,7 +338,7 @@ public class ImageDataTest {
     }
 
     @Test
-    public void testAddImageToSelection() {
+    void testAddImageToSelection() {
         List<ImageEntry> list = getOneImage();
         list.add(new ImageEntry(new File("test2")));
 
@@ -352,26 +351,26 @@ public class ImageDataTest {
     }
 
     @Test
-    public void testRemoveImageToSelection() {
+    void testRemoveImageToSelection() {
         List<ImageEntry> list = getOneImage();
         list.add(new ImageEntry());
 
         ImageData data = new ImageData(list);
-        data.selectLastImage();
+        data.setSelectedImage(data.getLastImage());
         data.removeImageToSelection(list.get(1));
         assertEquals(0, data.getSelectedImages().size());
-        data.selectFirstImage();
+        data.setSelectedImage(data.getFirstImage());
         assertEquals(1, data.getSelectedImages().size());
     }
 
     @Test
-    public void testIsSelected() {
+    void testIsSelected() {
         List<ImageEntry> list = getOneImage();
         list.add(new ImageEntry(new File("test2")));
 
         ImageData data = new ImageData(list);
         assertFalse(data.isImageSelected(list.get(0)));
-        data.selectFirstImage();
+        data.setSelectedImage(data.getFirstImage());
         assertTrue(data.isImageSelected(list.get(0)));
         data.addImageToSelection(list.get(1));
         assertTrue(data.isImageSelected(list.get(0)));
@@ -380,7 +379,7 @@ public class ImageDataTest {
     }
 
     @Test
-    public void testActionsWithMultipleImagesSelected() {
+    void testActionsWithMultipleImagesSelected() {
         List<ImageEntry> list = getOneImage();
         list.add(new ImageEntry(new File("test2")));
         list.add(new ImageEntry(new File("test3")));
@@ -396,12 +395,12 @@ public class ImageDataTest {
         data.clearSelectedImage();
         assertEquals(0, data.getSelectedImages().size());
         data.addImageToSelection(list.get(1));
-        data.selectFirstImage();
+        data.setSelectedImage(data.getFirstImage());
         assertEquals(1, data.getSelectedImages().size());
     }
 
     @Test
-    public void testTriggerListenerWhenNewImageIsSelectedAndRemoved() {
+    void testTriggerListenerWhenNewImageIsSelectedAndRemoved() {
         List<ImageEntry> list = getOneImage();
         list.add(new ImageEntry());
         ImageData data = new ImageData(list);
@@ -416,13 +415,13 @@ public class ImageDataTest {
             listener.selectedImageChanged(data); times = 3;
         }};
         data.addImageDataUpdateListener(listener);
-        data.selectFirstImage();
+        data.setSelectedImage(data.getFirstImage());
         data.addImageToSelection(list.get(1));
         data.removeImageToSelection(list.get(0));
     }
 
     @Test
-    public void testUpdatePosition() {
+    void testUpdatePosition() {
         List<ImageEntry> list = getOneImage();
         ImageData data = new ImageData(list);
 
@@ -434,7 +433,7 @@ public class ImageDataTest {
     }
 
     @Test
-    public void testUpdateDirection() {
+    void testUpdateDirection() {
         List<ImageEntry> list = getOneImage();
         ImageData data = new ImageData(list);
 
@@ -446,7 +445,91 @@ public class ImageDataTest {
     }
 
     @Test
-    public void testTriggerListenerOnUpdate() {
+    void testUpdateHPosErr() {
+        List<ImageEntry> list = getOneImage();
+        ImageData data = new ImageData(list);
+
+        new Expectations(list.get(0)) {{
+            list.get(0).setExifHPosErr(1.23);
+            list.get(0).flagNewGpsData();
+        }};
+        data.updateImageHPosErr(list.get(0), 1.23);
+    }
+
+    @Test
+    void testUpdateGpsDatum() {
+        List<ImageEntry> list = getOneImage();
+        ImageData data = new ImageData(list);
+
+        new Expectations(list.get(0)) {{
+            list.get(0).setExifGpsDatum("WGS-84");
+            list.get(0).flagNewGpsData();
+        }};
+        data.updateImageExifGpsDatum(list.get(0), "WGS-84");
+    }
+
+    @Test
+    void testUpdateGpsTrack() {
+        List<ImageEntry> list = getOneImage();
+        ImageData data = new ImageData(list);
+
+        new Expectations(list.get(0)) {{
+            list.get(0).setExifGpsTrack(180.5);
+            list.get(0).flagNewGpsData();
+        }};
+        data.updateImageGpsTrack(list.get(0), 180.5);
+    }
+
+    @Test
+    void testUpdateGpsDop() {
+        List<ImageEntry> list = getOneImage();
+        ImageData data = new ImageData(list);
+
+        new Expectations(list.get(0)) {{
+            list.get(0).setExifGpsDop(1.9);
+            list.get(0).flagNewGpsData();
+        }};
+        data.updateImageExifGpsDop(list.get(0), 1.9);
+    }
+
+    @Test
+    void testUpdateGpsProcMethod() {
+        List<ImageEntry> list = getOneImage();
+        ImageData data = new ImageData(list);
+
+        new Expectations(list.get(0)) {{
+            list.get(0).setExifGpsProcMethod("GNSS RTK CORRELATION");
+            list.get(0).flagNewGpsData();
+        }};
+        data.updateImageExifGpsProcMethod(list.get(0), "GNSS RTK CORRELATION");
+    }
+
+    @Test
+    void testUpdateGpsDifferentialMode() {
+        List<ImageEntry> list = getOneImage();
+        ImageData data = new ImageData(list);
+
+        new Expectations(list.get(0)) {{
+            list.get(0).setGpsDiffMode(1);
+            list.get(0).flagNewGpsData();
+        }};
+        data.updateImageGpsDiffMode(list.get(0), 1);
+    }
+
+    @Test
+    void testUpdateGps2d3dMode() {
+        List<ImageEntry> list = getOneImage();
+        ImageData data = new ImageData(list);
+
+        new Expectations(list.get(0)) {{
+            list.get(0).setGps2d3dMode(3);
+            list.get(0).flagNewGpsData();
+        }};
+        data.updateImageGps2d3dMode(list.get(0), 3);
+    }
+
+    @Test
+    void testTriggerListenerOnUpdate() {
         List<ImageEntry> list = getOneImage();
         ImageData data = new ImageData(list);
 
@@ -466,7 +549,7 @@ public class ImageDataTest {
     }
 
     @Test
-    public void testManuallyTriggerUpdateListener() {
+    void testManuallyTriggerUpdateListener() {
         List<ImageEntry> list = getOneImage();
         ImageData data = new ImageData(list);
 

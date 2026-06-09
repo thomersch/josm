@@ -2,18 +2,18 @@
 package org.openstreetmap.josm.gui.tagging.presets.items;
 
 import java.awt.Dimension;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Set;
-import java.util.TreeSet;
+import java.awt.Insets;
+import java.awt.Rectangle;
+import java.util.stream.Collectors;
 
+import javax.swing.DefaultListModel;
+import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
-import javax.swing.ListCellRenderer;
-import javax.swing.ListModel;
 
-import org.openstreetmap.josm.data.osm.Tag;
+import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetItemGuiSupport;
+import org.openstreetmap.josm.gui.widgets.OrientationAction;
 import org.openstreetmap.josm.tools.GBC;
 
 /**
@@ -26,86 +26,88 @@ public class MultiSelect extends ComboMultiSelect {
      */
     public short rows; // NOSONAR
 
-    protected ConcatenatingJList list;
+    /** The model for the JList */
+    protected final DefaultListModel<PresetListEntry> model = new DefaultListModel<>();
+    /** The swing component */
+    protected final JList<PresetListEntry> list = new JList<>(model);
+
+    private void addEntry(PresetListEntry entry) {
+        if (!seenValues.containsKey(entry.value)) {
+            model.addElement(entry);
+            seenValues.put(entry.value, entry);
+        }
+    }
 
     @Override
-    protected void addToPanelAnchor(JPanel p, String def, boolean presetInitiallyMatches) {
-        list = new ConcatenatingJList(delimiter, presetListEntries.toArray(new PresetListEntry[0]));
-        component = list;
-        ListCellRenderer<PresetListEntry> renderer = getListCellRenderer();
+    protected boolean addToPanel(JPanel p, TaggingPresetItemGuiSupport support) {
+        initializeLocaleText(null);
+        usage = determineTextUsage(support.getSelected(), key);
+        seenValues.clear();
+        initListEntries();
+
+        model.clear();
+        // disable if the selected primitives have different values
+        list.setEnabled(usage.hasUniqueValue() || usage.unused());
+        String initialValue = getInitialValue(usage, support);
+
+        // Add values from the preset.
+        presetListEntries.forEach(this::addEntry);
+
+        // Add all values used in the selected primitives. This also adds custom values and makes
+        // sure we won't lose them.
+        usage = usage.splitValues(String.valueOf(delimiter));
+        for (String value: usage.map.keySet()) {
+            addEntry(new PresetListEntry(value, this));
+        }
+
+        // Select the values in the initial value.
+        if (!initialValue.isEmpty() && !DIFFERENT.equals(initialValue)) {
+            for (String value : initialValue.split(String.valueOf(delimiter), -1)) {
+                PresetListEntry e = new PresetListEntry(value, this);
+                addEntry(e);
+                int i = model.indexOf(e);
+                list.addSelectionInterval(i, i);
+            }
+        }
+
+        ComboMultiSelectListCellRenderer renderer = new ComboMultiSelectListCellRenderer(list, list.getCellRenderer(), 200, key);
         list.setCellRenderer(renderer);
-        list.setSelectedItem(getItemToSelect(def, presetInitiallyMatches, true));
+        JLabel label = addLabel(p);
+        label.setLabelFor(list);
         JScrollPane sp = new JScrollPane(list);
-        // if a number of rows has been specified in the preset,
-        // modify preferred height of scroll pane to match that row count.
+
         if (rows > 0) {
-            double height = renderer.getListCellRendererComponent(list,
-                    new PresetListEntry("x"), 0, false, false).getPreferredSize().getHeight() * rows;
-            sp.setPreferredSize(new Dimension((int) sp.getPreferredSize().getWidth(), (int) height));
+            list.setVisibleRowCount(rows);
+            // setVisibleRowCount() only works when all cells have the same height, but sometimes we
+            // have icons of different sizes. Calculate the size of the first {@code rows} entries
+            // and size the scrollpane accordingly.
+            Rectangle r = list.getCellBounds(0, Math.min(rows, model.size() - 1));
+            if (r != null) {
+                Insets insets = list.getInsets();
+                r.width += insets.left + insets.right;
+                r.height += insets.top + insets.bottom;
+                insets = sp.getInsets();
+                r.width += insets.left + insets.right;
+                r.height += insets.top + insets.bottom;
+                sp.setPreferredSize(new Dimension(r.width, r.height));
+            }
         }
-        p.add(sp, GBC.eol().fill(GBC.HORIZONTAL));
+        p.add(sp, GBC.eol().fill(GBC.HORIZONTAL)); // NOSONAR
+
+        list.addListSelectionListener(l -> {
+            if (!l.getValueIsAdjusting()) {
+                support.fireItemValueModified(this, key, getSelectedItem().value);
+            }
+        });
+        list.setToolTipText(getKeyTooltipText());
+        list.applyComponentOrientation(OrientationAction.getValueOrientation(key));
+
+        return true;
     }
 
     @Override
-    protected Object getSelectedItem() {
-        return list.getSelectedItem();
-    }
-
-    @Override
-    public void addCommands(List<Tag> changedTags) {
-        // Do not create any commands if list has been disabled because of an unknown value (fix #8605)
-        if (list.isEnabled()) {
-            super.addCommands(changedTags);
-        }
-    }
-
-    /**
-     * Class that allows list values to be assigned and retrieved as a comma-delimited
-     * string (extracted from TaggingPreset)
-     */
-    private static class ConcatenatingJList extends JList<PresetListEntry> {
-        private final char delimiter;
-
-        protected ConcatenatingJList(char del, PresetListEntry... o) {
-            super(o);
-            delimiter = del;
-        }
-
-        public void setSelectedItem(Object o) {
-            if (o == null) {
-                clearSelection();
-            } else {
-                String s = o.toString();
-                Set<String> parts = new TreeSet<>(Arrays.asList(s.split(String.valueOf(delimiter), -1)));
-                ListModel<PresetListEntry> lm = getModel();
-                int[] intParts = new int[lm.getSize()];
-                int j = 0;
-                for (int i = 0; i < lm.getSize(); i++) {
-                    final String value = lm.getElementAt(i).value;
-                    if (parts.contains(value)) {
-                        intParts[j++] = i;
-                        parts.remove(value);
-                    }
-                }
-                setSelectedIndices(Arrays.copyOf(intParts, j));
-                // check if we have actually managed to represent the full
-                // value with our presets. if not, cop out; we will not offer
-                // a selection list that threatens to ruin the value.
-                setEnabled(parts.isEmpty());
-            }
-        }
-
-        public String getSelectedItem() {
-            ListModel<PresetListEntry> lm = getModel();
-            int[] si = getSelectedIndices();
-            StringBuilder builder = new StringBuilder();
-            for (int i = 0; i < si.length; i++) {
-                if (i > 0) {
-                    builder.append(delimiter);
-                }
-                builder.append(lm.getElementAt(si[i]).value);
-            }
-            return builder.toString();
-        }
+    protected PresetListEntry getSelectedItem() {
+        return new PresetListEntry(list.getSelectedValuesList()
+            .stream().map(e -> e.value).distinct().sorted().collect(Collectors.joining(String.valueOf(delimiter))), this);
     }
 }

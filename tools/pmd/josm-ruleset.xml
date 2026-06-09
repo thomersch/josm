@@ -2,64 +2,57 @@
 <ruleset name="JOSM ruleset"
     xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-    xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 http://pmd.sourceforge.net/ruleset_2_0_0.xsd">
- 
+    xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+
   <description>JOSM PMD ruleset</description>
- 
+  <!-- Generated files -->
+  <exclude-pattern>.*/org/openstreetmap/josm/gui/mappaint/mapcss/parsergen/.*</exclude-pattern>
+
   <rule ref="category/java/bestpractices.xml">
-    <exclude name="AccessorClassGeneration"/>
-    <exclude name="AccessorMethodGeneration"/>
     <exclude name="ArrayIsStoredDirectly"/>
     <exclude name="AvoidPrintStackTrace"/>
     <exclude name="AvoidReassigningLoopVariables"/>
     <exclude name="AvoidReassigningParameters"/>
     <exclude name="AvoidStringBufferField"/>
-    <exclude name="AvoidUsingHardCodedIP"/>
     <exclude name="ConstantsInInterface"/>
-    <exclude name="ForLoopCanBeForeach"/>
-    <exclude name="ForLoopVariableCount"/>
     <exclude name="GuardLogStatement"/>
-    <exclude name="JUnit4TestShouldUseAfterAnnotation"/>
-    <exclude name="JUnit4TestShouldUseTestAnnotation"/>
+    <exclude name="JUnit4TestShouldUseTestAnnotation" reason="False positive in src/org/openstreetmap/josm/data/validation/Test.java"/>
+    <exclude name="LiteralsFirstInComparisons" reason="Introduced in 6.24, some positives in source code at this time. Replaces PositionLiteralsFirstInComparisons."/>
     <exclude name="LooseCoupling"/>
     <exclude name="MethodReturnsInternalArray"/>
     <exclude name="OneDeclarationPerLine"/>
-    <exclude name="PositionLiteralsFirstInComparisons"/>
-    <exclude name="PreserveStackTrace"/>
     <exclude name="ReplaceHashtableWithMap"/>
     <exclude name="SwitchStmtsShouldHaveDefault"/>
     <exclude name="SystemPrintln"/>
-    <exclude name="UnusedFormalParameter"/>
+    <exclude name="UnusedAssignment" reason="Introduced in 6.26, some number of positives in source code at this time"/>
+    <exclude name="UnusedPrivateMethod" reason="Broken since PMD 6.33, see https://github.com/pmd/pmd/issues/3468"/>
+    <exclude name="UnusedPrivateField" reason="Broken in 7.2.x"/>
     <exclude name="UseVarargs"/>
   </rule>
-  <rule ref="category/java/bestpractices.xml/PreserveStackTrace">
+  <rule ref="category/java/bestpractices.xml/ForLoopCanBeForeach">
     <properties>
-        <property name="violationSuppressXPath" value="//PrimaryExpression/PrimaryPrefix/Name[@Image='BugReport.intercept']"/>
+      <!-- The list is expanded during iteration -->
+      <property name="violationSuppressXPath" value="//ClassDeclaration[@SimpleName='PurgeCommand']/ClassBody/MethodDeclaration[@Name='build']/Block/IfStatement/Block/ForStatement/InfixExpression/MethodCall/VariableAccess[@Name='relLst']"/>
     </properties>
   </rule>
-  <rule ref="category/java/bestpractices.xml/UnusedFormalParameter">
+  <rule ref="category/java/bestpractices.xml/AvoidUsingHardCodedIP">
     <properties>
-        <property name="violationSuppressXPath" value="//Annotation[MarkerAnnotation/Name/@Image='Deprecated']/..[MethodDeclaration|ConstructorDeclaration]"/>
+      <property name="violationSuppressXPath" value="//ClassDeclaration[@SimpleName='DefaultProxySelector' or @SimpleName='RemoteControl']"/>
     </properties>
   </rule>
   <rule ref="category/java/codestyle.xml">
-    <exclude name="AbstractNaming"/>
     <exclude name="AtLeastOneConstructor"/>
-    <exclude name="AvoidFinalLocalVariable"/>
-    <exclude name="AvoidPrefixingMethodParameters"/>
     <exclude name="BooleanGetMethodName"/>
     <exclude name="CallSuperInConstructor"/>
     <exclude name="ClassNamingConventions"/>
     <exclude name="CommentDefaultAccessModifier"/>
     <exclude name="ConfusingTernary"/>
     <exclude name="ControlStatementBraces"/>
-    <exclude name="DefaultPackage"/>
+    <!-- EmptyControlStatement is not configurable, so the behavior of the old excludes of EmptyIfStmt/EmptyWhileStmt (errorprone.xml) while getting new functionality cannot be done -->
+    <exclude name="EmptyControlStatement"/>
     <exclude name="EmptyMethodInAbstractClassShouldBeAbstract"/>
     <exclude name="FieldDeclarationsShouldBeAtStartOfClass"/>
     <exclude name="FieldNamingConventions"/>
-    <exclude name="ForLoopsMustUseBraces"/>
-    <exclude name="IfElseStmtsMustUseBraces"/>
-    <exclude name="IfStmtsMustUseBraces"/>
     <exclude name="LinguisticNaming"/>
     <exclude name="LocalVariableCouldBeFinal"/>
     <exclude name="LongVariable"/>
@@ -72,41 +65,39 @@
     <exclude name="ShortMethodName"/>
     <exclude name="ShortVariable"/>
     <exclude name="TooManyStaticImports"/>
+    <exclude name="UnnecessaryCast" reason="Introduced in 6.24, some positives in source code at this time"/>
     <exclude name="UnnecessaryConstructor"/>
-    <exclude name="UselessParentheses"/>
     <exclude name="UseUnderscoresInNumericLiterals"/>
-    <exclude name="VariableNamingConventions"/>
-    <exclude name="WhileLoopsMustUseBraces"/>
+    <exclude name="UselessParentheses"/>
+    <exclude name="UnnecessaryFullyQualifiedName" reason="7.x increased sensitivity (250 new issues), and it now warns on qualified names inside a class, e.g. ClassName.STATIC_VARIABLE. Should probably be fixed in our source code."/>
   </rule>
   <rule ref="category/java/codestyle.xml/ShortMethodName">
     <properties>
-        <property name="violationSuppressXPath" value="//MethodDeclarator[@Image='at' or @Image='ht' or @Image='of' or @Image='ok' or @Image='tr']
-          | //MethodDeclarator/../../Annotation/MarkerAnnotation/Name[@Image='Deprecated']
-          | //MethodDeclarator/../../../..[@Image='LambertConformalConic']"/>
+      <property name="violationSuppressXPath" value="//MethodDeclaration[@Name='at' or @Name='ht' or @Name='of' or @Name='ok' or @Name='tr']"/>
     </properties>
   </rule>
   <rule ref="category/java/codestyle.xml/MethodNamingConventions">
     <properties>
-        <property name="violationSuppressXPath" value="//MethodDeclarator/../../../..[@Image='Functions' or @Image='PseudoClasses' or @Image='Role' or @Image='TaggingPreset']"/>
+      <property name="violationSuppressXPath" value="//ClassDeclaration[@SimpleName='Functions' or @SimpleName='PseudoClasses' or @SimpleName='Role' or @SimpleName='TaggingPreset' or @SimpleName='RegionSpecific']"/>
     </properties>
   </rule>
   <rule ref="category/java/codestyle.xml/FieldNamingConventions">
     <properties>
         <property name="enumConstantPattern" value="[A-Za-z][A-Za-z_0-9]*"/>
-        <property name="violationSuppressXPath" value="//FieldDeclaration[@Public='true']
-          | //FieldDeclaration/../Annotation/MarkerAnnotation/Name[@Image='pref']
-          | //FieldDeclaration/Type/ReferenceType/ClassOrInterfaceType[@Image!='Boolean' and 
-                                                                       @Image!='Byte' and 
-                                                                       @Image!='Character' and 
-                                                                       @Image!='Class' and 
-                                                                       @Image!='Double' and 
-                                                                       @Image!='Enum' and 
-                                                                       @Image!='Float' and 
-                                                                       @Image!='Integer' and
-                                                                       @Image!='Long' and
-                                                                       @Image!='Number' and
-                                                                       @Image!='Short' and 
-                                                                       @Image!='String' ]"/>
+        <property name="violationSuppressXPath" value="//FieldDeclaration[@Visibility='public']
+          | //FieldDeclaration/ModifierList/Annotation[@SimpleName='StructEntry']
+          | //FieldDeclaration/ClassType[@SimpleName!='Boolean' and
+                                         @SimpleName!='Byte' and
+                                         @SimpleName!='Character' and
+                                         @SimpleName!='Class' and
+                                         @SimpleName!='Double' and
+                                         @SimpleName!='Enum' and
+                                         @SimpleName!='Float' and
+                                         @SimpleName!='Integer' and
+                                         @SimpleName!='Long' and
+                                         @SimpleName!='Number' and
+                                         @SimpleName!='Short' and
+                                         @SimpleName!='String' ]"/>
     </properties>
   </rule>
   <rule ref="category/java/codestyle.xml/LongVariable">
@@ -115,27 +106,29 @@
     </properties>
   </rule>
   <rule ref="category/java/design.xml">
-    <exclude name="AvoidCatchingGenericException"/>
+    <exclude name="PublicMemberInNonPublicType" reason="Fixing these issues does not improve the code quality, rather the opposite"/>
     <exclude name="AvoidDeeplyNestedIfStmts"/>
     <exclude name="AvoidRethrowingException"/>
+    <exclude name="AvoidUncheckedExceptionsInSignatures" reason="We disagree with the reasoning for making this an issue; a strength of Java is verbosity, and warning users about adding `@throws &lt;? extends RuntimeException&gt;` is probably a bad long-term idea."/>
+    <exclude name="CognitiveComplexity" reason="Introduced in 6.35, some number of positives in source code at this time"/>
     <exclude name="CollapsibleIfStatements"/>
     <exclude name="CouplingBetweenObjects"/>
     <exclude name="CyclomaticComplexity"/>
     <exclude name="DataClass"/>
     <exclude name="ExceptionAsFlowControl"/>
-    <exclude name="ExcessiveClassLength"/>
     <exclude name="ExcessiveImports"/>
-    <exclude name="ExcessiveMethodLength"/>
     <exclude name="ExcessiveParameterList"/>
     <exclude name="ExcessivePublicCount"/>
     <exclude name="GodClass"/>
     <exclude name="ImmutableField"/>
     <exclude name="LawOfDemeter"/>
     <exclude name="LoosePackageCoupling"/>
+    <exclude name="MutableStaticState" reason="Introduced in 6.35, some number of positives in source code at this time"/>
     <exclude name="NcssCount"/>
     <exclude name="NPathComplexity"/>
     <exclude name="SignatureDeclareThrowsException"/>
     <exclude name="SimplifiedTernary"/>
+    <exclude name="SimplifyBooleanReturns" reason="Increased sensitivity in 7.x; should be fixed in our source code." />
     <exclude name="SimplifyConditional"/>
     <exclude name="SingularField"/>
     <exclude name="SwitchDensity"/>
@@ -147,11 +140,12 @@
   </rule>
   <rule ref="category/java/design.xml/SignatureDeclareThrowsException">
     <properties>
-        <property name="violationSuppressXPath" value="//MethodDeclaration/../Annotation/MarkerAnnotation/Name[@Image='Override']"/>
+        <property name="violationSuppressXPath" value="//MethodDeclaration/ModifierList/Annotation[@SimpleName='Override']"/>
         <property name="IgnoreJUnitCompletely" value="true"/>
     </properties>
   </rule>
   <rule ref="category/java/errorprone.xml">
+    <exclude name="AvoidCatchingGenericException"/>
     <exclude name="AssignmentInOperand"/>
     <exclude name="AssignmentToNonFinalStatic"/>
     <exclude name="AvoidBranchingStatementAsLastInLoop"/>
@@ -161,34 +155,34 @@
     <exclude name="AvoidFieldNameMatchingTypeName"/>
     <exclude name="AvoidInstanceofChecksInCatchClause"/>
     <exclude name="AvoidLiteralsInIfCondition"/>
-    <exclude name="BeanMembersShouldSerialize"/>
-    <exclude name="CloneThrowsCloneNotSupportedException"/>
-    <!-- <exclude name="CloseResource"/> -->
     <exclude name="CompareObjectsWithEquals"/>
+    <exclude name="ConfusingArgumentToVarargsMethod" reason="Introduced in 7.1.0; there are false positives in source code at this time."/>
     <exclude name="ConstructorCallsOverridableMethod"/>
-    <exclude name="DataflowAnomalyAnalysis"/>
-    <exclude name="DoNotCallSystemExit"/>
+    <exclude name="DoNotTerminateVM"/>
     <exclude name="DontImportSun"/>
-    <exclude name="EmptyIfStmt"/>
-    <exclude name="EmptyWhileStmt"/>
-    <exclude name="MissingBreakInSwitch"/>
+    <exclude name="ImplicitSwitchFallThrough"/>
     <exclude name="MissingSerialVersionUID"/>
     <exclude name="MissingStaticMethodInNonInstantiatableClass"/>
+    <exclude name="NonSerializableClass"/>
     <exclude name="NonStaticInitializer"/>
     <exclude name="NullAssignment"/>
-    <exclude name="ReturnEmptyArrayRatherThanNull"/>
+    <exclude name="ReturnEmptyCollectionRatherThanNull" reason="Introduced in 6.37, there are positives in source code at this time"/>
     <exclude name="SimpleDateFormatNeedsLocale"/>
     <exclude name="SingleMethodSingleton"/>
     <exclude name="SingletonClassReturningNewInstance"/>
     <exclude name="TestClassWithoutTestCases"/>
     <exclude name="UseProperClassLoader"/>
   </rule>
+  <rule ref="category/java/errorprone.xml/AvoidAccessibilityAlteration">
+    <properties>
+      <property name="violationSuppressXPath" value="//ClassDeclaration[@SimpleName='ReflectionUtils']"/>
+    </properties>
+  </rule>
   <rule ref="category/java/performance.xml">
     <exclude name="AvoidInstantiatingObjectsInLoops"/>
-    <exclude name="AvoidUsingShortType"/>
     <exclude name="ConsecutiveLiteralAppends"/>
     <exclude name="InefficientEmptyStringCheck"/>
-    <exclude name="SimplifyStartsWith"/>
+    <exclude name="InsufficientStringBufferDeclaration" reason="PMD 6.40 has a bug where it doesn't properly count appended strings in if statements."/>
     <exclude name="TooFewBranchesForASwitchStatement"/>
     <exclude name="UseArrayListInsteadOfVector"/>
     <exclude name="UselessStringValueOf"/>

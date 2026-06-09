@@ -22,6 +22,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.openstreetmap.josm.tools.Logging;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * TagCollection is a collection of tags which can be used to manipulate
@@ -63,9 +64,7 @@ public class TagCollection implements Iterable<Tag>, Serializable {
     public static TagCollection from(Tagged primitive) {
         TagCollection tags = new TagCollection();
         if (primitive != null) {
-            for (String key: primitive.keySet()) {
-                tags.add(new Tag(key, primitive.get(key)));
-            }
+            primitive.visitKeys((p, key, value) -> tags.add(new Tag(key, value)));
         }
         return tags;
     }
@@ -119,7 +118,7 @@ public class TagCollection implements Iterable<Tag>, Serializable {
      */
     public static TagCollection commonToAllPrimitives(Collection<? extends Tagged> primitives) {
         TagCollection tags = new TagCollection();
-        if (primitives == null || primitives.isEmpty()) return tags;
+        if (Utils.isEmpty(primitives)) return tags;
         // initialize with the first
         tags.add(TagCollection.from(primitives.iterator().next()));
 
@@ -161,7 +160,7 @@ public class TagCollection implements Iterable<Tag>, Serializable {
     }
 
     /**
-     * Creates a clone of the tag collection <code>other</code>. Creats an empty
+     * Creates a clone of the tag collection <code>other</code>. Creates an empty
      * tag collection if <code>other</code> is null.
      *
      * @param other the other collection
@@ -566,7 +565,7 @@ public class TagCollection implements Iterable<Tag>, Serializable {
         if (primitive == null) return;
         ensureApplicableToPrimitive();
         for (Tag tag: tags.keySet()) {
-            if (tag.getValue() == null || tag.getValue().isEmpty()) {
+            if (Utils.isEmpty(tag.getValue())) {
                 primitive.remove(tag.getKey());
             } else {
                 primitive.put(tag.getKey(), tag.getValue());
@@ -735,7 +734,7 @@ public class TagCollection implements Iterable<Tag>, Serializable {
     }
 
     /**
-     * Get a stram for the given key.
+     * Get a stream for the given key.
      * @param key The key
      * @return The stream. An empty stream if key is <code>null</code>
      */

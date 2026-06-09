@@ -1,40 +1,33 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.conflict.tags;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.regex.PatternSyntaxException;
 import java.util.stream.Collectors;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.osm.Tag;
 import org.openstreetmap.josm.data.osm.TagCollection;
 import org.openstreetmap.josm.gui.conflict.tags.TagConflictResolutionUtil.AutomaticChoice;
 import org.openstreetmap.josm.gui.conflict.tags.TagConflictResolutionUtil.AutomaticChoiceGroup;
 import org.openstreetmap.josm.gui.conflict.tags.TagConflictResolutionUtil.AutomaticCombine;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
 /**
  * Unit tests of {@link TagConflictResolutionUtil} class.
  */
-public class TagConflictResolutionUtilTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+@BasicPreferences
+class TagConflictResolutionUtilTest {
     private static HashSet<String> newHashSet(String... values) {
         return Arrays.stream(values).collect(Collectors.toCollection(HashSet::new));
     }
@@ -44,7 +37,7 @@ public class TagConflictResolutionUtilTest {
      * assume predefined rules for US TIGER and French Cadastre.
      */
     @Test
-    public void testApplyAutomaticTagConflictResolution() {
+    void testApplyAutomaticTagConflictResolution() {
         // Check that general tag conflict are not resolved
         TagCollection tc = new TagCollection();
         tc.add(new Tag("building", "school"));
@@ -105,14 +98,15 @@ public class TagConflictResolutionUtilTest {
     /**
      * Unit tests of {@link AutomaticCombine} class.
      */
-    public static class AutomaticCombineTest {
+    @Nested
+    class AutomaticCombineTest {
 
         /**
          * Return AutomaticCombine instantiated with the two possible constructors.
          * @param ac a model for the constructed object.
          * @return AutomaticCombine object constructed with the two different constructors.
          */
-        private static List<AutomaticCombine> differentlyConstructed(AutomaticCombine ac) {
+        private List<AutomaticCombine> differentlyConstructed(AutomaticCombine ac) {
             AutomaticCombine fullyConstructed = new AutomaticCombine(ac.key, ac.description, ac.isRegex, ac.separator, ac.sort);
             AutomaticCombine defaultConstructed = new AutomaticCombine();
             defaultConstructed.key = ac.key;
@@ -124,17 +118,10 @@ public class TagConflictResolutionUtilTest {
         }
 
         /**
-         * Setup test.
-         */
-        @Rule
-        @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-        public JOSMTestRules test = new JOSMTestRules();
-
-        /**
          * Unit test of {@link AutomaticCombine#matchesKey} with empty key.
          */
         @Test
-        public void testMatchesKeyEmptyKey() {
+        void testMatchesKeyEmptyKey() {
             for (AutomaticCombine resolver: differentlyConstructed(new AutomaticCombine("", "random description", true, ";", null))) {
                 assertFalse(resolver.matchesKey("a"));
                 assertTrue(resolver.matchesKey(""));
@@ -145,7 +132,7 @@ public class TagConflictResolutionUtilTest {
          * Unit test of {@link AutomaticCombine#matchesKey} when regex not used.
          */
         @Test
-        public void testMatchesKeyNotRegex() {
+        void testMatchesKeyNotRegex() {
             for (AutomaticCombine resolver: differentlyConstructed(new AutomaticCombine(
                     "keyname", "random description", false, "|", null))) {
                 assertFalse(resolver.matchesKey("key"));
@@ -160,7 +147,7 @@ public class TagConflictResolutionUtilTest {
          * Unit test of {@link AutomaticCombine#matchesKey} when regex used.
          */
         @Test
-        public void testMatchesKeyRegex() {
+        void testMatchesKeyRegex() {
             for (AutomaticCombine resolver: differentlyConstructed(new AutomaticCombine("test[45].*", "", true, ";", "Integer"))) {
                 assertFalse(resolver.matchesKey("key"));
                 assertFalse(resolver.matchesKey("test[45].*"));
@@ -172,7 +159,7 @@ public class TagConflictResolutionUtilTest {
          * Unit test of {@link AutomaticCombine} with invalid regex.
          */
         @Test
-        public void testInvalidRegex() {
+        void testInvalidRegex() {
             for (AutomaticCombine resolver: differentlyConstructed(new AutomaticCombine("invalidregex.(]", "", false, ";", null))) {
                 // Should not raise exception if the resolver.isRexEx == false:
                 assertTrue(resolver.matchesKey("invalidregex.(]"));
@@ -187,41 +174,44 @@ public class TagConflictResolutionUtilTest {
         /**
          * Unit test of {@link AutomaticCombine} with invalid regex.
          */
-        @Test(expected = java.util.regex.PatternSyntaxException.class)
-        public void testInvalidRegexExceptionDefaultConstructed() {
+        @Test
+        void testInvalidRegexExceptionDefaultConstructed() {
             AutomaticCombine resolver = new AutomaticCombine("AB.(]", "", true, ";", null);
-            resolver.matchesKey("AB");
+            assertThrows(PatternSyntaxException.class, () -> resolver.matchesKey("AB"));
         }
-
 
         /**
          * Unit test of {@link AutomaticCombine} with invalid regex.
          */
-        @Test(expected = java.util.regex.PatternSyntaxException.class)
-        public void testInvalidRegexExceptionFullyConstructed() {
+        @Test
+        void testInvalidRegexExceptionFullyConstructed() {
             AutomaticCombine resolver = new AutomaticCombine();
             resolver.key = "AB.(]";
             resolver.isRegex = true;
-            resolver.matchesKey("AB");
+            assertThrows(PatternSyntaxException.class, () -> resolver.matchesKey("AB"));
         }
 
         /**
          * Unit test of {@link AutomaticCombine#resolve}.
          */
         @Test
-        public void testResolve() {
+        void testResolve() {
             for (AutomaticCombine resolver: differentlyConstructed(new AutomaticCombine("random", "", true, "|", "String"))) {
-                assertEquals(resolver.resolve(newHashSet("value1", "value2")), "value1|value2");
-                assertEquals(resolver.resolve(newHashSet("3|1", "4|2|1", "6|05", "3;1")), "05|1|2|3|3;1|4|6");
+                assertEquals("value1|value2", resolver.resolve(newHashSet("value1", "value2")));
+                assertEquals("05|1|2|3|3;1|4|6", resolver.resolve(newHashSet("3|1", "4|2|1", "6|05", "3;1")));
             }
 
             for (AutomaticCombine resolver: differentlyConstructed(new AutomaticCombine("test[45].*", "", true, ";", "Integer"))) {
-                assertEquals(resolver.resolve(newHashSet("1254545;95;24", "25;24;3")), "3;24;25;95;1254545");
+                assertEquals("3;24;25;95;1254545", resolver.resolve(newHashSet("1254545;95;24", "25;24;3")));
             }
 
             for (AutomaticCombine resolver: differentlyConstructed(new AutomaticCombine("AB", "", true, ";", null))) {
                 String resolution = resolver.resolve(newHashSet("3;x;1", "4;x"));
                 assertTrue(resolution.equals("3;x;1;4") || resolution.equals("4;x;3;1"));
+            }
+
+            for (AutomaticCombine resolver: differentlyConstructed(new AutomaticCombine("foo", "", true, ";", "Integer"))) {
+                assertEquals("bar;1;2;3", resolver.resolve(newHashSet("1;2;3", "bar")));
             }
         }
     }
@@ -229,21 +219,14 @@ public class TagConflictResolutionUtilTest {
     /**
      * Unit tests of {@link AutomaticChoice} class.
      */
-    public static class AutomaticChoiceTest {
+    @Nested
+    class AutomaticChoiceTest {
         /**
-         * Setup test.
-         */
-        @Rule
-        @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-        public JOSMTestRules test = new JOSMTestRules();
-
-        /**
-
          * Return AutomaticCombine instantiated with the two possible constructors.
          * @param ac a model for the constructed object.
          * @return AutomaticCombine object constructed with the two different constructors.
          */
-        private static List<AutomaticChoice> differentlyConstructed(AutomaticChoice ac) {
+        private List<AutomaticChoice> differentlyConstructed(AutomaticChoice ac) {
             AutomaticChoice fullyConstructed = new AutomaticChoice(ac.key, ac.group, ac.description, ac.isRegex, ac.value, ac.score);
             AutomaticChoice defaultConstructed = new AutomaticChoice();
             defaultConstructed.key = ac.key;
@@ -259,7 +242,7 @@ public class TagConflictResolutionUtilTest {
          * Unit test of {@link AutomaticChoice#matchesValue}.
          */
         @Test
-        public void testMatchesValue() {
+        void testMatchesValue() {
             for (AutomaticChoice resolver: differentlyConstructed(new AutomaticChoice(
                     "random key", "random group", "random description", false, ".*valueToMatch", "Score$0\\1"))) {
                 assertTrue(resolver.matchesValue(".*valueToMatch"));
@@ -281,7 +264,7 @@ public class TagConflictResolutionUtilTest {
          * Unit test of {@link AutomaticChoice#computeScoreFromValue}.
          */
         @Test
-        public void testComputeScoreFromValue() {
+        void testComputeScoreFromValue() {
             for (AutomaticChoice resolver: differentlyConstructed(new AutomaticChoice(
                     "random key", "random group", "random description", false, ".*valueToMatch", "Score$0\\1"))) {
                 assertEquals(resolver.computeScoreFromValue(".*valueToMatch"), "Score$0\\1");
@@ -297,7 +280,7 @@ public class TagConflictResolutionUtilTest {
          * Unit test of {@link AutomaticChoice} when invalid regex is used.
          */
         @Test
-        public void testInvalidRegex() {
+        void testInvalidRegex() {
             for (AutomaticChoice resolver: differentlyConstructed(new AutomaticChoice(
                     "k", "g", "", false, "invalidregex.(]", "InvalidScore$0\\1$-4"))) {
                 // Should not raise exception if the resolver.isRexEx == false:
@@ -315,27 +298,26 @@ public class TagConflictResolutionUtilTest {
         /**
          * Unit test of {@link AutomaticChoice} when invalid regex is used.
          */
-        @Test(expected = java.util.regex.PatternSyntaxException.class)
-        public void testMatchesValueInvalidRegex() {
+        @Test
+        void testMatchesValueInvalidRegex() {
             AutomaticChoice resolver = new AutomaticChoice("k", "g", "", true, "invalidregex.(]", "InvalidScore$0\\1$-4");
-            resolver.matchesValue("test");
+            assertThrows(PatternSyntaxException.class, () -> resolver.matchesValue("test"));
         }
 
         /**
          * Unit test of {@link AutomaticChoice} when invalid regex is used.
          */
-        @Test(expected = java.util.regex.PatternSyntaxException.class)
-        public void testComputeScoreFromValueInvalidRegex() {
+        @Test
+        void testComputeScoreFromValueInvalidRegex() {
             AutomaticChoice resolver = new AutomaticChoice("k", "g", "", true, "invalidregex.(]", "valid");
-            resolver.computeScoreFromValue("valid");
+            assertThrows(PatternSyntaxException.class, () -> resolver.computeScoreFromValue("valid"));
         }
-
 
         /**
          * Unit test of {@link AutomaticChoice} when invalid score replacement is used.
          */
         @Test
-        public void testComputeScoreFromValueInvalidReplacement() {
+        void testComputeScoreFromValueInvalidReplacement() {
             AutomaticChoice resolver = new AutomaticChoice("k", "g", "", true, "valid", "InvalidScore$0\\1$-4");
             boolean exceptionThrown = false;
             try {
@@ -350,14 +332,8 @@ public class TagConflictResolutionUtilTest {
     /**
      * Unit tests of {@link AutomaticChoiceGroup} class.
      */
-    public static class AutomaticChoiceGroupTest {
-        /**
-         * Setup test.
-         */
-        @Rule
-        @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-        public JOSMTestRules test = new JOSMTestRules();
-
+    @Nested
+    class AutomaticChoiceGroupTest {
         AutomaticChoice choiceKey1Group1 = new AutomaticChoice("Key1", "Group1", "", false, "value1", "score1");
         AutomaticChoice choiceKey1Group1bis = new AutomaticChoice("Key1", "Group1", "", false, "value2", "score2");
         AutomaticChoice choiceKey1Group2 = new AutomaticChoice("Key1", "Group2", "", false, "value1", "score1");
@@ -372,7 +348,7 @@ public class TagConflictResolutionUtilTest {
          * Unit test of {@link AutomaticChoiceGroup#groupChoices}.
          */
         @Test
-        public void testGroupChoices() {
+        void testGroupChoices() {
             Collection<AutomaticChoiceGroup> groups = AutomaticChoiceGroup.groupChoices(Arrays.asList(choiceKey1Group1, choiceKey1Group2));
             assertEquals(2, groups.size());
 
@@ -404,7 +380,7 @@ public class TagConflictResolutionUtilTest {
          * Unit test of {@link AutomaticChoiceGroup#matchesKey}.
          */
         @Test
-        public void testMatchesKey() {
+        void testMatchesKey() {
             AutomaticChoiceGroup group = new AutomaticChoiceGroup(
                     choiceKey1Group1.key, choiceKey1Group1.group, choiceKey1Group1.isRegex,
                     Arrays.asList(choiceKey1Group1, choiceKey1Group1bis));
@@ -426,7 +402,7 @@ public class TagConflictResolutionUtilTest {
          * Unit test of {@link AutomaticChoiceGroup#resolve}.
          */
         @Test
-        public void testResolve() {
+        void testResolve() {
             AutomaticChoiceGroup group = new AutomaticChoiceGroup(
                     choiceKey1Group1.key, choiceKey1Group1.group, choiceKey1Group1.isRegex,
                     Arrays.asList(choiceKey1Group1, choiceKey1Group1bis));

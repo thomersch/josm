@@ -1,41 +1,30 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.tagging.ac;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.SortedSet;
 import java.util.TreeSet;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import nl.jqno.equalsverifier.EqualsVerifier;
 
 /**
  * Unit tests of {@link AutoCompletionPriority}.
  */
-public class AutoCompletionPriorityTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+class AutoCompletionPriorityTest {
     /**
      * Test getters.
      */
     @Test
-    public void testGetters() {
+    void testGetters() {
         assertTrue(AutoCompletionPriority.IS_IN_STANDARD_AND_IN_DATASET.isInStandard());
         assertTrue(AutoCompletionPriority.IS_IN_STANDARD_AND_IN_DATASET.isInDataSet());
         assertFalse(AutoCompletionPriority.IS_IN_STANDARD_AND_IN_DATASET.isSelected());
@@ -68,7 +57,7 @@ public class AutoCompletionPriorityTest {
      * Test ordering of priorities.
      */
     @Test
-    public void testOrdering() {
+    void testOrdering() {
         SortedSet<AutoCompletionPriority> set = new TreeSet<>();
         set.add(AutoCompletionPriority.IS_IN_STANDARD_AND_IN_DATASET);
         set.add(AutoCompletionPriority.IS_IN_DATASET);
@@ -95,7 +84,7 @@ public class AutoCompletionPriorityTest {
      * Unit test of methods {@link AutoCompletionPriority#equals} and {@link AutoCompletionPriority#hashCode}.
      */
     @Test
-    public void testEqualsContract() {
+    void testEqualsContract() {
         TestUtils.assumeWorkingEqualsVerifier();
         EqualsVerifier.forClass(AutoCompletionPriority.class).usingGetClass()
             .verify();
@@ -105,7 +94,7 @@ public class AutoCompletionPriorityTest {
      * Unit test of method {@link AutoCompletionPriority#toString()}.
      */
     @Test
-    public void testToString() {
+    void testToString() {
         assertEquals("<Priority; userInput: no, inDataSet: true, inStandard: false, selected: false>",
                 AutoCompletionPriority.IS_IN_DATASET.toString());
         assertEquals("<Priority; userInput: 5, inDataSet: false, inStandard: false, selected: false>",
@@ -116,7 +105,7 @@ public class AutoCompletionPriorityTest {
      * Unit test of method {@link AutoCompletionPriority#mergeWith(AutoCompletionPriority)}.
      */
     @Test
-    public void testMergeWith() {
+    void testMergeWith() {
         assertEquals(AutoCompletionPriority.IS_IN_STANDARD_AND_IN_DATASET,
                 AutoCompletionPriority.IS_IN_DATASET.mergeWith(AutoCompletionPriority.IS_IN_STANDARD));
         assertEquals(AutoCompletionPriority.IS_IN_STANDARD_AND_IN_DATASET,

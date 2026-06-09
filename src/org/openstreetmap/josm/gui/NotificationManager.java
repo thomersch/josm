@@ -91,13 +91,30 @@ class NotificationManager {
      * @param note The note to show.
      * @see Notification#show()
      */
-    public void showNotification(Notification note) {
+    void showNotification(Notification note) {
         synchronized (queue) {
             if (Objects.equals(note, currentNotification) || Objects.equals(note, queue.peekLast())) {
                 Logging.debug("Dropping duplicate notification {0}", note);
                 return;
             }
             queue.add(note);
+            processQueue();
+        }
+    }
+
+    /**
+     * Show the given notification by replacing the given queued/displaying notification
+     * @param oldNotification the notification to replace
+     * @param newNotification the notification to show
+     */
+    void replaceExistingNotification(Notification oldNotification, Notification newNotification) {
+        synchronized (queue) {
+            if (Objects.equals(oldNotification, currentNotification)) {
+                stopHideTimer();
+            } else {
+                queue.remove(oldNotification);
+            }
+            showNotification(newNotification);
             processQueue();
         }
     }
@@ -165,7 +182,7 @@ class NotificationManager {
         pauseTimer.restart();
     }
 
-    private class PauseFinishedEvent implements ActionListener {
+    private final class PauseFinishedEvent implements ActionListener {
 
         @Override
         public void actionPerformed(ActionEvent e) {
@@ -176,7 +193,7 @@ class NotificationManager {
         }
     }
 
-    private class UnfreezeEvent implements ActionListener {
+    private final class UnfreezeEvent implements ActionListener {
 
         @Override
         public void actionPerformed(ActionEvent e) {
@@ -194,6 +211,9 @@ class NotificationManager {
             private final Notification note;
 
             ShowNoteHelpAction(Notification note) {
+                super(tr("Help"));
+                putValue(SHORT_DESCRIPTION, tr("Show help information"));
+                new ImageProvider("help").getResource().attachImageIcon(this, true);
                 this.note = note;
             }
 
@@ -230,11 +250,8 @@ class NotificationManager {
 
             JToolBar tbHelp = null;
             if (note.getHelpTopic() != null) {
-                JButton btnHelp = new JButton(tr("Help"));
-                btnHelp.setIcon(ImageProvider.get("help"));
-                btnHelp.setToolTipText(tr("Show help information"));
+                JButton btnHelp = new JButton(new ShowNoteHelpAction(note));
                 HelpUtil.setHelpContext(btnHelp, note.getHelpTopic());
-                btnHelp.addActionListener(new ShowNoteHelpAction(note));
                 btnHelp.setOpaque(false);
                 tbHelp = new JToolBar();
                 tbHelp.setFloatable(false);

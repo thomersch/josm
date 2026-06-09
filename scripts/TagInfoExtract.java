@@ -31,11 +31,6 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import javax.imageio.ImageIO;
-import javax.json.Json;
-import javax.json.JsonArrayBuilder;
-import javax.json.JsonObjectBuilder;
-import javax.json.JsonWriter;
-import javax.json.stream.JsonGenerator;
 
 import org.openstreetmap.josm.actions.DeleteAction;
 import org.openstreetmap.josm.command.DeleteCommand;
@@ -84,23 +79,34 @@ import org.openstreetmap.josm.tools.Territories;
 import org.openstreetmap.josm.tools.Utils;
 import org.xml.sax.SAXException;
 
+import jakarta.json.Json;
+import jakarta.json.JsonArrayBuilder;
+import jakarta.json.JsonObjectBuilder;
+import jakarta.json.JsonWriter;
+import jakarta.json.stream.JsonGenerator;
+
 /**
  * Extracts tag information for the taginfo project.
  * <p>
  * Run from the base directory of a JOSM checkout:
  * <p>
+ * <pre>
  * java -cp dist/josm-custom.jar TagInfoExtract --type mappaint
  * java -cp dist/josm-custom.jar TagInfoExtract --type presets
  * java -cp dist/josm-custom.jar TagInfoExtract --type external_presets
+ * </pre>
  */
 public class TagInfoExtract {
 
     /**
      * Main method.
      * @param args Main program arguments
-     * @throws Exception if any error occurs
+     * @throws IOException if an IO exception occurs
+     * @throws OsmTransferException if something happened when communicating with the OSM server
+     * @throws ParseException if there was an issue parsing MapCSS
+     * @throws SAXException if there was an issue parsing XML
      */
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) throws IOException, OsmTransferException, ParseException, SAXException {
         HttpClient.setFactory(Http1Client::new);
         TagInfoExtract script = new TagInfoExtract();
         script.parseCommandLineArguments(args);
@@ -115,8 +121,6 @@ public class TagInfoExtract {
             case EXTERNAL_PRESETS:
                 script.new ExternalPresets().run();
                 break;
-            default:
-                throw new IllegalStateException("Invalid type " + script.options.mode);
         }
         if (!script.options.noexit) {
             System.exit(0);
@@ -160,7 +164,7 @@ public class TagInfoExtract {
         System.exit(0);
     }
 
-    private static class Options {
+    private static final class Options {
         Mode mode;
         int josmSvnRevision = Version.getInstance().getVersion();
         Path baseDir = Paths.get("");
@@ -219,7 +223,7 @@ public class TagInfoExtract {
     }
 
     private abstract class Extractor {
-        abstract void run() throws Exception;
+        abstract void run() throws IOException, OsmTransferException, ParseException, SAXException;
 
         void writeJson(String name, String description, Iterable<TagInfoTag> tags) throws IOException {
             try (Writer writer = options.outputFile != null ? Files.newBufferedWriter(options.outputFile) : new StringWriter();
@@ -244,11 +248,10 @@ public class TagInfoExtract {
                         .add("tags", jsonTags)
                         .build());
                 if (options.outputFile == null) {
-                    System.out.println(writer.toString());
+                    System.out.println(writer);
                 }
             }
         }
-
     }
 
     private class Presets extends Extractor {
@@ -265,6 +268,7 @@ public class TagInfoExtract {
 
         List<TagInfoTag> convertPresets(Iterable<TaggingPreset> presets, String descriptionPrefix, boolean addImages) {
             final List<TagInfoTag> tags = new ArrayList<>();
+            final Map<Tag, TagInfoTag> requiredTags = new LinkedHashMap<>();
             final Map<Tag, TagInfoTag> optionalTags = new LinkedHashMap<>();
             for (TaggingPreset preset : presets) {
                 preset.data.stream()
@@ -277,35 +281,41 @@ public class TagInfoExtract {
                             for (String value : values(item)) {
                                 Set<TagInfoTag.Type> types = TagInfoTag.Type.forPresetTypes(preset.types);
                                 if (item.isKeyRequired()) {
-                                    tags.add(new TagInfoTag(descriptionPrefix + preset.getName(), item.key, value, types,
-                                            addImages && preset.iconName != null ? options.findImageUrl(preset.iconName) : null));
-                                } else if (Presets.class.equals(getClass())) { // not for ExternalPresets
-                                    optionalTags.compute(new Tag(item.key, value), (osmTag, tagInfoTag) -> {
-                                        if (tagInfoTag == null) {
-                                            String description = descriptionPrefix + TagInfoTag.OPTIONAL_FOR_COUNT + ": " + preset.getName();
-                                            return new TagInfoTag(description, item.key, value, types, null);
-                                        } else {
-                                            tagInfoTag.descriptions.add(preset.getName());
-                                            tagInfoTag.objectTypes.addAll(types);
-                                            return tagInfoTag;
-                                        }
-                                    });
+                                    fillTagsMap(requiredTags, item, value, preset.getName(), types,
+                                            descriptionPrefix + TagInfoTag.REQUIRED_FOR_COUNT + ": ",
+                                            addImages && preset.iconName != null ? options.findImageUrl(preset.iconName) : null);
+                                } else {
+                                    fillTagsMap(optionalTags, item, value, preset.getName(), types,
+                                            descriptionPrefix + TagInfoTag.OPTIONAL_FOR_COUNT + ": ", null);
                                 }
                             }
                         });
             }
+            tags.addAll(requiredTags.values());
             tags.addAll(optionalTags.values());
             return tags;
+        }
+
+        private void fillTagsMap(Map<Tag, TagInfoTag> optionalTags, KeyedItem item, String value,
+                String presetName, Set<TagInfoTag.Type> types, String descriptionPrefix, String iconUrl) {
+            optionalTags.compute(new Tag(item.key, value), (osmTag, tagInfoTag) -> {
+                if (tagInfoTag == null) {
+                    return new TagInfoTag(descriptionPrefix + presetName, item.key, value, types, iconUrl);
+                } else {
+                    tagInfoTag.descriptions.add(presetName);
+                    tagInfoTag.objectTypes.addAll(types);
+                    return tagInfoTag;
+                }
+            });
         }
 
         private Collection<String> values(KeyedItem item) {
             final Collection<String> values = item.getValues();
             return values.isEmpty() || values.size() > 50 ? Collections.singleton(null) : values;
         }
-
     }
 
-    private class ExternalPresets extends Presets {
+    private final class ExternalPresets extends Presets {
 
         @Override
         void run() throws IOException, OsmTransferException, SAXException {
@@ -321,19 +331,18 @@ public class TagInfoExtract {
                     Logging.info("Loading {0}", source.url);
                     Collection<TaggingPreset> presets = TaggingPresetReader.readAll(source.url, false);
                     final List<TagInfoTag> t = convertPresets(presets, source.title + " ", false);
-                    Logging.info("Converting {0} presets of {1}", t.size(), source.title);
+                    Logging.info("Converted {0} presets of {1} to {2} tags", presets.size(), source.title, t.size());
                     tags.addAll(t);
                 } catch (Exception ex) {
                     Logging.warn("Skipping {0} due to error", source.url);
                     Logging.warn(ex);
                 }
-
             }
-            writeJson("JOSM user presets", "Tags supported by the user contributed presets in the OSM editor JOSM", tags);
+            writeJson("JOSM user presets", "Tags supported by the user contributed presets to the OSM editors JOSM and Vespucci", tags);
         }
     }
 
-    private class StyleSheet extends Extractor {
+    private final class StyleSheet extends Extractor {
         private MapCSSStyleSource styleSource;
 
         @Override
@@ -430,7 +439,7 @@ public class TagInfoExtract {
              * Create image file from StyleElement.
              * @param element style element
              * @param type object type
-             * @param nc navigatable component
+             * @param nc navigable component
              *
              * @return the URL
              */
@@ -483,14 +492,13 @@ public class TagInfoExtract {
             Optional<String> findUrl(boolean generateImage) {
                 this.osm = new Node(LatLon.ZERO);
                 Environment env = applyStylesheet(osm);
-                Cascade c = env.mc.getCascade("default");
+                Cascade c = env.getCascade("default");
                 Object image = c.get("icon-image");
                 if (image instanceof MapPaintStyles.IconReference && !((MapPaintStyles.IconReference) image).isDeprecatedIcon()) {
                     return Optional.of(options.findImageUrl(((MapPaintStyles.IconReference) image).iconName));
                 }
                 return Optional.empty();
             }
-
         }
 
         private class WayChecker extends Checker {
@@ -509,12 +517,10 @@ public class TagInfoExtract {
                 Environment env = applyStylesheet(osm);
                 LineElement les = LineElement.createLine(env);
                 if (les != null) {
-                    if (!generateImage) return Optional.of("");
-                    return Optional.of(createImage(les, "way", nc));
+                    return Optional.of(generateImage ? createImage(les, "way", nc) : "");
                 }
                 return Optional.empty();
             }
-
         }
 
         private class AreaChecker extends Checker {
@@ -550,6 +556,7 @@ public class TagInfoExtract {
      * POJO representing a <a href="https://wiki.openstreetmap.org/wiki/Taginfo/Projects">Taginfo tag</a>.
      */
     private static class TagInfoTag {
+        static final String REQUIRED_FOR_COUNT = "Required for {count}";
         static final String OPTIONAL_FOR_COUNT = "Optional for {count}";
         final Collection<String> descriptions = new ArrayList<>();
         final String key;
@@ -572,6 +579,7 @@ public class TagInfoExtract {
             if (!descriptions.isEmpty()) {
                 final int size = descriptions.size();
                 object.add("description", String.join(", ", Utils.limit(descriptions, 8, "..."))
+                        .replace(REQUIRED_FOR_COUNT, size > 3 ? "Required for " + size : "Required for")
                         .replace(OPTIONAL_FOR_COUNT, size > 3 ? "Optional for " + size : "Optional for"));
             }
             object.add("key", key);
@@ -604,12 +612,10 @@ public class TagInfoExtract {
             }
 
             static Set<TagInfoTag.Type> forPresetTypes(Set<TaggingPresetType> types) {
-                if (types == null) {
-                    return Collections.emptySet();
-                }
-                return types.stream()
+                final EnumSet<TagInfoTag.Type> enums = EnumSet.noneOf(TagInfoTag.Type.class);
+                return types == null ? enums : types.stream()
                         .map(Type::forPresetType)
-                        .collect(Collectors.toCollection(() -> EnumSet.noneOf(Type.class)));
+                        .collect(Collectors.toCollection(() -> enums));
             }
         }
     }

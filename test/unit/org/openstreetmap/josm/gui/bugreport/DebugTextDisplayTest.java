@@ -1,31 +1,23 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.bugreport;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import org.junit.Rule;
-import org.junit.Test;
 import org.openstreetmap.josm.gui.datatransfer.ClipboardUtils;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit test of {@link DebugTextDisplay} class.
  */
-public class DebugTextDisplayTest {
-    /**
-     * Setup test
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences();
-
+@BasicPreferences
+class DebugTextDisplayTest {
     /**
      * Test {@link DebugTextDisplay#getCodeText}
      */
     @Test
-    public void testGetCodeText() {
+    void testGetCodeText() {
         assertEquals("test", new DebugTextDisplay("test").getCodeText());
     }
 
@@ -33,7 +25,7 @@ public class DebugTextDisplayTest {
      * Test {@link DebugTextDisplay#copyToClipboard}
      */
     @Test
-    public void testCopyToClipboard() {
+    void testCopyToClipboard() {
         new DebugTextDisplay("copy").copyToClipboard();
         assertEquals(String.format("{{{%ncopy%n}}}"), ClipboardUtils.getClipboardStringContent());
     }

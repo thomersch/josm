@@ -1,46 +1,41 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.command;
 
-import static org.junit.Assert.assertArrayEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.command.CommandTest.CommandTestDataWithRelation;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.User;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.gui.mappaint.ElemStyles;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import nl.jqno.equalsverifier.EqualsVerifier;
 import nl.jqno.equalsverifier.Warning;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests of {@link SelectCommand} class.
  */
-public class SelectCommandTest {
-
-    /**
-     * We need prefs for nodes.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences();
+// We need prefs for nodes.
+@BasicPreferences
+class SelectCommandTest {
     private CommandTestDataWithRelation testData;
 
     /**
      * Set up the test data.
      */
-    @Before
+    @BeforeEach
     public void createTestData() {
         testData = new CommandTestDataWithRelation();
     }
@@ -49,7 +44,7 @@ public class SelectCommandTest {
      * Test {@link SelectCommand#executeCommand()}
      */
     @Test
-    public void testExecute() {
+    void testExecute() {
         SelectCommand command = new SelectCommand(testData.layer.getDataSet(), Arrays.asList(testData.existingNode, testData.existingWay));
 
         testData.layer.getDataSet().setSelected(Arrays.asList(testData.existingNode2));
@@ -65,7 +60,7 @@ public class SelectCommandTest {
      * Test {@link SelectCommand#executeCommand()}
      */
     @Test
-    public void testExecuteAfterModify() {
+    void testExecuteAfterModify() {
         List<OsmPrimitive> list = new ArrayList<>(Arrays.asList(testData.existingNode, testData.existingWay));
         SelectCommand command = new SelectCommand(testData.layer.getDataSet(), list);
 
@@ -83,7 +78,7 @@ public class SelectCommandTest {
      * Test {@link SelectCommand#undoCommand()}
      */
     @Test
-    public void testUndo() {
+    void testUndo() {
         SelectCommand command = new SelectCommand(testData.layer.getDataSet(), Arrays.asList(testData.existingNode, testData.existingWay));
         testData.layer.getDataSet().setSelected(Arrays.asList(testData.existingNode2));
 
@@ -106,7 +101,7 @@ public class SelectCommandTest {
      * Tests {@link SelectCommand#fillModifiedData(java.util.Collection, java.util.Collection, java.util.Collection)}
      */
     @Test
-    public void testFillModifiedData() {
+    void testFillModifiedData() {
         ArrayList<OsmPrimitive> modified = new ArrayList<>();
         ArrayList<OsmPrimitive> deleted = new ArrayList<>();
         ArrayList<OsmPrimitive> added = new ArrayList<>();
@@ -122,7 +117,7 @@ public class SelectCommandTest {
      * Tests {@link SelectCommand#getParticipatingPrimitives()}
      */
     @Test
-    public void testGetParticipatingPrimitives() {
+    void testGetParticipatingPrimitives() {
         SelectCommand command = new SelectCommand(testData.layer.getDataSet(), Arrays.asList(testData.existingNode));
         command.executeCommand();
         assertArrayEquals(new Object[] {testData.existingNode}, command.getParticipatingPrimitives().toArray());
@@ -132,7 +127,7 @@ public class SelectCommandTest {
      * Test {@link SelectCommand#getDescriptionText()}
      */
     @Test
-    public void testDescription() {
+    void testDescription() {
         DataSet ds = testData.layer.getDataSet();
         assertTrue(new SelectCommand(ds, Arrays.<OsmPrimitive>asList(testData.existingNode))
                 .getDescriptionText().matches("Selected 1 object"));
@@ -148,7 +143,7 @@ public class SelectCommandTest {
      * Unit test of methods {@link SelectCommand#equals} and {@link SelectCommand#hashCode}.
      */
     @Test
-    public void testEqualsContract() {
+    void testEqualsContract() {
         TestUtils.assumeWorkingEqualsVerifier();
         EqualsVerifier.forClass(SelectCommand.class).usingGetClass()
             .withPrefabValues(DataSet.class,
@@ -157,6 +152,8 @@ public class SelectCommandTest {
                     User.createOsmUser(1, "foo"), User.createOsmUser(2, "bar"))
             .withPrefabValues(OsmDataLayer.class,
                 new OsmDataLayer(new DataSet(), "1", null), new OsmDataLayer(new DataSet(), "2", null))
+            .withPrefabValues(ElemStyles.class,
+                new ElemStyles(), new ElemStyles())
             .suppress(Warning.NONFINAL_FIELDS)
             .verify();
     }
@@ -164,8 +161,8 @@ public class SelectCommandTest {
     /**
      * Unit test of {@link SelectCommand#SelectCommand}.
      */
-    @Test(expected = IllegalArgumentException.class)
-    public void testConstructorIAE() {
-        new SelectCommand(new DataSet(), Arrays.asList(new OsmPrimitive[] {null}));
+    @Test
+    void testConstructorIAE() {
+        assertThrows(IllegalArgumentException.class, () -> new SelectCommand(new DataSet(), Arrays.asList(new OsmPrimitive[] {null})));
     }
 }

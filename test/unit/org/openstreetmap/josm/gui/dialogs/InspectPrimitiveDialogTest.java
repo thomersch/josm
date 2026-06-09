@@ -1,17 +1,16 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.dialogs;
 
-import static org.junit.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.openstreetmap.josm.TestUtils.assertEqualsNewline;
 
 import java.util.ArrayList;
 
 import javax.swing.JPanel;
 
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.SystemOfMeasurement;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.DataSet;
@@ -20,35 +19,29 @@ import org.openstreetmap.josm.data.osm.User;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.testutils.annotations.Main;
+import org.openstreetmap.josm.testutils.annotations.MapPaintStyles;
+import org.openstreetmap.josm.testutils.annotations.Projection;
 
 /**
  * Unit tests of {@link InspectPrimitiveDialog} class.
  */
-public class InspectPrimitiveDialogTest {
-
-    /**
-     * Setup tests
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().main().projection().mapStyles();
-
+@Main
+@MapPaintStyles
+@Projection
+class InspectPrimitiveDialogTest {
     /**
      * Setup test
      */
-    @Before
+    @BeforeEach
     public void setUp() {
         SystemOfMeasurement.PROP_SYSTEM_OF_MEASUREMENT.put("METRIC");
-
     }
 
     /**
      * Cleanup test
      */
-    @After
+    @AfterEach
     public void tearDown() {
         SystemOfMeasurement.PROP_SYSTEM_OF_MEASUREMENT.put(null);
     }
@@ -57,7 +50,7 @@ public class InspectPrimitiveDialogTest {
      * Unit test of {@link InspectPrimitiveDialog#genericMonospacePanel}.
      */
     @Test
-    public void testGenericMonospacePanel() {
+    void testGenericMonospacePanel() {
         assertNotNull(InspectPrimitiveDialog.genericMonospacePanel(new JPanel(), ""));
     }
 
@@ -65,7 +58,7 @@ public class InspectPrimitiveDialogTest {
      * Unit test of {@link InspectPrimitiveDialog#buildDataText}.
      */
     @Test
-    public void testBuildDataText() {
+    void testBuildDataText() {
         DataSet ds = new DataSet();
         assertEqualsNewline("", InspectPrimitiveDialog.buildDataText(ds, new ArrayList<>(ds.allPrimitives())));
         final Way way = new Way();
@@ -84,6 +77,7 @@ public class InspectPrimitiveDialogTest {
         way.addNode(way.firstNode()); // close way
         assertEqualsNewline(
             "Way: 1\n" +
+                "  State: referrers-not-all-downloaded\n" +
                 "  Data Set: "+Integer.toHexString(ds.hashCode())+"\n" +
                 "  Edited at: <new object>\n" +
                 "  Edited by: <new object>\n" +
@@ -94,6 +88,8 @@ public class InspectPrimitiveDialogTest {
                 "  Center of bounding box: 47.2686046, 11.3909648\n" +
                 "  Centroid: 47.2686049, 11.3909649\n" +
                 "  Length: 193.3 m\n" +
+                "  Average segment length: 48.3 m\n" +
+                "  Standard deviation: 27.5 m\n" +
                 "  5 Nodes: \n" +
                 "    2\n" +
                 "    3\n" +
@@ -107,7 +103,7 @@ public class InspectPrimitiveDialogTest {
      * Unit test of {@link InspectPrimitiveDialog#buildListOfEditorsText}.
      */
     @Test
-    public void testBuildListOfEditorsText() {
+    void testBuildListOfEditorsText() {
         DataSet ds = new DataSet();
         assertEqualsNewline("0 users last edited the selection:\n\n", InspectPrimitiveDialog.buildListOfEditorsText(ds.allPrimitives()));
         ds.addPrimitive(new Node(LatLon.ZERO));
@@ -129,7 +125,7 @@ public class InspectPrimitiveDialogTest {
      * Unit test of {@link InspectPrimitiveDialog#buildMapPaintText}.
      */
     @Test
-    public void testBuildMapPaintText() {
+    void testBuildMapPaintText() {
         DataSet ds = new DataSet();
         OsmDataLayer layer = new OsmDataLayer(ds, "", null);
 

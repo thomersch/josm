@@ -7,6 +7,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.function.Predicate;
 
+import javax.swing.Action;
 import javax.swing.JFileChooser;
 import javax.swing.filechooser.FileFilter;
 
@@ -17,6 +18,7 @@ import org.openstreetmap.josm.data.preferences.BooleanProperty;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.PlatformManager;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * A chained utility class used to create and open {@link AbstractFileChooser} dialogs.<br>
@@ -35,6 +37,11 @@ public class FileChooserManager {
     public static final BooleanProperty PROP_USE_NATIVE_FILE_DIALOG = new BooleanProperty("use.native.file.dialog",
             // Native dialogs do not support file filters, so do not set them as default, except for OS X where they never worked
             PlatformManager.isPlatformOsx());
+
+    /**
+     * Property to use the details view in file dialogs.
+     */
+    public static final BooleanProperty PROP_USE_DETAILS_VIEW_FILE_DIALOG = new BooleanProperty("use.details.view.file.dialog", false);
 
     private final boolean open;
     private final String lastDirProperty;
@@ -91,9 +98,9 @@ public class FileChooserManager {
      */
     public FileChooserManager(boolean open, String lastDirProperty, String defaultDir) {
         this.open = open;
-        this.lastDirProperty = lastDirProperty == null || lastDirProperty.isEmpty() ? "lastDirectory" : lastDirProperty;
+        this.lastDirProperty = Utils.isEmpty(lastDirProperty) ? "lastDirectory" : lastDirProperty;
         this.curDir = Config.getPref().get(this.lastDirProperty).isEmpty() ?
-                defaultDir == null || defaultDir.isEmpty() ? "." : defaultDir
+                Utils.isEmpty(defaultDir) ? "." : defaultDir
                 : Config.getPref().get(this.lastDirProperty);
     }
 
@@ -302,6 +309,13 @@ public class FileChooserManager {
             fc = new NativeFileChooser(f);
         } else {
             fc = new SwingFileChooser(f);
+            if (PROP_USE_DETAILS_VIEW_FILE_DIALOG.get()) {
+                // See sun.swing.FilePane.ACTION_VIEW_DETAILS
+                Action details = fc.getActionMap().get("viewTypeDetails");
+                if (details != null) {
+                    details.actionPerformed(null);
+                }
+            }
         }
 
         if (title != null) {
@@ -330,18 +344,22 @@ public class FileChooserManager {
 
     /**
      * Opens the {@code AbstractFileChooser} that has been created.
-     * @return the {@code AbstractFileChooser} if the user effectively choses a file or directory. {@code null} if the user cancelled the dialog.
+     * @return the {@code AbstractFileChooser} if the user effectively chooses a file or directory.
+     * {@code null} if the user cancelled the dialog.
      */
     public final AbstractFileChooser openFileChooser() {
         return openFileChooser(null);
     }
 
     /**
-     * Opens the {@code AbstractFileChooser} that has been created and waits for the user to choose a file/directory, or cancel the dialog.<br>
-     * When the user choses a file or directory, the {@code lastDirProperty} is updated to the chosen directory path.
+     * Opens the {@code AbstractFileChooser} that has been created and waits for the user to choose a file/directory,
+     * or cancel the dialog.<br>
+     * When the user chooses a file or directory, the {@code lastDirProperty} is updated to the chosen directory path.
      *
-     * @param parent The Component used as the parent of the AbstractFileChooser. If null, uses {@code MainApplication.getMainFrame()}.
-     * @return the {@code AbstractFileChooser} if the user effectively choses a file or directory. {@code null} if the user cancelled the dialog.
+     * @param parent The Component used as the parent of the AbstractFileChooser. If null,
+     *               uses {@code MainApplication.getMainFrame()}.
+     * @return the {@code AbstractFileChooser} if the user effectively chooses
+     * a file or directory.{@code null} if the user cancelled the dialog.
      */
     public AbstractFileChooser openFileChooser(Component parent) {
         if (fc == null)

@@ -1,10 +1,11 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.mappaint.mapcss;
 
-import java.lang.reflect.Method;
 import java.text.MessageFormat;
-import java.util.Arrays;
 import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.BiPredicate;
@@ -22,6 +23,7 @@ import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.OsmUtils;
 import org.openstreetmap.josm.data.osm.Relation;
 import org.openstreetmap.josm.data.osm.Tag;
+import org.openstreetmap.josm.data.osm.Tagged;
 import org.openstreetmap.josm.data.osm.search.SearchCompiler.InDataSourceArea;
 import org.openstreetmap.josm.data.osm.visitor.paint.relations.Multipolygon;
 import org.openstreetmap.josm.data.osm.visitor.paint.relations.MultipolygonCache;
@@ -29,9 +31,8 @@ import org.openstreetmap.josm.gui.mappaint.Cascade;
 import org.openstreetmap.josm.gui.mappaint.ElemStyles;
 import org.openstreetmap.josm.gui.mappaint.Environment;
 import org.openstreetmap.josm.gui.mappaint.mapcss.Condition.Context;
-import org.openstreetmap.josm.gui.mappaint.mapcss.Condition.ToTagConvertable;
+import org.openstreetmap.josm.gui.mappaint.mapcss.Condition.TagCondition;
 import org.openstreetmap.josm.tools.CheckParameterUtil;
-import org.openstreetmap.josm.tools.JosmRuntimeException;
 import org.openstreetmap.josm.tools.Utils;
 
 /**
@@ -104,7 +105,20 @@ public final class ConditionFactory {
     public static Condition createKeyCondition(String k, boolean not, KeyMatchType matchType, Context context) {
         switch (context) {
         case PRIMITIVE:
-            return new KeyCondition(k, not, matchType);
+            if (KeyMatchType.REGEX == matchType && k.matches("[A-Za-z0-9:_-]+")) {
+                // optimization: using String.contains avoids allocating a Matcher
+                return new KeyCondition(k, not, KeyMatchType.ANY_CONTAINS);
+            } else if (KeyMatchType.REGEX == matchType && k.matches("\\^[A-Za-z0-9:_-]+")) {
+                // optimization: using String.startsWith avoids allocating a Matcher
+                return new KeyCondition(k.substring(1), not, KeyMatchType.ANY_STARTS_WITH);
+            } else if (KeyMatchType.REGEX == matchType && k.matches("[A-Za-z0-9:_-]+\\$")) {
+                // optimization: using String.endsWith avoids allocating a Matcher
+                return new KeyCondition(k.substring(0, k.length() - 1), not, KeyMatchType.ANY_ENDS_WITH);
+            } else if (matchType == KeyMatchType.REGEX) {
+                return new KeyRegexpCondition(Pattern.compile(k), not);
+            } else {
+                return new KeyCondition(k, not, matchType);
+            }
         case LINK:
             if (matchType != null)
                 throw new MapCSSException("Question mark operator ''?'' and regexp match not supported in LINK context");
@@ -197,7 +211,7 @@ public final class ConditionFactory {
 
         /**
          * Create a new float operation that compares two float values
-         * @param comparatorResult A function to mapt the result of the comparison
+         * @param comparatorResult A function to map the result of the comparison
          */
         Op(IntFunction<Boolean> comparatorResult) {
             this.function = (test, prototype) -> {
@@ -243,7 +257,7 @@ public final class ConditionFactory {
      *
      * Extra class for performance reasons.
      */
-    public static class SimpleKeyValueCondition implements Condition, ToTagConvertable {
+    public static class SimpleKeyValueCondition implements TagCondition {
         /**
          * The key to search for.
          */
@@ -264,12 +278,12 @@ public final class ConditionFactory {
         }
 
         @Override
-        public boolean applies(Environment e) {
-            return v.equals(e.osm.get(k));
+        public boolean applies(Tagged osm) {
+            return v.equals(osm.get(k));
         }
 
         @Override
-        public Tag asTag(OsmPrimitive primitive) {
+        public Tag asTag(Tagged primitive) {
             return new Tag(k, v);
         }
 
@@ -284,7 +298,7 @@ public final class ConditionFactory {
      * <p>Represents a key/value condition which is either applied to a primitive.</p>
      *
      */
-    public static class KeyValueCondition implements Condition, ToTagConvertable {
+    public static class KeyValueCondition implements TagCondition {
         /**
          * The key to search for.
          */
@@ -327,12 +341,12 @@ public final class ConditionFactory {
         }
 
         @Override
-        public boolean applies(Environment env) {
-            return op.eval(env.osm.get(k), considerValAsKey ? env.osm.get(v) : v);
+        public boolean applies(Tagged osm) {
+            return op.eval(osm.get(k), considerValAsKey ? osm.get(v) : v);
         }
 
         @Override
-        public Tag asTag(OsmPrimitive primitive) {
+        public Tag asTag(Tagged primitive) {
             return new Tag(k, v);
         }
 
@@ -365,17 +379,17 @@ public final class ConditionFactory {
             this.pattern = Pattern.compile(v);
         }
 
-        protected boolean matches(Environment env) {
-            final String value = env.osm.get(k);
+        protected boolean matches(Tagged osm) {
+            final String value = osm.get(k);
             return value != null && pattern.matcher(value).find();
         }
 
         @Override
-        public boolean applies(Environment env) {
+        public boolean applies(Tagged osm) {
             if (Op.REGEX == op) {
-                return matches(env);
+                return matches(osm);
             } else if (Op.NREGEX == op) {
-                return !matches(env);
+                return !matches(osm);
             } else {
                 throw new IllegalStateException();
             }
@@ -406,8 +420,8 @@ public final class ConditionFactory {
         }
 
         @Override
-        protected boolean matches(Environment env) {
-            return env.osm.getKeys().entrySet().stream()
+        protected boolean matches(Tagged osm) {
+            return osm.getKeys().entrySet().stream()
                     .anyMatch(kv -> keyPattern.matcher(kv.getKey()).find() && pattern.matcher(kv.getValue()).find());
         }
     }
@@ -488,7 +502,19 @@ public final class ConditionFactory {
         /**
          * The key needs to match the given regular expression.
          */
-        REGEX
+        REGEX,
+        /**
+         * The key needs to contain the given label as substring.
+         */
+        ANY_CONTAINS,
+        /**
+         * The key needs to start with the given label.
+         */
+        ANY_STARTS_WITH,
+        /**
+         * The key needs to end with the given label.
+         */
+        ANY_ENDS_WITH,
     }
 
     /**
@@ -509,8 +535,9 @@ public final class ConditionFactory {
      *     ["a label"?!] PRIMITIVE:  the primitive has a tag "a label" whose value evaluates to a false-value
      *                   LINK:       not supported
      * </pre>
+     * @see KeyRegexpCondition
      */
-    public static class KeyCondition implements Condition, ToTagConvertable {
+    public static class KeyCondition implements TagCondition {
 
         /**
          * The key name.
@@ -525,10 +552,6 @@ public final class ConditionFactory {
          * @see KeyMatchType
          */
         public final KeyMatchType matchType;
-        /**
-         * A predicate used to match a the regexp against the key. Only used if the match type is regexp.
-         */
-        public final Predicate<String> containsPattern;
 
         /**
          * Creates a new KeyCondition
@@ -537,33 +560,92 @@ public final class ConditionFactory {
          * @param matchType The match type.
          */
         public KeyCondition(String label, boolean negateResult, KeyMatchType matchType) {
+            CheckParameterUtil.ensureThat(matchType != KeyMatchType.REGEX, "Use KeyPatternCondition");
             this.label = label;
             this.negateResult = negateResult;
             this.matchType = matchType == null ? KeyMatchType.EQ : matchType;
-            this.containsPattern = KeyMatchType.REGEX == matchType
-                    ? Pattern.compile(label).asPredicate()
-                    : null;
         }
 
         @Override
-        public boolean applies(Environment e) {
-            switch(e.getContext()) {
-            case PRIMITIVE:
-                switch (matchType) {
+        public boolean applies(Tagged osm) {
+            switch (matchType) {
                 case TRUE:
-                    return e.osm.isKeyTrue(label) ^ negateResult;
+                    return osm.isKeyTrue(label) ^ negateResult;
                 case FALSE:
-                    return e.osm.isKeyFalse(label) ^ negateResult;
-                case REGEX:
-                    return e.osm.keySet().stream().anyMatch(containsPattern) ^ negateResult;
+                    return osm.isKeyFalse(label) ^ negateResult;
+                case ANY_CONTAINS:
+                case ANY_STARTS_WITH:
+                case ANY_ENDS_WITH:
+                    return osm.keys().anyMatch(keyPredicate()) ^ negateResult;
                 default:
-                    return e.osm.hasKey(label) ^ negateResult;
-                }
-            case LINK:
-                Utils.ensure(false, "Illegal state: KeyCondition not supported in LINK context");
-                return false;
-            default: throw new AssertionError();
+                    return osm.hasKey(label) ^ negateResult;
             }
+        }
+
+        private Predicate<String> keyPredicate() {
+            switch (matchType) {
+                case ANY_CONTAINS:
+                    return key -> key.contains(label);
+                case ANY_STARTS_WITH:
+                    return key -> key.startsWith(label);
+                case ANY_ENDS_WITH:
+                    return key -> key.endsWith(label);
+                default:
+                    return null;
+            }
+        }
+
+        /**
+         * Get the matched key and the corresponding value.
+         * <p>
+         * WARNING: This ignores {@link #negateResult}.
+         * @param p The primitive to get the value from.
+         * @return The tag.
+         */
+        @Override
+        public Tag asTag(Tagged p) {
+            String key = label;
+            Predicate<String> keyPredicate = keyPredicate();
+            if (keyPredicate != null) {
+                key = p.keys().filter(keyPredicate).findAny().orElse(key);
+            }
+            return new Tag(key, p.get(key));
+        }
+
+        @Override
+        public String toString() {
+            return '[' + (negateResult ? "!" : "") + label + ']';
+        }
+    }
+
+    /**
+     * KeyPatternCondition represents a conditions matching keys based on a pattern.
+     */
+    public static class KeyRegexpCondition implements TagCondition {
+
+        /**
+         * A predicate used to match a the regexp against the key. Only used if the match type is regexp.
+         */
+        public final Pattern pattern;
+        /**
+         * If we should negate the result of the match.
+         */
+        public final boolean negateResult;
+
+        /**
+         * Creates a new KeyPatternCondition
+         * @param pattern The regular expression for matching keys.
+         * @param negateResult If we should negate the result.
+         */
+        public KeyRegexpCondition(Pattern pattern, boolean negateResult) {
+            this.negateResult = negateResult;
+            this.pattern = pattern;
+        }
+
+        @Override
+        public boolean applies(Tagged osm) {
+            boolean matches = osm.hasKeys() && osm.keys().anyMatch(pattern.asPredicate());
+            return matches ^ negateResult;
         }
 
         /**
@@ -576,17 +658,14 @@ public final class ConditionFactory {
          * @return The tag.
          */
         @Override
-        public Tag asTag(OsmPrimitive p) {
-            String key = label;
-            if (KeyMatchType.REGEX == matchType) {
-                key = p.keySet().stream().filter(containsPattern).findAny().orElse(key);
-            }
+        public Tag asTag(Tagged p) {
+            String key = p.keys().filter(pattern.asPredicate()).findAny().orElse(pattern.pattern());
             return new Tag(key, p.get(key));
         }
 
         @Override
         public String toString() {
-            return '[' + (negateResult ? "!" : "") + label + ']';
+            return '[' + (negateResult ? "!" : "") + pattern + ']';
         }
     }
 
@@ -611,7 +690,7 @@ public final class ConditionFactory {
 
         @Override
         public boolean applies(Environment env) {
-            Cascade cascade = env.getCascade(env.layer);
+            Cascade cascade = env.getCascade();
             return cascade != null && (not ^ cascade.containsKey(id));
         }
 
@@ -632,14 +711,14 @@ public final class ConditionFactory {
         }
 
         /**
-         * {@code closed} tests whether the way is closed or the relation is a closed multipolygon
+         * {@code :closed} tests whether the way is closed or the relation is a closed multipolygon
          * @param e MapCSS environment
          * @return {@code true} if the way is closed or the relation is a closed multipolygon
          */
-        static boolean closed(Environment e) { // NO_UCD (unused code)
+        static boolean closed(Environment e) {
             if (e.osm instanceof IWay<?> && ((IWay<?>) e.osm).isClosed())
                 return true;
-            return e.osm instanceof IRelation<?> && ((IRelation<?>) e.osm).isMultipolygon();
+            return e.osm instanceof IRelation<?> && e.osm.isMultipolygon();
         }
 
         /**
@@ -648,17 +727,17 @@ public final class ConditionFactory {
          * @return {@code true} if the object has been modified
          * @see IPrimitive#isModified()
          */
-        static boolean modified(Environment e) { // NO_UCD (unused code)
+        static boolean modified(Environment e) {
             return e.osm.isModified() || e.osm.isNewOrUndeleted();
         }
 
         /**
-         * {@code ;new} tests whether the object is new.
+         * {@code :new} tests whether the object is new.
          * @param e MapCSS environment
          * @return {@code true} if the object is new
          * @see IPrimitive#isNew()
          */
-        static boolean _new(Environment e) { // NO_UCD (unused code)
+        static boolean _new(Environment e) {
             return e.osm.isNew();
         }
 
@@ -668,7 +747,7 @@ public final class ConditionFactory {
          * @return {@code true} if the object is a connection node
          * @see Node#isConnectionNode()
          */
-        static boolean connection(Environment e) { // NO_UCD (unused code)
+        static boolean connection(Environment e) {
             return e.osm instanceof INode && e.osm.getDataSet() != null && ((INode) e.osm).isConnectionNode();
         }
 
@@ -678,7 +757,7 @@ public final class ConditionFactory {
          * @return {@code true} if the object is tagged
          * @see IPrimitive#isTagged()
          */
-        static boolean tagged(Environment e) { // NO_UCD (unused code)
+        static boolean tagged(Environment e) {
             return e.osm.isTagged();
         }
 
@@ -688,7 +767,7 @@ public final class ConditionFactory {
          * @return {@code true} if the object has the same tags as its child/parent
          * @see IPrimitive#hasSameInterestingTags(IPrimitive)
          */
-        static boolean sameTags(Environment e) { // NO_UCD (unused code)
+        static boolean sameTags(Environment e) {
             return e.osm.hasSameInterestingTags(Utils.firstNonNull(e.child, e.parent));
         }
 
@@ -698,59 +777,59 @@ public final class ConditionFactory {
          * @return {@code true} if the object has an area style
          * @see ElemStyles#hasAreaElemStyle(IPrimitive, boolean)
          */
-        static boolean areaStyle(Environment e) { // NO_UCD (unused code)
+        static boolean areaStyle(Environment e) {
             // only for validator
             return ElemStyles.hasAreaElemStyle(e.osm, false);
         }
 
         /**
-         * {@code unconnected}: tests whether the object is a unconnected node.
+         * {@code :unconnected} tests whether the object is an unconnected node.
          * @param e MapCSS environment
-         * @return {@code true} if the object is a unconnected node
+         * @return {@code true} if the object is an unconnected node
          */
-        static boolean unconnected(Environment e) { // NO_UCD (unused code)
+        static boolean unconnected(Environment e) {
             return e.osm instanceof Node && ((Node) e.osm).getParentWays().isEmpty();
         }
 
         /**
-         * {@code righthandtraffic} checks if there is right-hand traffic at the current location.
+         * {@code :righthandtraffic} checks if there is right-hand traffic at the current location.
          * @param e MapCSS environment
          * @return {@code true} if there is right-hand traffic at the current location
          * @see Functions#is_right_hand_traffic(Environment)
          */
-        static boolean righthandtraffic(Environment e) { // NO_UCD (unused code)
+        static boolean righthandtraffic(Environment e) {
             return Functions.is_right_hand_traffic(e);
         }
 
         /**
-         * {@code clockwise} whether the way is closed and oriented clockwise,
+         * {@code :clockwise} whether the way is closed and oriented clockwise,
          * or non-closed and the 1st, 2nd and last node are in clockwise order.
          * @param e MapCSS environment
          * @return {@code true} if the way clockwise
          * @see Functions#is_clockwise(Environment)
          */
-        static boolean clockwise(Environment e) { // NO_UCD (unused code)
+        static boolean clockwise(Environment e) {
             return Functions.is_clockwise(e);
         }
 
         /**
-         * {@code anticlockwise} whether the way is closed and oriented anticlockwise,
+         * {@code :anticlockwise} whether the way is closed and oriented anticlockwise,
          * or non-closed and the 1st, 2nd and last node are in anticlockwise order.
          * @param e MapCSS environment
          * @return {@code true} if the way clockwise
          * @see Functions#is_anticlockwise(Environment)
          */
-        static boolean anticlockwise(Environment e) { // NO_UCD (unused code)
+        static boolean anticlockwise(Environment e) {
             return Functions.is_anticlockwise(e);
         }
 
         /**
-         * {@code unclosed-multipolygon} tests whether the object is an unclosed multipolygon.
+         * {@code :unclosed-multipolygon} tests whether the object is an unclosed multipolygon.
          * @param e MapCSS environment
          * @return {@code true} if the object is an unclosed multipolygon
          */
-        static boolean unclosed_multipolygon(Environment e) { // NO_UCD (unused code)
-            return e.osm instanceof Relation && ((Relation) e.osm).isMultipolygon() &&
+        static boolean unclosed_multipolygon(Environment e) {
+            return e.osm instanceof Relation && e.osm.isMultipolygon() &&
                     !e.osm.isIncomplete() && !((Relation) e.osm).hasIncompleteMembers() &&
                     !MultipolygonCache.getInstance().get((Relation) e.osm).getOpenEnds().isEmpty();
         }
@@ -758,38 +837,63 @@ public final class ConditionFactory {
         private static final Predicate<OsmPrimitive> IN_DOWNLOADED_AREA = new InDataSourceArea(false);
 
         /**
-         * {@code in-downloaded-area} tests whether the object is within source area ("downloaded area").
+         * {@code :in-downloaded-area} tests whether the object is within source area ("downloaded area").
          * @param e MapCSS environment
          * @return {@code true} if the object is within source area ("downloaded area")
          * @see InDataSourceArea
          */
-        static boolean inDownloadedArea(Environment e) { // NO_UCD (unused code)
+        static boolean inDownloadedArea(Environment e) {
             return e.osm instanceof OsmPrimitive && IN_DOWNLOADED_AREA.test((OsmPrimitive) e.osm);
         }
 
-        static boolean completely_downloaded(Environment e) { // NO_UCD (unused code)
+        /**
+         * {@code :completely_downloaded} tests whether the object is completely downloaded
+         * @param e MapCSS environment
+         * @return {@code true} if the object is completely downloaded
+         */
+        static boolean completely_downloaded(Environment e) {
             if (e.osm instanceof IRelation<?>) {
                 return !((IRelation<?>) e.osm).hasIncompleteMembers();
+            } else if (e.osm instanceof IWay<?>) {
+                return !((IWay<?>) e.osm).hasIncompleteNodes();
+            } else if (e.osm instanceof INode) {
+                return ((INode) e.osm).isLatLonKnown();
             } else {
                 return true;
             }
         }
 
-        static boolean closed2(Environment e) { // NO_UCD (unused code)
+        static boolean closed2(Environment e) {
             if (e.osm instanceof IWay<?> && ((IWay<?>) e.osm).isClosed())
                 return true;
-            if (e.osm instanceof Relation && ((Relation) e.osm).isMultipolygon()) {
+            if (e.osm instanceof Relation && e.osm.isMultipolygon()) {
                 Multipolygon multipolygon = MultipolygonCache.getInstance().get((Relation) e.osm);
                 return multipolygon != null && multipolygon.getOpenEnds().isEmpty();
             }
             return false;
         }
 
-        static boolean selected(Environment e) { // NO_UCD (unused code)
+        /**
+         * {@code :selected} tests whether the object is selected in the editor
+         * @param e MapCSS environment
+         * @return {@code true} if the object is selected
+         */
+        static boolean selected(Environment e) {
             if (e.mc != null) {
-                e.mc.getCascade(e.layer).setDefaultSelectedHandling(false);
+                e.getCascade().setDefaultSelectedHandling(false);
             }
             return e.osm.isSelected();
+        }
+
+        /**
+         * {@code :highlighted} tests whether the object is highlighted (i.e. is hovered over)
+         * @param e The MapCSS environment
+         * @return {@code true} if the object is highlighted
+         * @see IPrimitive#isHighlighted
+         * @since 17862
+         */
+        static boolean highlighted(Environment e) {
+            return e.osm.isHighlighted();
         }
     }
 
@@ -798,12 +902,39 @@ public final class ConditionFactory {
      */
     public static class PseudoClassCondition implements Condition {
 
-        final Method method;
-        final boolean not;
+        static final Map<String, PseudoClassCondition> CONDITION_MAP = new HashMap<>();
 
-        protected PseudoClassCondition(Method method, boolean not) {
-            this.method = method;
-            this.not = not;
+        static {
+            PseudoClassCondition.register("anticlockwise", PseudoClasses::anticlockwise);
+            PseudoClassCondition.register("areaStyle", PseudoClasses::areaStyle);
+            PseudoClassCondition.register("clockwise", PseudoClasses::clockwise);
+            PseudoClassCondition.register("closed", PseudoClasses::closed);
+            PseudoClassCondition.register("closed2", PseudoClasses::closed2);
+            PseudoClassCondition.register("completely_downloaded", PseudoClasses::completely_downloaded);
+            PseudoClassCondition.register("connection", PseudoClasses::connection);
+            PseudoClassCondition.register("highlighted", PseudoClasses::highlighted);
+            PseudoClassCondition.register("inDownloadedArea", PseudoClasses::inDownloadedArea);
+            PseudoClassCondition.register("modified", PseudoClasses::modified);
+            PseudoClassCondition.register("new", PseudoClasses::_new);
+            PseudoClassCondition.register("righthandtraffic", PseudoClasses::righthandtraffic);
+            PseudoClassCondition.register("sameTags", PseudoClasses::sameTags);
+            PseudoClassCondition.register("selected", PseudoClasses::selected);
+            PseudoClassCondition.register("tagged", PseudoClasses::tagged);
+            PseudoClassCondition.register("unclosed_multipolygon", PseudoClasses::unclosed_multipolygon);
+            PseudoClassCondition.register("unconnected", PseudoClasses::unconnected);
+        }
+
+        private static void register(String name, Predicate<Environment> predicate) {
+            CONDITION_MAP.put(clean(name), new PseudoClassCondition(":" + name, predicate));
+            CONDITION_MAP.put("!" + clean(name), new PseudoClassCondition("!:" + name, predicate.negate()));
+        }
+
+        private final String name;
+        private final Predicate<Environment> predicate;
+
+        protected PseudoClassCondition(String name, Predicate<Environment> predicate) {
+            this.name = name;
+            this.predicate = predicate;
         }
 
         /**
@@ -818,37 +949,27 @@ public final class ConditionFactory {
             if ("open_end".equals(id)) {
                 return new OpenEndPseudoClassCondition(not);
             }
-            final Method method = getMethod(id);
-            if (method != null) {
-                return new PseudoClassCondition(method, not);
+            String cleanId = not ? clean("!" + id) : clean(id);
+            PseudoClassCondition condition = CONDITION_MAP.get(cleanId);
+            if (condition != null) {
+                return condition;
             }
             throw new MapCSSException("Invalid pseudo class specified: " + id);
         }
 
-        protected static Method getMethod(String id) {
-            String cleanId = clean(id);
-            return Arrays.stream(PseudoClasses.class.getDeclaredMethods())
-                    .filter(method -> clean(method.getName()).equalsIgnoreCase(cleanId))
-                    .findFirst().orElse(null);
-        }
-
         private static String clean(String id) {
             // for backwards compatibility, consider :sameTags == :same-tags == :same_tags (#11150)
-            return id.replaceAll("[-_]", "");
+            return id.toLowerCase(Locale.ROOT).replaceAll("[-_]", "");
         }
 
         @Override
         public boolean applies(Environment e) {
-            try {
-                return not ^ (Boolean) method.invoke(null, e);
-            } catch (ReflectiveOperationException ex) {
-                throw new JosmRuntimeException(ex);
-            }
+            return predicate.test(e);
         }
 
         @Override
         public String toString() {
-            return (not ? "!" : "") + ':' + method.getName();
+            return name;
         }
     }
 
@@ -856,17 +977,19 @@ public final class ConditionFactory {
      * Open end pseudo class condition.
      */
     public static class OpenEndPseudoClassCondition extends PseudoClassCondition {
+        final boolean not;
         /**
          * Constructs a new {@code OpenEndPseudoClassCondition}.
          * @param not negation or not
          */
         public OpenEndPseudoClassCondition(boolean not) {
-            super(null, not);
+            super("open_end", null);
+            this.not = not;
         }
 
         @Override
         public boolean applies(Environment e) {
-            return true;
+            return !not;
         }
     }
 

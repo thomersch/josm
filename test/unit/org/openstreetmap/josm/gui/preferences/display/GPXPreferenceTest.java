@@ -1,31 +1,20 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.preferences.display;
 
-import static org.junit.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-import org.junit.BeforeClass;
-import org.junit.Test;
-import org.openstreetmap.josm.JOSMFixture;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.gui.preferences.PreferencesTestUtils;
 
 /**
  * Unit tests of {@link GPXPreference} class.
  */
-public class GPXPreferenceTest {
-
-    /**
-     * Setup test.
-     */
-    @BeforeClass
-    public static void setUpBeforeClass() {
-        JOSMFixture.createUnitTestFixture().init();
-    }
-
+class GPXPreferenceTest {
     /**
      * Unit test of {@link GPXPreference.Factory}.
      */
     @Test
-    public void testGPXPreference() {
+    void testGPXPreference() {
         assertNotNull(new GPXPreference.Factory().createPreferenceSetting());
     }
 
@@ -33,7 +22,7 @@ public class GPXPreferenceTest {
      * Unit test of {@link GPXPreference#addGui}.
      */
     @Test
-    public void testAddGui() {
+    void testAddGui() {
         PreferencesTestUtils.doTestPreferenceSettingAddGui(new GPXPreference.Factory(), null);
     }
 }

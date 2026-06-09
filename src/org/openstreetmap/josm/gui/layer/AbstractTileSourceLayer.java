@@ -1,6 +1,7 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.layer;
 
+import static org.openstreetmap.josm.tools.I18n.marktr;
 import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.awt.Color;
@@ -9,6 +10,7 @@ import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Image;
 import java.awt.Shape;
@@ -24,14 +26,14 @@ import java.awt.image.ImageObserver;
 import java.io.File;
 import java.io.IOException;
 import java.net.MalformedURLException;
-import java.net.URL;
-import java.text.SimpleDateFormat;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.Date;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -87,6 +89,7 @@ import org.openstreetmap.josm.data.imagery.ImageryInfo;
 import org.openstreetmap.josm.data.imagery.OffsetBookmark;
 import org.openstreetmap.josm.data.imagery.TMSCachedTileLoader;
 import org.openstreetmap.josm.data.imagery.TileLoaderFactory;
+import org.openstreetmap.josm.data.imagery.vectortile.VectorTile;
 import org.openstreetmap.josm.data.osm.visitor.BoundingXYVisitor;
 import org.openstreetmap.josm.data.preferences.BooleanProperty;
 import org.openstreetmap.josm.data.preferences.IntegerProperty;
@@ -110,6 +113,7 @@ import org.openstreetmap.josm.gui.layer.imagery.ImageryFilterSettings.FilterChan
 import org.openstreetmap.josm.gui.layer.imagery.IncreaseZoomAction;
 import org.openstreetmap.josm.gui.layer.imagery.LoadAllTilesAction;
 import org.openstreetmap.josm.gui.layer.imagery.LoadErroneousTilesAction;
+import org.openstreetmap.josm.gui.layer.imagery.MVTLayer;
 import org.openstreetmap.josm.gui.layer.imagery.ReprojectionTile;
 import org.openstreetmap.josm.gui.layer.imagery.ShowErrorsAction;
 import org.openstreetmap.josm.gui.layer.imagery.TileAnchor;
@@ -128,6 +132,7 @@ import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.MemoryManager;
 import org.openstreetmap.josm.tools.MemoryManager.MemoryHandle;
 import org.openstreetmap.josm.tools.MemoryManager.NotEnoughMemoryException;
+import org.openstreetmap.josm.tools.TextUtils;
 import org.openstreetmap.josm.tools.Utils;
 import org.openstreetmap.josm.tools.bugreport.BugReport;
 
@@ -144,6 +149,7 @@ import org.openstreetmap.josm.tools.bugreport.BugReport;
 public abstract class AbstractTileSourceLayer<T extends AbstractTMSTileSource> extends ImageryLayer
 implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeListener, DisplaySettingsChangeListener {
     private static final String PREFERENCE_PREFIX = "imagery.generic";
+    private static final int MAX_TILES_SPANNED = 40;
     static { // Registers all setting properties
         new TileSourceDisplaySettings();
     }
@@ -175,6 +181,7 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
     public static final IntegerProperty ZOOM_OFFSET = new IntegerProperty(PREFERENCE_PREFIX + ".zoom_offset", 0);
 
     private static final BooleanProperty POPUP_MENU_ENABLED = new BooleanProperty(PREFERENCE_PREFIX + ".popupmenu", true);
+    private static final String ERROR_STRING = marktr("Error");
 
     /*
      *  use MemoryTileCache instead of tileLoader JCS cache, as tileLoader caches only content (byte[] of image)
@@ -196,7 +203,7 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
             if (!isVisible()) return;
             if (e.getButton() == MouseEvent.BUTTON3) {
                 Component component = e.getComponent();
-                if (POPUP_MENU_ENABLED.get() && component.isShowing()) {
+                if (Boolean.TRUE.equals(POPUP_MENU_ENABLED.get()) && component.isShowing()) {
                     new TileSourceLayerPopup(e.getX(), e.getY()).show(component, e.getX(), e.getY());
                 }
             } else if (e.getButton() == MouseEvent.BUTTON1) {
@@ -252,10 +259,9 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
 
     /**
      * Get projections this imagery layer supports natively.
-     *
-     * For example projection of tiles that are downloaded from a server. Layer
-     * may support even more projections (by reprojecting the tiles), but with a
-     * certain loss in image quality and performance.
+     * <p/>
+     * For example projection of tiles that are downloaded from a server. Layer may support even more
+     * projections (by reprojecting the tiles), but with a certain loss in image quality and performance.
      * @return projections this imagery layer supports natively; null if layer is projection agnostic.
      */
     public abstract Collection<String> getNativeProjections();
@@ -286,10 +292,10 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
         tileLoader = getTileLoaderFactory().makeTileLoader(this, headers, minimumTileExpire);
 
         try {
-            if ("file".equalsIgnoreCase(new URL(tileSource.getBaseUrl()).getProtocol())) {
+            if (tileSource.getBaseUrl() != null && "file".equalsIgnoreCase(new URI(tileSource.getBaseUrl()).toURL().getProtocol())) {
                 tileLoader = new OsmTileLoader(this);
             }
-        } catch (MalformedURLException e) {
+        } catch (URISyntaxException | MalformedURLException e) {
             // ignore, assume that this is not a file
             Logging.log(Logging.LEVEL_DEBUG, e);
         }
@@ -340,7 +346,7 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
         for (List<String> entry: content) {
             panel.add(new JLabel(entry.get(0) + ':'), GBC.std());
             panel.add(GBC.glue(5, 0), GBC.std());
-            panel.add(createTextField(entry.get(1)), GBC.eol().fill(GBC.HORIZONTAL));
+            panel.add(createTextField(entry.get(1)), GBC.eol().fill(GridBagConstraints.HORIZONTAL));
         }
         return panel;
     }
@@ -419,7 +425,7 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
         }
 
         private static String getSizeString(int size) {
-            return new StringBuilder().append(size).append('x').append(size).toString();
+            return Integer.toString(size) + 'x' + size;
         }
 
         @Override
@@ -430,7 +436,7 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
                 Rectangle2D displaySize = layer.coordinateConverter.getRectangleForTile(tile);
                 String url = "";
                 try {
-                    url = tile.getUrl();
+                    url = TextUtils.stripUrl(tile.getUrl());
                 } catch (IOException e) {
                     // silence exceptions
                     Logging.trace(e);
@@ -449,9 +455,9 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
                 content.add(Arrays.asList(tr("Tile size"),
                         getSizeString(tile.getTileSource().getTileSize())));
                 content.add(Arrays.asList(tr("Tile display size"),
-                        new StringBuilder().append(displaySize.getWidth())
-                                .append('x')
-                                .append(displaySize.getHeight()).toString()));
+                        Double.toString(displaySize.getWidth()) +
+                                'x' +
+                                displaySize.getHeight()));
                 if (layer.coordinateConverter.requiresReprojection()) {
                     content.add(Arrays.asList(tr("Reprojection"),
                             tile.getTileSource().getServerCRS() +
@@ -466,11 +472,11 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
                 content.add(Arrays.asList(tr("Status"), tr(tile.getStatus())));
                 content.add(Arrays.asList(tr("Loaded"), tr(Boolean.toString(tile.isLoaded()))));
                 content.add(Arrays.asList(tr("Loading"), tr(Boolean.toString(tile.isLoading()))));
-                content.add(Arrays.asList(tr("Error"), tr(Boolean.toString(tile.hasError()))));
+                content.add(Arrays.asList(tr(ERROR_STRING), tr(Boolean.toString(tile.hasError()))));
                 for (List<String> entry: content) {
                     panel.add(new JLabel(entry.get(0) + ':'), GBC.std());
                     panel.add(GBC.glue(5, 0), GBC.std());
-                    panel.add(layer.createTextField(entry.get(1)), GBC.eol().fill(GBC.HORIZONTAL));
+                    panel.add(layer.createTextField(entry.get(1)), GBC.eol().fill(GridBagConstraints.HORIZONTAL));
                 }
 
                 for (Entry<String, String> e: tile.getMetadata().entrySet()) {
@@ -478,9 +484,9 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
                     panel.add(GBC.glue(5, 0), GBC.std());
                     String value = e.getValue();
                     if ("lastModification".equals(e.getKey()) || "expirationTime".equals(e.getKey())) {
-                        value = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date(Long.parseLong(value)));
+                        value = Instant.ofEpochMilli(Long.parseLong(value)).toString();
                     }
-                    panel.add(layer.createTextField(value), GBC.eol().fill(GBC.HORIZONTAL));
+                    panel.add(layer.createTextField(value), GBC.eol().fill(GridBagConstraints.HORIZONTAL));
 
                 }
                 ed.setIcon(JOptionPane.INFORMATION_MESSAGE);
@@ -509,9 +515,9 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
     private static void sendOsmTileRequest(Tile tile, String request) {
         if (tile != null) {
             try {
-                new Notification(HttpClient.create(new URL(tile.getUrl() + '/' + request))
-                        .connect().fetchContent()).show();
-            } catch (IOException ex) {
+                new Notification(HttpClient.create(new URI(tile.getUrl() + '/' + request).toURL())
+                        .connect().fetchContent()).setIcon(JOptionPane.INFORMATION_MESSAGE).show();
+            } catch (URISyntaxException | IOException ex) {
                 Logging.error(ex);
             }
         }
@@ -556,9 +562,9 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
         initializeIfRequired();
 
         event.getMapView().addMouseListener(adapter);
-        MapView.addZoomChangeListener(this);
+        NavigatableComponent.addZoomChangeListener(this);
 
-        if (this instanceof NativeScaleLayer && NavigatableComponent.PROP_ZOOM_SCALE_FOLLOW_NATIVE_RES_AT_LOAD.get()) {
+        if (this instanceof NativeScaleLayer && Boolean.TRUE.equals(NavigatableComponent.PROP_ZOOM_SCALE_FOLLOW_NATIVE_RES_AT_LOAD.get())) {
             event.getMapView().setNativeScaleLayer((NativeScaleLayer) this);
         }
 
@@ -637,14 +643,40 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
         if (tileSource != null) {
             tileSize = tileSource.getTileSize();
         }
-        // as we can see part of the tile at the top and at the bottom, use Math.ceil(...) + 1 to accommodate for that
-        int visibileTiles = (int) (Math.ceil((double) height / tileSize + 1) * Math.ceil((double) width / tileSize + 1));
-        // add 10% for tiles from different zoom levels
-        int ret = (int) Math.ceil(
-                Math.pow(2d, ZOOM_OFFSET.get()) * visibileTiles // use offset to decide, how many tiles are visible
-                * 4);
-        Logging.info("AbstractTileSourceLayer: estimated visible tiles: {0}, estimated cache size: {1}", visibileTiles, ret);
+        /*
+         * As we can see part of the tile at the top and at the bottom, use Math.ceil(...) + 1 to accommodate for that
+         */
+        int maxYtiles = (int) Math.ceil((double) height / tileSize + 1);
+        int maxXtiles = (int) Math.ceil((double) width / tileSize + 1);
+        int visibleTiles = maxXtiles * maxYtiles;
+
+        int ret = calculateRealTiles(visibleTiles, maxXtiles, maxYtiles);
+        Logging.info("AbstractTileSourceLayer: estimated visible tiles: {0}, estimated cache size: {1}", visibleTiles, ret);
         return ret;
+    }
+
+    /**
+     * Take into account ZOOM_OFFSET to calculate real number of tiles and multiply by 7, to cover all tiles, that might be
+     * accessed when looking for tiles outside current zoom level.
+     * <p>
+     * Currently we use otherZooms = {1, 2, -1, -2, -3, -4, -5}
+     * <p>
+     * The value should be sum(2^x for x in (-5 to 2)) - 1
+     * -1 to exclude current zoom level
+     * <p>
+     * Add +2 to maxYtiles / maxXtiles to add space in cache for extra tiles in current zoom level that are
+     * download by overloadTiles(). This is not added in computation of visibleTiles as this unnecessarily grow the cache size
+     * <p>
+     * Check call to tryLoadFromDifferentZoom
+     * @see #tryLoadFromDifferentZoom(Graphics2D, int, List, int)
+     * @see #drawInViewArea(Graphics2D, MapView, ProjectionBounds)
+     * @see AbstractTileSourceLayer.TileSet#overloadTiles()
+     */
+    private static int calculateRealTiles(int visibleTiles, int maxXtiles, int maxYtiles) {
+        return (int) Math.ceil(
+                Math.pow(2d, ZOOM_OFFSET.get()) * // use offset to decide, how many tiles are visible
+                        visibleTiles * 7 + // 7 to cover tiles from other zooms as described above
+                        ((maxYtiles + 2) * (maxXtiles +2))); // to add as many tiles as they will be accessed on current zoom level
     }
 
     @Override
@@ -755,7 +787,7 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
     private void zoomChanged(boolean invalidate) {
         Logging.debug("zoomChanged(): {0}", currentZoomLevel);
         if (tileLoader instanceof TMSCachedTileLoader) {
-            ((TMSCachedTileLoader) tileLoader).cancelOutstandingTasks();
+            tileLoader.cancelOutstandingTasks();
         }
         if (invalidate) {
             invalidate();
@@ -845,7 +877,7 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
     /**
      * Zoom out from map.
      *
-     * @return    true, if zoom increasing was successful, false othervise
+     * @return    true, if zoom increasing was successful, false otherwise
      */
     public boolean decreaseZoomLevel() {
         if (zoomDecreaseAllowed()) {
@@ -866,9 +898,9 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
         Tile tile = getTile(x, y, zoom);
         if (tile == null) {
             if (coordinateConverter.requiresReprojection()) {
-                tile = new ReprojectionTile(tileSource, x, y, zoom);
+                tile = new ReprojectionTile(createTile(tileSource, x, y, zoom));
             } else {
-                tile = new Tile(tileSource, x, y, zoom);
+                tile = createTile(tileSource, x, y, zoom);
             }
             tileCache.addTile(tile);
         }
@@ -919,12 +951,6 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
      */
     public void loadAllTiles(boolean force) {
         TileSet ts = getVisibleTileSet();
-
-        // if there is more than 18 tiles on screen in any direction, do not load all tiles!
-        if (ts.tooLarge()) {
-            Logging.warn("Not downloading all tiles because there is more than 18 tiles on an axis!");
-            return;
-        }
         ts.loadAllTiles(force);
         invalidate();
     }
@@ -937,6 +963,15 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
     public void loadAllErrorTiles(boolean force) {
         TileSet ts = getVisibleTileSet();
         ts.loadAllErrorTiles(force);
+        invalidate();
+    }
+
+    /**
+     * Remove all cached error tiles
+     * @since 19192
+     */
+    public void clearErrorTiles() {
+        tileCache.clearErrorTiles();
         invalidate();
     }
 
@@ -1027,7 +1062,7 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
                     img = getLoadedTileImage(tile);
                     anchorImage = getAnchor(tile, img);
                 }
-                if (img == null || anchorImage == null) {
+                if (img == null || anchorImage == null || (tile instanceof VectorTile && !tile.isLoaded())) {
                     miss = true;
                 }
             }
@@ -1036,7 +1071,9 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
                 return;
             }
 
-            img = applyImageProcessors(img);
+            if (img != null) {
+                img = applyImageProcessors(img);
+            }
 
             TileAnchor anchorScreen = coordinateConverter.getScreenAnchorForTile(tile);
             synchronized (paintMutex) {
@@ -1129,7 +1166,7 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
             StringBuilder line = new StringBuilder();
             StringBuilder ret = new StringBuilder();
             for (String s: text.split(" ", -1)) {
-                if (g.getFontMetrics().stringWidth(line.toString() + s) > tileSource.getTileSize()) {
+                if (g.getFontMetrics().stringWidth(line + s) > tileSource.getTileSize()) {
                     ret.append(line).append('\n');
                     line.setLength(0);
                 }
@@ -1181,8 +1218,8 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
                 } catch (IllegalArgumentException e) {
                     Logging.debug(e);
                 }
-                if (!errorMessage.startsWith("Error") && !errorMessage.startsWith(tr("Error"))) {
-                    errorMessage = tr("Error") + ": " + errorMessage;
+                if (!errorMessage.startsWith(ERROR_STRING) && !errorMessage.startsWith(tr(ERROR_STRING))) {
+                    errorMessage = tr(ERROR_STRING) + ": " + errorMessage;
                 }
                 myDrawString(g, errorMessage, x + 2, texty);
             }
@@ -1239,11 +1276,12 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
         }
 
         private boolean tooLarge() {
-            return insane() || this.tilesSpanned() > 20;
-        }
-
-        private boolean insane() {
-            return tileCache == null || size() > tileCache.getCacheSize();
+            try {
+                return tileCache == null || size() > tileCache.getCacheSize();
+            } catch (ArithmeticException arithmeticException) {
+                Logging.trace(arithmeticException);
+                return true;
+            }
         }
 
         /**
@@ -1267,7 +1305,7 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
          * @return A stream of all positions
          */
         public Stream<TilePosition> tilePositions() {
-            if (zoom == 0 || this.insane()) {
+            if (zoom == 0 || this.tooLarge()) {
                 return Stream.empty(); // Tileset is either empty or too large
             } else {
                 return IntStream.rangeClosed(minX, maxX).mapToObj(
@@ -1290,8 +1328,14 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
         }
 
         private void loadAllTiles(boolean force) {
-            if (!getDisplaySettings().isAutoLoad() && !force)
+            if (!getDisplaySettings().isAutoLoad() && !force) {
                 return;
+            }
+            if (tooLarge()) {
+                // Too many tiles... refuse to download
+                Logging.warn("Not downloading all tiles because there are more than {0} tiles on an axis!", MAX_TILES_SPANNED);
+                return;
+            }
             List<Tile> allTiles = allTilesCreate();
             allTiles.sort(getTileDistanceComparator());
             for (Tile t : allTiles) {
@@ -1303,16 +1347,20 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
          * Extend tile loading corridor, so that no flickering happens when panning
          */
         private void overloadTiles() {
+            /*
+             * consult calculation in estimateTileCacheSize() before changing values here.
+             *
+             *  @see #estimateTileCacheSize()
+             */
             int overload = 1;
+
             int minXo = Utils.clamp(minX-overload, tileSource.getTileXMin(zoom), tileSource.getTileXMax(zoom));
             int maxXo = Utils.clamp(maxX+overload, tileSource.getTileXMin(zoom), tileSource.getTileXMax(zoom));
             int minYo = Utils.clamp(minY-overload, tileSource.getTileYMin(zoom), tileSource.getTileYMax(zoom));
             int maxYo = Utils.clamp(maxY+overload, tileSource.getTileYMin(zoom), tileSource.getTileYMax(zoom));
-            for (int x = minXo; x < maxXo; ++x) {
-                for (int y = minYo; y < maxYo; ++y) {
-                    loadTile(getOrCreateTile(x, y, zoom), false);
-                }
-            }
+
+            TileSet ts = new TileSet(new TileXY(minXo, minYo), new TileXY(maxXo, maxYo), zoom);
+            ts.loadAllTiles(false);
         }
 
         private void loadAllErrorTiles(boolean force) {
@@ -1393,7 +1441,12 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
                     if (info == null) {
                         List<Tile> allTiles = this.allExistingTiles();
                         TileSetInfo newInfo = new TileSetInfo();
-                        newInfo.hasLoadingTiles = allTiles.size() < this.size();
+                        try {
+                            newInfo.hasLoadingTiles = allTiles.size() < this.size();
+                        } catch (ArithmeticException arithmeticException) {
+                            Logging.trace(arithmeticException);
+                            newInfo.hasLoadingTiles = false;
+                        }
                         newInfo.hasAllLoadedTiles = true;
                         for (Tile t : allTiles) {
                             if ("no-tile".equals(t.getValue("tile-info"))) {
@@ -1419,14 +1472,25 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
 
         @Override
         public String toString() {
-            return getClass().getName() + ": zoom: " + zoom + " X(" + minX + ", " + maxX + ") Y(" + minY + ", " + maxY + ") size: " + size();
+            int size;
+            try {
+                size = size();
+            } catch (ArithmeticException arithmeticException) {
+                Logging.trace(arithmeticException);
+                size = Integer.MIN_VALUE;
+            }
+            return getClass().getName()
+                    + ": zoom: " + zoom
+                    + " X(" + minX + ", " + maxX
+                    + ") Y(" + minY + ", " + maxY
+                    + ") size: " + (size >= 0 ? size : "Integer Overflow");
         }
     }
 
     /**
      * Data container to hold information about a {@code TileSet} class.
      */
-    private static class TileSetInfo {
+    private static final class TileSetInfo {
         boolean hasVisibleTiles;
         boolean hasOverzoomedTiles;
         boolean hasLoadingTiles;
@@ -1442,7 +1506,8 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
     protected TileSet getTileSet(ProjectionBounds bounds, int zoom) {
         if (zoom == 0)
             return new TileSet();
-        TileXY t1, t2;
+        TileXY t1;
+        TileXY t2;
         IProjected topLeftUnshifted = coordinateConverter.shiftDisplayToServer(bounds.getMin());
         IProjected botRightUnshifted = coordinateConverter.shiftDisplayToServer(bounds.getMax());
         if (coordinateConverter.requiresReprojection()) {
@@ -1465,7 +1530,8 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
 
     private class DeepTileSet {
         private final ProjectionBounds bounds;
-        private final int minZoom, maxZoom;
+        private final int minZoom;
+        private final int maxZoom;
         private final TileSet[] tileSets;
 
         @SuppressWarnings("unchecked")
@@ -1549,12 +1615,9 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
         }
         TileSet ts = dts.getTileSet(zoom);
 
-        // Too many tiles... refuse to download
-        if (!ts.tooLarge()) {
-            // try to load tiles from desired zoom level, no matter what we will show (for example, tiles from previous zoom level
-            // on zoom in)
-            ts.loadAllTiles(false);
-        }
+        // try to load tiles from desired zoom level, no matter what we will show (for example, tiles from previous zoom level
+        // on zoom in)
+        ts.loadAllTiles(false);
 
         if (displayZoomLevel != zoom) {
             ts = dts.getTileSet(displayZoomLevel);
@@ -1572,49 +1635,22 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
         if (getDisplaySettings().isAutoLoad()) {
             ts.overloadTiles();
         }
-        int[] otherZooms = {1, 2, -1, -2, -3, -4, -5};
-        for (int zoomOffset : otherZooms) {
-            if (!getDisplaySettings().isAutoZoom()) {
-                break;
-            }
-            int newzoom = displayZoomLevel + zoomOffset;
-            if (newzoom < getMinZoomLvl() || newzoom > getMaxZoomLvl()) {
-                continue;
-            }
-            if (missedTiles.isEmpty()) {
-                break;
-            }
-            List<Tile> newlyMissedTiles = new LinkedList<>();
-            for (Tile missed : missedTiles) {
-                if (zoomOffset > 0 && "no-tile".equals(missed.getValue("tile-info"))) {
-                    // Don't try to paint from higher zoom levels when tile is overzoomed
-                    newlyMissedTiles.add(missed);
-                    continue;
+        if (getDisplaySettings().isAutoZoom()) {
+            /*
+             * consult calculation in estimateTileCacheSize() before changing values here.
+             *
+             *  @see #estimateTileCacheSize()
+             */
+            int[] otherZooms = {1, 2, -1, -2, -3, -4, -5};
+
+            for (int otherZoom: otherZooms) {
+                missedTiles = tryLoadFromDifferentZoom(g, displayZoomLevel, missedTiles, otherZoom);
+                if (missedTiles.isEmpty()) {
+                    break;
                 }
-                TileSet ts2 = new TileSet(tileSource.getCoveringTileRange(missed, newzoom));
-                // Instantiating large TileSets is expensive. If there are no loaded tiles, don't bother even trying.
-                if (ts2.allLoadedTiles().isEmpty()) {
-                    if (zoomOffset > 0) {
-                        newlyMissedTiles.add(missed);
-                        continue;
-                    } else {
-                        /*
-                         *  We have negative zoom offset. Try to load tiles from lower zoom levels, as they may be not present
-                         *  in tile cache (e.g. when user panned the map or opened layer above zoom level, for which tiles are present.
-                         *  This will ensure, that tileCache is populated with tiles from lower zoom levels so it will be possible to
-                         *  use them to paint overzoomed tiles.
-                         *  See: #14562
-                         */
-                        ts2.loadAllTiles(false);
-                    }
-                }
-                if (ts2.tooLarge()) {
-                    continue;
-                }
-                newlyMissedTiles.addAll(this.paintTileImages(g, ts2, newzoom, missed));
             }
-            missedTiles = newlyMissedTiles;
         }
+
         if (Logging.isDebugEnabled() && !missedTiles.isEmpty()) {
             Logging.debug("still missed {0} in the end", missedTiles.size());
         }
@@ -1633,9 +1669,7 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
 
         g.setColor(Color.lightGray);
 
-        if (ts.insane()) {
-            myDrawString(g, tr("zoom in to load any tiles"), 120, 120);
-        } else if (ts.tooLarge()) {
+        if (ts.tooLarge()) {
             myDrawString(g, tr("zoom in to load more tiles"), 120, 120);
         } else if (!getDisplaySettings().isAutoZoom() && ts.tooSmall()) {
             myDrawString(g, tr("increase tiles zoom level (change resolution) to see more detail"), 120, 120);
@@ -1644,19 +1678,67 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
             myDrawString(g, tr("No tiles at this zoom level"), 120, 120);
         }
         if (Logging.isDebugEnabled()) {
-            myDrawString(g, tr("Current zoom: {0}", currentZoomLevel), 50, 140);
-            myDrawString(g, tr("Display zoom: {0}", displayZoomLevel), 50, 155);
-            myDrawString(g, tr("Pixel scale: {0}", getScaleFactor(currentZoomLevel)), 50, 170);
-            myDrawString(g, tr("Best zoom: {0}", getBestZoom()), 50, 185);
-            myDrawString(g, tr("Estimated cache size: {0}", estimateTileCacheSize()), 50, 200);
+            int xOffset = 50;
+            myDrawString(g, tr("Current zoom: {0}", currentZoomLevel), xOffset, 165);
+            myDrawString(g, tr("Display zoom: {0}", displayZoomLevel), xOffset, 180);
+            myDrawString(g, tr("Pixel scale: {0}", getScaleFactor(currentZoomLevel)), xOffset, 195);
+            myDrawString(g, tr("Best zoom: {0}", getBestZoom()), xOffset, 210);
+            myDrawString(g, tr("Estimated cache size: {0}", estimateTileCacheSize()), xOffset, 225);
             if (tileLoader instanceof TMSCachedTileLoader) {
-                int offset = 200;
+                int yOffset = 255;
+                myDrawString(g, tr("=== Cache stats ==="), xOffset, yOffset);
+                yOffset += 5;
                 for (String part: ((TMSCachedTileLoader) tileLoader).getStats().split("\n", -1)) {
-                    offset += 15;
-                    myDrawString(g, tr("Cache stats: {0}", part), 50, offset);
+                    String regex = "^-{3,}(.+)";
+                    if (part.matches(regex)) {
+                        part = part.replaceAll(regex, "--- $1");
+                        yOffset += 5;
+                    }
+                    yOffset += 15;
+                    myDrawString(g, tr(part), xOffset, yOffset);
                 }
             }
         }
+    }
+
+    private List<Tile> tryLoadFromDifferentZoom(Graphics2D g, int displayZoomLevel, List<Tile> missedTiles,
+            int zoomOffset) {
+
+        int newzoom = displayZoomLevel + zoomOffset;
+        if (newzoom < getMinZoomLvl() || newzoom > getMaxZoomLvl()) {
+            return missedTiles;
+        }
+
+        List<Tile> newlyMissedTiles = new LinkedList<>();
+        for (Tile missed : missedTiles) {
+            if (zoomOffset > 0 && "no-tile".equals(missed.getValue("tile-info"))) {
+                // Don't try to paint from higher zoom levels when tile is overzoomed
+                newlyMissedTiles.add(missed);
+                continue;
+            }
+            TileSet ts2 = new TileSet(tileSource.getCoveringTileRange(missed, newzoom));
+            // Instantiating large TileSets is expensive. If there are no loaded tiles, don't bother even trying.
+            if (ts2.allLoadedTiles().isEmpty()) {
+                if (zoomOffset > 0) {
+                    newlyMissedTiles.add(missed);
+                    continue;
+                } else {
+                    /*
+                     *  We have negative zoom offset. Try to load tiles from lower zoom levels, as they may be not present
+                     *  in tile cache (e.g. when user panned the map or opened layer above zoom level, for which tiles are present.
+                     *  This will ensure, that tileCache is populated with tiles from lower zoom levels so it will be possible to
+                     *  use them to paint overzoomed tiles.
+                     *  See: #14562
+                     */
+                    ts2.loadAllTiles(false);
+                }
+            }
+            if (ts2.tooLarge()) {
+                continue;
+            }
+            newlyMissedTiles.addAll(this.paintTileImages(g, ts2, newzoom, missed));
+        }
+        return newlyMissedTiles;
     }
 
     /**
@@ -1792,11 +1874,14 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
 
     @Override
     public void visitBoundingBox(BoundingXYVisitor v) {
+        if (this.getInfo() != null) {
+            v.visit(this.getInfo().getBounds());
+        }
     }
 
     /**
      * Task responsible for precaching imagery along the gpx track
-     *
+     * @since 8526
      */
     public class PrecacheTask implements TileLoaderListener {
         private final ProgressMonitor progressMonitor;
@@ -1817,7 +1902,7 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
             this.tileLoader = getTileLoaderFactory().makeTileLoader(this, getHeaders(tileSource), minimumTileExpire);
             if (this.tileLoader instanceof TMSCachedTileLoader) {
                 ((TMSCachedTileLoader) this.tileLoader).setDownloadExecutor(
-                        TMSCachedTileLoader.getNewThreadPoolExecutor("Precache downloader"));
+                        TMSCachedTileLoader.getNewThreadPoolExecutor("precache-downloader-%d"));
             }
             requestedTiles = new ConcurrentSkipListSet<>(
                     (o1, o2) -> String.CASE_INSENSITIVE_ORDER.compare(o1.getKey(), o2.getKey()));
@@ -1834,14 +1919,13 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
 
                 for (int x = minX; x <= maxX; x++) {
                     for (int y = minY; y <= maxY; y++) {
-                        requestedTiles.add(new Tile(tileSource, x, y, currentZoomLevel));
+                        requestedTiles.add(createTile(tileSource, x, y, currentZoomLevel));
                     }
                 }
             }
 
             this.totalCount = requestedTiles.size();
             this.progressMonitor.setTicksCount(requestedTiles.size());
-
         }
 
         /**
@@ -1864,9 +1948,7 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
          * cancel the task
          */
         public void cancel() {
-            if (tileLoader instanceof TMSCachedTileLoader) {
-                ((TMSCachedTileLoader) tileLoader).cancelOutstandingTasks();
-            }
+            shutdownTmsTileLoader();
         }
 
         @Override
@@ -1882,34 +1964,33 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
             } else {
                 Logging.warn("Tile loading failure: " + tile + " - " + tile.getErrorMessage());
             }
+            if (isFinished()) {
+                shutdownTmsTileLoader();
+            }
         }
 
-        /**
-         * Returns tile loader that is used to load the tiles.
-         * @return tile loader that is used to load the tiles
-         */
-        public TileLoader getTileLoader() {
-            return tileLoader;
+        private void shutdownTmsTileLoader() {
+            if (tileLoader instanceof TMSCachedTileLoader) {
+                ((TMSCachedTileLoader) tileLoader).shutdown();
+            }
         }
 
         /**
          * Execute the download
          */
         public void run() {
-            TileLoader loader = getTileLoader();
             for (Tile t: requestedTiles) {
                 if (!progressMonitor.isCanceled()) {
-                    loader.createTileLoaderJob(t).submit();
+                    tileLoader.createTileLoaderJob(t).submit();
                 }
             }
-
         }
     }
 
     /**
      * Calculates tiles, that needs to be downloaded to cache, gets a current tile loader and creates a task to download
      * all of the tiles. Buffer contains at least one tile.
-     *
+     * <p>
      * To prevent accidental clear of the queue, new download executor is created with separate queue
      *
      * @param progressMonitor progress monitor for download task
@@ -1933,14 +2014,31 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
         return SaveActionBase.createAndOpenSaveFileChooser(tr("Save WMS file"), WMSLayerImporter.FILE_FILTER);
     }
 
+    /**
+     * Create a new tile. Added to allow use of custom {@link Tile} objects.
+     *
+     * @param source Tile source
+     * @param x X coordinate
+     * @param y Y coordinate
+     * @param zoom Zoom level
+     * @return The new {@link Tile}
+     * @since 17862
+     */
+    public Tile createTile(T source, int x, int y, int zoom) {
+        return new Tile(source, x, y, zoom);
+    }
+
     @Override
     public synchronized void destroy() {
         super.destroy();
-        MapView.removeZoomChangeListener(this);
+        NavigatableComponent.removeZoomChangeListener(this);
         adjustAction.destroy();
+        if (tileLoader instanceof TMSCachedTileLoader) {
+            ((TMSCachedTileLoader) tileLoader).shutdown();
+        }
     }
 
-    private class TileSourcePainter extends CompatibilityModeLayerPainter {
+    private final class TileSourcePainter extends CompatibilityModeLayerPainter {
         /** The memory handle that will hold our tile source. */
         private MemoryHandle<?> memory;
 
@@ -1949,6 +2047,18 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
             allocateCacheMemory();
             if (memory != null) {
                 doPaint(graphics);
+                if (AbstractTileSourceLayer.this instanceof MVTLayer) {
+                    AbstractTileSourceLayer.this.paint(graphics.getDefaultGraphics(), graphics.getMapView(), graphics.getMapView()
+                      .getRealBounds());
+                }
+            } else {
+                Graphics g = graphics.getDefaultGraphics();
+                Color oldColor = g.getColor();
+                g.setColor(Color.BLACK);
+                g.drawString("Not enough memory to draw layer: " + getName(), 10, 120);
+                g.setColor(Color.RED);
+                g.drawString("Not enough memory to draw layer: " + getName(), 11, 121);
+                g.setColor(oldColor);
             }
         }
 
@@ -1974,14 +2084,14 @@ implements ImageObserver, TileLoaderListener, ZoomChangeListener, FilterChangeLi
             }
         }
 
-        protected long getEstimatedCacheSize() {
+        private long getEstimatedCacheSize() {
             return 4L * tileSource.getTileSize() * tileSource.getTileSize() * estimateTileCacheSize();
         }
 
         @Override
         public void detachFromMapView(MapViewEvent event) {
             event.getMapView().removeMouseListener(adapter);
-            MapView.removeZoomChangeListener(AbstractTileSourceLayer.this);
+            NavigatableComponent.removeZoomChangeListener(AbstractTileSourceLayer.this);
             super.detachFromMapView(event);
             if (memory != null) {
                 memory.free();

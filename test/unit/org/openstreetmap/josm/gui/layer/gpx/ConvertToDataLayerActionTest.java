@@ -1,21 +1,21 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.layer.gpx;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.gpx.GpxData;
@@ -28,29 +28,18 @@ import org.openstreetmap.josm.io.GpxReaderTest;
 import org.openstreetmap.josm.io.IllegalDataException;
 import org.openstreetmap.josm.io.OsmReader;
 import org.openstreetmap.josm.spi.preferences.Config;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
 import org.xml.sax.SAXException;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
  * Unit tests of {@link ConvertToDataLayerAction} class.
  */
-public class ConvertToDataLayerActionTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+class ConvertToDataLayerActionTest {
     /**
      * Tests a conversion from a GPX marker layer to a OSM dataset
      * @throws Exception if the parsing fails
      */
     @Test
-    public void testFromMarkerLayer() throws Exception {
+    void testFromMarkerLayer() throws Exception {
         final GpxData data = GpxReaderTest.parseGpxData(TestUtils.getTestDataRoot() + "minimal.gpx");
         final MarkerLayer markers = new MarkerLayer(data, "Markers", data.storageFile, null);
         final DataSet osm = new ConvertFromMarkerLayerAction(markers).convert();
@@ -64,7 +53,7 @@ public class ConvertToDataLayerActionTest {
      * @throws Exception if the parsing fails
      */
     @Test
-    public void testFromTrack() throws Exception {
+    void testFromTrack() throws Exception {
         Config.getPref().put("gpx.convert-tags", "no");
         testFromTrack("tracks.gpx", "tracks.osm");
 
@@ -72,12 +61,12 @@ public class ConvertToDataLayerActionTest {
         testFromTrack("tracks.gpx", "tracks-ele-time.osm");
 
         Config.getPref().put("gpx.convert-tags", "list");
-        Config.getPref().putList("gpx.convert-tags.list.yes", Arrays.asList("ele"));
-        Config.getPref().putList("gpx.convert-tags.list.no", Arrays.asList("time"));
+        Config.getPref().putList("gpx.convert-tags.list.yes", Collections.singletonList("ele"));
+        Config.getPref().putList("gpx.convert-tags.list.no", Collections.singletonList("time"));
         testFromTrack("tracks.gpx", "tracks-ele.osm");
 
-        Config.getPref().putList("gpx.convert-tags.list.yes", Arrays.asList("time"));
-        Config.getPref().putList("gpx.convert-tags.list.no", Arrays.asList("ele"));
+        Config.getPref().putList("gpx.convert-tags.list.yes", Collections.singletonList("time"));
+        Config.getPref().putList("gpx.convert-tags.list.no", Collections.singletonList("ele"));
         testFromTrack("tracks.gpx", "tracks-time.osm");
 
         //Extension tests:
@@ -137,24 +126,24 @@ public class ConvertToDataLayerActionTest {
                 .sorted(Comparator.comparing(g -> g.coor.hashCode()))
                 .collect(Collectors.toList());
 
-        assertEquals("Conversion " + originalGpx + " -> " + expectedOsm + " didn't match!", nodesExpected, nodes);
+        assertEquals(nodesExpected, nodes, "Conversion " + originalGpx + " -> " + expectedOsm + " didn't match!");
 
         List<String> ways = osm.getWays().stream()
-                .map(w -> Integer.toString(w.getNodes().size()) + ":" + w.getKeys().entrySet().stream()
-                        .sorted(Comparator.comparing(Map.Entry::getKey)).collect(Collectors.toList()).toString())
+                .map(w -> w.getNodes().size() + ":" + w.getKeys().entrySet().stream()
+                        .sorted(Map.Entry.comparingByKey()).collect(Collectors.toList()))
                 .sorted()
                 .collect(Collectors.toList());
 
         List<String> waysExpected = osmExpected.getWays().stream()
-                .map(w -> Integer.toString(w.getNodes().size()) + ":" + w.getKeys().entrySet().stream()
-                        .sorted(Comparator.comparing(Map.Entry::getKey)).collect(Collectors.toList()).toString())
+                .map(w -> w.getNodes().size() + ":" + w.getKeys().entrySet().stream()
+                        .sorted(Map.Entry.comparingByKey()).collect(Collectors.toList()))
                 .sorted()
                 .collect(Collectors.toList());
 
-        assertEquals("Conversion " + originalGpx + " -> " + expectedOsm + " didn't match!", waysExpected, ways);
+        assertEquals(waysExpected, ways, "Conversion " + originalGpx + " -> " + expectedOsm + " didn't match!");
 
-        assertEquals("Conversion " + originalGpx + " -> " + expectedOsm + " didn't match!", osmExpected.allPrimitives().size(),
-                osm.allPrimitives().size());
+        assertEquals(osmExpected.allPrimitives().size(), osm.allPrimitives().size(),
+                "Conversion " + originalGpx + " -> " + expectedOsm + " didn't match!");
     }
 
     /**
@@ -163,7 +152,7 @@ public class ConvertToDataLayerActionTest {
      * @throws SAXException if any XML error occurs
      */
     @Test
-    public void testTicket14275() throws IOException, SAXException {
+    void testTicket14275() throws IOException, SAXException {
         assertNotNull(GpxReaderTest.parseGpxData(TestUtils.getRegressionDataFile(14275, "1485101437.8189685.gpx")));
     }
 }

@@ -1,23 +1,18 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.tagging.presets.items;
 
-import java.awt.GridBagLayout;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 
-import javax.swing.ImageIcon;
-import javax.swing.JLabel;
 import javax.swing.JPanel;
-import javax.swing.SwingConstants;
 
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.OsmUtils;
 import org.openstreetmap.josm.data.osm.Tag;
-import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetReader;
+import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetItemGuiSupport;
+import org.openstreetmap.josm.gui.widgets.IconTextCheckBox;
 import org.openstreetmap.josm.gui.widgets.QuadStateCheckBox;
 import org.openstreetmap.josm.tools.GBC;
 
@@ -34,29 +29,25 @@ public class Check extends KeyedItem {
     public boolean disable_off; // NOSONAR
     /** "on" or "off" or unset (default is unset) */
     public String default_; // only used for tagless objects // NOSONAR
-    /** The location of icon file to display */
-    public String icon; // NOSONAR
-    /** The size of displayed icon. If not set, default is 16px */
-    public short icon_size = 16; // NOSONAR
 
     private QuadStateCheckBox check;
     private QuadStateCheckBox.State initialState;
     private Boolean def;
 
     @Override
-    public boolean addToPanel(JPanel p, Collection<OsmPrimitive> sel, boolean presetInitiallyMatches) {
+    public boolean addToPanel(JPanel p, TaggingPresetItemGuiSupport support) {
 
         // find out if our key is already used in the selection.
-        final Usage usage = determineBooleanUsage(sel, key);
-        final String oneValue = usage.values.isEmpty() ? null : usage.values.last();
+        final Usage usage = determineBooleanUsage(support.getSelected(), key);
+        final String oneValue = usage.map.isEmpty() ? null : usage.map.lastKey();
         def = "on".equals(default_) ? Boolean.TRUE : "off".equals(default_) ? Boolean.FALSE : null;
 
         initializeLocaleText(null);
 
-        if (usage.values.size() < 2 && (oneValue == null || value_on.equals(oneValue) || value_off.equals(oneValue))) {
+        if (usage.map.size() < 2 && (oneValue == null || value_on.equals(oneValue) || value_off.equals(oneValue))) {
             if (def != null && !PROP_FILL_DEFAULT.get()) {
                 // default is set and filling default values feature is disabled - check if all primitives are untagged
-                for (OsmPrimitive s : sel) {
+                for (OsmPrimitive s : support.getSelected()) {
                     if (s.hasKeys()) {
                         def = null;
                     }
@@ -93,21 +84,14 @@ public class Check extends KeyedItem {
         check.setComponentPopupMenu(getPopupMenu());
 
         if (icon != null) {
-            JPanel checkPanel = new JPanel(new GridBagLayout());
-            checkPanel.add(check, GBC.std());
-            JLabel label = new JLabel(locale_text, getIcon(), SwingConstants.LEFT);
-            label.addMouseListener(new MouseAdapter() {
-                @Override
-                public void mousePressed(MouseEvent e) {
-                    check.getMouseAdapter().mousePressed(e);
-                }
-            });
-            checkPanel.add(label);
-            checkPanel.add(new JLabel(), GBC.eol().fill());
+            JPanel checkPanel = IconTextCheckBox.wrap(check, locale_text, getIcon());
+            checkPanel.applyComponentOrientation(support.getDefaultComponentOrientation());
             p.add(checkPanel, GBC.eol()); // Do not fill, see #15104
         } else {
+            check.applyComponentOrientation(support.getDefaultComponentOrientation());
             p.add(check, GBC.eol()); // Do not fill, see #15104
         }
+        check.addChangeListener(l -> support.fireItemValueModified(this, key, getValue()));
         return true;
     }
 
@@ -117,24 +101,18 @@ public class Check extends KeyedItem {
         if (def == null && check.getState() == initialState) return;
 
         // otherwise change things according to the selected value.
-        changedTags.add(new Tag(key,
-                check.getState() == QuadStateCheckBox.State.SELECTED ? value_on :
-                    check.getState() == QuadStateCheckBox.State.NOT_SELECTED ? value_off :
-                        null));
+        changedTags.add(new Tag(key, getValue()));
+    }
+
+    protected String getValue() {
+        return check.getState() == QuadStateCheckBox.State.SELECTED ? value_on :
+            check.getState() == QuadStateCheckBox.State.NOT_SELECTED ? value_off :
+                null;
     }
 
     @Override
     public MatchType getDefaultMatch() {
         return MatchType.NONE;
-    }
-
-    /**
-     * Returns the entry icon, if any.
-     * @return the entry icon, or {@code null}
-     * @since 15437
-     */
-    public ImageIcon getIcon() {
-        return icon == null ? null : loadImageIcon(icon, TaggingPresetReader.getZipIcons(), (int) icon_size);
     }
 
     @Override

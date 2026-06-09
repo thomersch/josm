@@ -1,7 +1,8 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.history;
 
-import java.text.DateFormat;
+import java.awt.Color;
+import java.time.format.FormatStyle;
 
 import javax.swing.table.AbstractTableModel;
 
@@ -52,8 +53,8 @@ public final class VersionTableModel extends AbstractTableModel {
             return model.isCurrentPointInTime(row);
         case VersionTableColumnModel.COL_DATE:
             HistoryOsmPrimitive p3 = model.getPrimitive(row);
-            if (p3 != null && p3.getTimestamp() != null)
-                return DateUtils.formatDateTime(p3.getTimestamp(), DateFormat.SHORT, DateFormat.SHORT);
+            if (p3 != null && p3.getInstant() != null)
+                return DateUtils.getDateTimeFormatter(FormatStyle.SHORT, FormatStyle.SHORT).format(p3.getInstant());
             return null;
         case VersionTableColumnModel.COL_USER:
             HistoryOsmPrimitive p4 = model.getPrimitive(row);
@@ -75,6 +76,15 @@ public final class VersionTableModel extends AbstractTableModel {
         default:
             return null;
         }
+    }
+
+    /**
+     * Returns the color for the primitive in the given row
+     * @param row row number
+     * @return the color for the primitive in the given row
+     */
+    public Color getVersionColor(int row) {
+        return model.getVersionColor(row);
     }
 
     @Override

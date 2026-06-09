@@ -3,25 +3,28 @@ package org.openstreetmap.josm.io;
 
 import static org.openstreetmap.josm.tools.I18n.tr;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.Collection;
 import java.util.Map.Entry;
 
-import javax.json.Json;
-import javax.json.JsonArray;
-import javax.json.JsonNumber;
-import javax.json.JsonObject;
-import javax.json.JsonString;
-import javax.json.JsonValue;
-import javax.json.stream.JsonParser;
-import javax.json.stream.JsonParser.Event;
+import jakarta.json.Json;
+import jakarta.json.JsonArray;
+import jakarta.json.JsonException;
+import jakarta.json.JsonNumber;
+import jakarta.json.JsonObject;
+import jakarta.json.JsonString;
+import jakarta.json.JsonValue;
+import jakarta.json.stream.JsonParser;
+import jakarta.json.stream.JsonParser.Event;
+import jakarta.json.stream.JsonParsingException;
 
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.PrimitiveData;
-import org.openstreetmap.josm.data.osm.Relation;
+import org.openstreetmap.josm.data.osm.RelationData;
 import org.openstreetmap.josm.data.osm.RelationMemberData;
 import org.openstreetmap.josm.data.osm.Tagged;
-import org.openstreetmap.josm.data.osm.Way;
+import org.openstreetmap.josm.data.osm.WayData;
 import org.openstreetmap.josm.gui.progress.NullProgressMonitor;
 import org.openstreetmap.josm.gui.progress.ProgressMonitor;
 import org.openstreetmap.josm.tools.Logging;
@@ -29,7 +32,7 @@ import org.openstreetmap.josm.tools.UncheckedParseException;
 
 /**
  * Parser for the Osm API (JSON output). Read from an input stream and construct a dataset out of it.
- *
+ * <p>
  * For each json element, there is a dedicated method.
  * @since 14086
  */
@@ -143,7 +146,7 @@ public class OsmJsonReader extends AbstractReader {
         parseWay(wd -> readCommon(item, wd), (w, nodeIds) -> readWayNodesAndTags(item, w, nodeIds));
     }
 
-    private static void readWayNodesAndTags(JsonObject item, Way w, Collection<Long> nodeIds) {
+    private static void readWayNodesAndTags(JsonObject item, WayData w, Collection<Long> nodeIds) {
         for (JsonValue v : item.getJsonArray("nodes")) {
             nodeIds.add(((JsonNumber) v).longValue());
         }
@@ -154,7 +157,7 @@ public class OsmJsonReader extends AbstractReader {
         parseRelation(rd -> readCommon(item, rd), (r, members) -> readRelationMembersAndTags(item, r, members));
     }
 
-    private void readRelationMembersAndTags(JsonObject item, Relation r, Collection<RelationMemberData> members)
+    private void readRelationMembersAndTags(JsonObject item, RelationData r, Collection<RelationMemberData> members)
             throws IllegalDataException {
         JsonArray jsonArray = item.getJsonArray("members");
         if (jsonArray != null) {
@@ -178,10 +181,21 @@ public class OsmJsonReader extends AbstractReader {
 
     @Override
     protected DataSet doParseDataSet(InputStream source, ProgressMonitor progressMonitor) throws IllegalDataException {
-        return doParseDataSet(source, progressMonitor, ir -> {
-            setParser(Json.createParser(ir));
-            parse();
-        });
+        try {
+            return doParseDataSet(source, progressMonitor, (ParserWorker) ir -> {
+                setParser(Json.createParser(ir));
+                parse();
+            });
+        } catch (JsonParsingException exception) {
+            throw new IllegalDataException(exception);
+        } catch (JsonException exception) {
+            if (exception.getCause() instanceof IOException) {
+                IOException soe = (IOException) exception.getCause();
+                soe.addSuppressed(exception); // Add the caught exception as a suppressed exception
+                throw new IllegalDataException(soe);
+            }
+            throw exception;
+        }
     }
 
     /**

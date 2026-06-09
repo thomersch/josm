@@ -316,6 +316,7 @@ public class DrawAction extends MapMode implements MapViewPaintable, DataSelecti
     @Override
     public void exitMode() {
         super.exitMode();
+
         MapFrame map = MainApplication.getMap();
         map.mapView.removeMouseListener(this);
         map.mapView.removeMouseMotionListener(this);
@@ -331,11 +332,13 @@ public class DrawAction extends MapMode implements MapViewPaintable, DataSelecti
         DataSet ds = getLayerManager().getEditDataSet();
         if (ds != null) {
             ds.getSelected().forEach(x -> updatePreservedFlag(x, false));
+            map.statusLine.setDist(ds.getSelectedWays());
         }
 
         removeHighlighting(null);
         map.keyDetector.removeKeyListener(this);
         map.keyDetector.removeModifierExListener(this);
+        lastUsedNode = null;
     }
 
     /**
@@ -690,14 +693,14 @@ public class DrawAction extends MapMode implements MapViewPaintable, DataSelecti
         Map<Way, List<Integer>> insertPoints = new HashMap<>();
         for (WaySegment ws : wss) {
             List<Integer> is;
-            if (insertPoints.containsKey(ws.way)) {
-                is = insertPoints.get(ws.way);
+            if (insertPoints.containsKey(ws.getWay())) {
+                is = insertPoints.get(ws.getWay());
             } else {
                 is = new ArrayList<>();
-                insertPoints.put(ws.way, is);
+                insertPoints.put(ws.getWay(), is);
             }
 
-            is.add(ws.lowerIndex);
+            is.add(ws.getLowerIndex());
         }
 
         Set<Pair<Node, Node>> segSet = new HashSet<>();
@@ -855,7 +858,7 @@ public class DrawAction extends MapMode implements MapViewPaintable, DataSelecti
         if (!ctrl && currentMouseNode == null) {
             List<WaySegment> wss = mv.getNearestWaySegments(mousePos, OsmPrimitive::isSelectable);
             for (WaySegment ws : wss) {
-                mouseOnExistingWays.add(ws.way);
+                mouseOnExistingWays.add(ws.getWay());
             }
         }
 
@@ -877,7 +880,7 @@ public class DrawAction extends MapMode implements MapViewPaintable, DataSelecti
         if (getCurrentBaseNode() == null || getCurrentBaseNode() == currentMouseNode)
             return; // Don't create zero length way segments.
 
-        showStatusInfo(-1, -1, -1, snapHelper.isSnapOn());
+        showStatusInfo(Double.NaN, -1, -1, snapHelper.isSnapOn());
 
         double curHdg = Utils.toDegrees(getCurrentBaseNode().getEastNorth()
                 .heading(currentMouseEastNorth));
@@ -896,7 +899,7 @@ public class DrawAction extends MapMode implements MapViewPaintable, DataSelecti
 
     static void showStatusInfo(double angle, double hdg, double distance, boolean activeFlag) {
         MapFrame map = MainApplication.getMap();
-        map.statusLine.setAngle(angle);
+        map.statusLine.setAngleNaN(angle);
         map.statusLine.activateAnglePanel(activeFlag);
         map.statusLine.setHeading(hdg);
         map.statusLine.setDist(distance);

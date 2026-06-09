@@ -26,6 +26,7 @@ import org.openstreetmap.josm.cli.CLIModule;
 import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.data.ProjectionBounds;
 import org.openstreetmap.josm.data.coor.EastNorth;
+import org.openstreetmap.josm.data.coor.ILatLon;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.coor.conversion.LatLonParser;
 import org.openstreetmap.josm.data.osm.DataSet;
@@ -38,6 +39,7 @@ import org.openstreetmap.josm.gui.mappaint.RenderingHelper.StyleData;
 import org.openstreetmap.josm.io.Compression;
 import org.openstreetmap.josm.io.IllegalDataException;
 import org.openstreetmap.josm.io.OsmReader;
+import org.openstreetmap.josm.spi.lifecycle.Lifecycle;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.spi.preferences.MemoryPreferences;
 import org.openstreetmap.josm.tools.Http1Client;
@@ -176,7 +178,7 @@ public class RenderingCLI implements CLIModule {
                 e.printStackTrace();
             }
             System.err.println(tr("Error - file not found: ''{0}''", e.getMessage()));
-            System.exit(1);
+            Lifecycle.exitJosm(true, 1);
         } catch (IllegalArgumentException | IllegalDataException | IOException e) {
             if (Logging.isDebugEnabled()) {
                 e.printStackTrace();
@@ -184,9 +186,9 @@ public class RenderingCLI implements CLIModule {
             if (e.getMessage() != null) {
                 System.err.println(tr("Error: {0}", e.getMessage()));
             }
-            System.exit(1);
+            Lifecycle.exitJosm(true, 1);
         }
-        System.exit(0);
+        Lifecycle.exitJosm(true, 0);
     }
 
     /**
@@ -227,7 +229,7 @@ public class RenderingCLI implements CLIModule {
         switch (o) {
         case HELP:
             showHelp();
-            System.exit(0);
+            Lifecycle.exitJosm(true, 0);
             break;
         case DEBUG:
             argDebug = true;
@@ -271,7 +273,7 @@ public class RenderingCLI implements CLIModule {
             if (!"auto".equals(arg)) {
                 try {
                     argBounds = new Bounds(arg, ",", Bounds.ParseMethod.LEFT_BOTTOM_RIGHT_TOP, false);
-                } catch (IllegalArgumentException iae) { // NOPMD
+                } catch (IllegalArgumentException iae) {
                     throw new OptionParseException(
                             tr("Unable to parse {0} parameter: {1}", "--bounds", iae.getMessage()), iae);
                 }
@@ -306,7 +308,7 @@ public class RenderingCLI implements CLIModule {
                 double lon = LatLonParser.parseCoordinate(parts[0]);
                 double lat = LatLonParser.parseCoordinate(parts[1]);
                 argAnchor = new LatLon(lat, lon);
-            } catch (IllegalArgumentException iae) { // NOPMD
+            } catch (IllegalArgumentException iae) {
                 throw new OptionParseException(tr("In option {0}: {1}", "--anchor", iae.getMessage()), iae);
             }
             break;
@@ -489,7 +491,7 @@ public class RenderingCLI implements CLIModule {
                     double shiftMeter = 10;
                     EastNorth projAnchorShifted = projAnchor.add(shiftMeter / proj.getMetersPerUnit(),
                             shiftMeter / proj.getMetersPerUnit());
-                    LatLon anchorShifted = proj.eastNorth2latlon(projAnchorShifted);
+                    ILatLon anchorShifted = proj.eastNorth2latlon(projAnchorShifted);
                     return projAnchor.distance(projAnchorShifted) / argAnchor.greatCircleDistance(anchorShifted);
                 };
 
@@ -557,7 +559,7 @@ public class RenderingCLI implements CLIModule {
         if (scale == null) {
             if (argScale != null) {
                 double enPerMeter = pb.getMin().distance(pb.getMax())
-                        / bounds.getMin().greatCircleDistance(bounds.getMax());
+                        / bounds.getMin().greatCircleDistance((ILatLon) bounds.getMax());
                 scale = argScale * enPerMeter / PIXEL_PER_METER;
             } else if (argWidthPx != null) {
                 scale = (pb.maxEast - pb.minEast) / argWidthPx;

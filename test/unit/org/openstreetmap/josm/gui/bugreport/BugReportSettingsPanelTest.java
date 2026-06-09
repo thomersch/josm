@@ -1,32 +1,21 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.bugreport;
 
-import static org.junit.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
 import org.openstreetmap.josm.tools.bugreport.BugReport;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests the {@link BugReportSettingsPanel} class.
  */
-public class BugReportSettingsPanelTest {
-
-    /**
-     * Setup test
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+class BugReportSettingsPanelTest {
     /**
      * Test {@link BugReportSettingsPanel}
      */
     @Test
-    public void testBugReportSettingsPanel() {
+    void testBugReportSettingsPanel() {
         assertNotNull(new BugReportSettingsPanel(new BugReport(BugReport.intercept(new Exception()))));
     }
 }

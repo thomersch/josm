@@ -1,10 +1,12 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.io.session;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.awt.Color;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
@@ -12,10 +14,10 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.coor.EastNorth;
+import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.layer.AbstractTileSourceLayer;
 import org.openstreetmap.josm.gui.layer.GpxLayer;
@@ -25,22 +27,13 @@ import org.openstreetmap.josm.gui.layer.NoteLayer;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.layer.markerlayer.MarkerLayer;
 import org.openstreetmap.josm.io.IllegalDataException;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.testutils.annotations.Projection;
 
 /**
  * Unit tests for Session reading.
  */
-public class SessionReaderTest {
-
-    /**
-     * Setup tests.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().projection();
-
+@Projection
+class SessionReaderTest {
     private static String getSessionDataDir() {
         return TestUtils.getTestDataRoot() + "/sessions";
     }
@@ -59,7 +52,7 @@ public class SessionReaderTest {
      * @throws IllegalDataException is the test file is considered as invalid
      */
     @Test
-    public void testReadEmpty() throws IOException, IllegalDataException {
+    void testReadEmpty() throws IOException, IllegalDataException {
         assertTrue(testRead("empty.jos").isEmpty());
         assertTrue(testRead("empty.joz").isEmpty());
     }
@@ -70,12 +63,11 @@ public class SessionReaderTest {
      * @throws IllegalDataException is the test file is considered as invalid
      */
     @Test
-    public void testReadOsm() throws IOException, IllegalDataException {
+    void testReadOsm() throws IOException, IllegalDataException {
         for (String file : new String[]{"osm.jos", "osm.joz"}) {
             List<Layer> layers = testRead(file);
             assertEquals(layers.size(), 1);
-            assertTrue(layers.get(0) instanceof OsmDataLayer);
-            OsmDataLayer osm = (OsmDataLayer) layers.get(0);
+            OsmDataLayer osm = assertInstanceOf(OsmDataLayer.class, layers.get(0));
             assertEquals(osm.getName(), "OSM layer name");
         }
     }
@@ -86,12 +78,11 @@ public class SessionReaderTest {
      * @throws IllegalDataException is the test file is considered as invalid
      */
     @Test
-    public void testReadGpx() throws IOException, IllegalDataException {
+    void testReadGpx() throws IOException, IllegalDataException {
         for (String file : new String[]{"gpx.jos", "gpx.joz", "nmea.jos"}) {
             List<Layer> layers = testRead(file);
             assertEquals(layers.size(), 1);
-            assertTrue(layers.get(0) instanceof GpxLayer);
-            GpxLayer gpx = (GpxLayer) layers.get(0);
+            GpxLayer gpx = assertInstanceOf(GpxLayer.class, layers.get(0));
             assertEquals(gpx.getName(), "GPX layer name");
         }
     }
@@ -102,7 +93,7 @@ public class SessionReaderTest {
      * @throws IllegalDataException is the test file is considered as invalid
      */
     @Test
-    public void testReadGpxAndMarker() throws IOException, IllegalDataException {
+    void testReadGpxAndMarker() throws IOException, IllegalDataException {
         List<Layer> layers = testRead("gpx_markers.joz");
         assertEquals(layers.size(), 2);
         GpxLayer gpx = null;
@@ -118,6 +109,10 @@ public class SessionReaderTest {
         assertNotNull(marker);
         assertEquals(gpx.getName(), "GPX layer name");
         assertEquals(marker.getName(), "Marker layer name");
+        assertEquals(1.0, gpx.getOpacity());
+        assertEquals(0.5, marker.getOpacity());
+        assertEquals(new Color(0x204060), gpx.getColor());
+        assertEquals(new Color(0x12345678, true), marker.getColor());
     }
 
     /**
@@ -126,10 +121,10 @@ public class SessionReaderTest {
      * @throws IllegalDataException is the test file is considered as invalid
      */
     @Test
-    public void testReadImage() throws IOException, IllegalDataException {
+    void testReadImage() throws IOException, IllegalDataException {
         final List<Layer> layers = testRead("bing.jos");
         assertEquals(layers.size(), 1);
-        assertTrue(layers.get(0) instanceof ImageryLayer);
+        assertInstanceOf(ImageryLayer.class, layers.get(0));
         final AbstractTileSourceLayer<?> image = (AbstractTileSourceLayer<?>) layers.get(0);
         assertEquals("Bing aerial imagery", image.getName());
         EastNorth displacement = image.getDisplaySettings().getDisplacement();
@@ -143,7 +138,7 @@ public class SessionReaderTest {
      * @throws IllegalDataException is the test file is considered as invalid
      */
     @Test
-    public void testReadNotes() throws IOException, IllegalDataException {
+    void testReadNotes() throws IOException, IllegalDataException {
         if (MainApplication.isDisplayingMapView()) {
             for (NoteLayer nl : MainApplication.getLayerManager().getLayersOfType(NoteLayer.class)) {
                 MainApplication.getLayerManager().removeLayer(nl);
@@ -151,10 +146,22 @@ public class SessionReaderTest {
         }
         final List<Layer> layers = testRead("notes.joz");
         assertEquals(layers.size(), 1);
-        assertTrue(layers.get(0) instanceof NoteLayer);
-        final NoteLayer layer = (NoteLayer) layers.get(0);
+        final NoteLayer layer = assertInstanceOf(NoteLayer.class, layers.get(0));
         assertEquals("Notes", layer.getName());
         assertEquals(174, layer.getNoteData().getNotes().size());
+    }
+
+    @Test
+    void testReadGeojson() throws IOException, IllegalDataException {
+        final List<Layer> layers = testRead("geojson.jos");
+        assertEquals(1, layers.size());
+        final OsmDataLayer osmDataLayer = assertInstanceOf(OsmDataLayer.class, layers.get(0));
+        assertEquals("Geojson layer name", osmDataLayer.getName());
+        assertEquals(1, osmDataLayer.getDataSet().allPrimitives().size());
+        final Node node = assertInstanceOf(Node.class, osmDataLayer.getDataSet().allPrimitives().iterator().next());
+        assertEquals(2d, node.lat(), 1e-9);
+        assertEquals(1d, node.lon(), 1e-9);
+        assertEquals("Test point", node.get("name"));
     }
 
     /**
@@ -162,7 +169,7 @@ public class SessionReaderTest {
      * @throws Exception if an error occurs
      */
     @Test
-    public void testTicket17701() throws Exception {
+    void testTicket17701() throws Exception {
         try (InputStream in = new ByteArrayInputStream(("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
                 "<josm-session version=\"0.1\">\n" +
                 "    <layers active=\"1\">\n" +

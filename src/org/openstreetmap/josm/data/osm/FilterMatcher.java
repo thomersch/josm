@@ -77,11 +77,7 @@ public class FilterMatcher {
         private final boolean isInverted;
 
         FilterInfo(Filter filter) throws SearchParseError {
-            if (filter.mode == SearchMode.remove || filter.mode == SearchMode.in_selection) {
-                isDelete = true;
-            } else {
-                isDelete = false;
-            }
+            isDelete = filter.mode == SearchMode.remove || filter.mode == SearchMode.in_selection;
 
             Match compiled = SearchCompiler.compile(filter);
             this.match = filter.inverted ? new Not(compiled) : compiled;
@@ -161,23 +157,25 @@ public class FilterMatcher {
      * @return when hidden is true, returns whether the primitive is hidden
      * when hidden is false, returns whether the primitive is disabled or hidden
      */
-    private static boolean isFiltered(OsmPrimitive primitive, boolean hidden) {
+    private static boolean isFiltered(IPrimitive primitive, boolean hidden) {
         return hidden ? primitive.isDisabledAndHidden() : primitive.isDisabled();
     }
 
     /**
      * Check if primitive is hidden explicitly.
      * Only used for ways and relations.
+     * @param <T> The primitive type
      * @param primitive the primitive to check
      * @param hidden the level where the check is performed
      * @return true, if at least one non-inverted filter applies to the primitive
      */
-    private static boolean isFilterExplicit(OsmPrimitive primitive, boolean hidden) {
+    private static <T extends IFilterablePrimitive> boolean isFilterExplicit(T primitive, boolean hidden) {
         return hidden ? primitive.getHiddenType() : primitive.getDisabledType();
     }
 
     /**
      * Check if all parent ways are filtered.
+     * @param <T> The primitive type
      * @param primitive the primitive to check
      * @param hidden parameter that indicates the minimum level of filtering:
      * true when objects need to be hidden to count as filtered and
@@ -187,41 +185,41 @@ public class FilterMatcher {
      * parameter <code>hidden</code> and
      * (c) at least one of the parent ways is explicitly filtered
      */
-    private static boolean allParentWaysFiltered(OsmPrimitive primitive, boolean hidden) {
-        List<OsmPrimitive> refs = primitive.getReferrers();
+    private static <T extends IPrimitive & IFilterablePrimitive> boolean allParentWaysFiltered(T primitive, boolean hidden) {
+        List<? extends IPrimitive> refs = primitive.getReferrers();
         boolean isExplicit = false;
-        for (OsmPrimitive p: refs) {
-            if (p instanceof Way) {
+        for (IPrimitive p: refs) {
+            if (p instanceof IWay && p instanceof IFilterablePrimitive) {
                 if (!isFiltered(p, hidden))
                     return false;
-                isExplicit |= isFilterExplicit(p, hidden);
+                isExplicit |= isFilterExplicit((IFilterablePrimitive) p, hidden);
             }
         }
         return isExplicit;
     }
 
-    private static boolean oneParentWayNotFiltered(OsmPrimitive primitive, boolean hidden) {
-        return primitive.referrers(Way.class)
+    private static boolean oneParentWayNotFiltered(IPrimitive primitive, boolean hidden) {
+        return primitive.getReferrers().stream().filter(IWay.class::isInstance).map(IWay.class::cast)
                 .anyMatch(p -> !isFiltered(p, hidden));
     }
 
-    private static boolean allParentMultipolygonsFiltered(OsmPrimitive primitive, boolean hidden) {
+    private static boolean allParentMultipolygonsFiltered(IPrimitive primitive, boolean hidden) {
         boolean isExplicit = false;
-        for (Relation r : new SubclassFilteredCollection<OsmPrimitive, Relation>(
-                primitive.getReferrers(), OsmPrimitive::isMultipolygon)) {
+        for (IRelation<?> r : new SubclassFilteredCollection<IPrimitive, IRelation<?>>(
+                primitive.getReferrers(), i -> i.isMultipolygon() && i instanceof IFilterablePrimitive)) {
             if (!isFiltered(r, hidden))
                 return false;
-            isExplicit |= isFilterExplicit(r, hidden);
+            isExplicit |= isFilterExplicit((IFilterablePrimitive) r, hidden);
         }
         return isExplicit;
     }
 
-    private static boolean oneParentMultipolygonNotFiltered(OsmPrimitive primitive, boolean hidden) {
-        return new SubclassFilteredCollection<OsmPrimitive, Relation>(primitive.getReferrers(), OsmPrimitive::isMultipolygon).stream()
+    private static boolean oneParentMultipolygonNotFiltered(IPrimitive primitive, boolean hidden) {
+        return new SubclassFilteredCollection<IPrimitive, IRelation>(primitive.getReferrers(), IPrimitive::isMultipolygon).stream()
                 .anyMatch(r -> !isFiltered(r, hidden));
     }
 
-    private static FilterType test(List<FilterInfo> filters, OsmPrimitive primitive, boolean hidden) {
+    private static <T extends IPrimitive & IFilterablePrimitive> FilterType test(List<FilterInfo> filters, T primitive, boolean hidden) {
         if (primitive.isIncomplete() || primitive.isPreserved())
             return FilterType.NOT_FILTERED;
 
@@ -245,7 +243,7 @@ public class FilterMatcher {
             }
         }
 
-        if (primitive instanceof Node) {
+        if (primitive instanceof INode) {
             if (filtered) {
                 // If there is a parent way, that is not hidden, we  show the
                 // node anyway, unless there is no non-inverted filter that
@@ -266,7 +264,7 @@ public class FilterMatcher {
                 else
                     return FilterType.NOT_FILTERED;
             }
-        } else if (primitive instanceof Way) {
+        } else if (primitive instanceof IWay) {
             if (filtered) {
                 if (explicitlyFiltered)
                     return FilterType.EXPLICIT;
@@ -295,6 +293,7 @@ public class FilterMatcher {
      * Check if primitive is hidden.
      * The filter flags for all parent objects must be set correctly, when
      * calling this method.
+     * @param <T> The primitive type
      * @param primitive the primitive
      * @return FilterType.NOT_FILTERED when primitive is not hidden;
      * FilterType.EXPLICIT when primitive is hidden and there is a non-inverted
@@ -302,7 +301,7 @@ public class FilterMatcher {
      * FilterType.PASSIV when primitive is hidden and all filters that apply
      * are inverted
      */
-    public FilterType isHidden(OsmPrimitive primitive) {
+    public <T extends IPrimitive & IFilterablePrimitive> FilterType isHidden(T primitive) {
         return test(hiddenFilters, primitive, true);
     }
 
@@ -310,6 +309,7 @@ public class FilterMatcher {
      * Check if primitive is disabled.
      * The filter flags for all parent objects must be set correctly, when
      * calling this method.
+     * @param <T> The primitive type
      * @param primitive the primitive
      * @return FilterType.NOT_FILTERED when primitive is not disabled;
      * FilterType.EXPLICIT when primitive is disabled and there is a non-inverted
@@ -317,7 +317,7 @@ public class FilterMatcher {
      * FilterType.PASSIV when primitive is disabled and all filters that apply
      * are inverted
      */
-    public FilterType isDisabled(OsmPrimitive primitive) {
+    public <T extends IPrimitive & IFilterablePrimitive> FilterType isDisabled(T primitive) {
         return test(disabledFilters, primitive, false);
     }
 

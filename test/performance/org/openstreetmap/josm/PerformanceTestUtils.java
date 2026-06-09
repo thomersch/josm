@@ -1,38 +1,45 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm;
 
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 
+import org.openstreetmap.josm.data.osm.DataSet;
+import org.openstreetmap.josm.gui.progress.NullProgressMonitor;
+import org.openstreetmap.josm.io.Compression;
+import org.openstreetmap.josm.io.IllegalDataException;
+import org.openstreetmap.josm.io.OsmReader;
 import org.openstreetmap.josm.io.XmlWriter;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.tools.Stopwatch;
 
 /**
  * Timer utilities for performance tests.
  * @author Michael Zangl
  */
 public final class PerformanceTestUtils {
+    /**
+     * The Neubrandenburg data file
+     */
+    public static final String DATA_FILE = "nodist/data/neubrandenburg.osm.bz2";
     private static final int TIMES_WARMUP = 2;
     private static final int TIMES_RUN = 8;
 
     /**
-     * A helper class that captures the time from object creation until #done() was called.
-     * @author Michael Zangl
+     * Parses and returns the Neubrandenburg dataset
+     * @return the Neubrandenburg dataset
+     * @throws IllegalDataException in case of invalid data
+     * @throws IOException in case of I/O error
      */
-    public static class PerformanceTestTimerCapture {
-        private final long time;
-
-        protected PerformanceTestTimerCapture() {
-            time = System.nanoTime();
-        }
-
-        /**
-         * Get the time since this object was created.
-         * @return The time.
-         */
-        public long getTimeSinceCreation() {
-            return (System.nanoTime() - time) / 1000000;
+    public static DataSet getNeubrandenburgDataSet() throws IOException, IllegalDataException {
+        try (InputStream in = Compression.getUncompressedFileInputStream(new File(DATA_FILE))) {
+            DataSet dataSet = OsmReader.parseDataSet(in, NullProgressMonitor.INSTANCE);
+            dataSet.setName(DATA_FILE);
+            return dataSet;
         }
     }
 
@@ -40,7 +47,8 @@ public final class PerformanceTestUtils {
      * A timer that measures the time from it's creation to the {@link #done()} call.
      * @author Michael Zangl
      */
-    public static class PerformanceTestTimer extends PerformanceTestTimerCapture {
+    public static class PerformanceTestTimer {
+        private final Stopwatch stopwatch = Stopwatch.createStarted();
         private final String name;
         private boolean measurementPlotsPlugin = true;
 
@@ -60,7 +68,7 @@ public final class PerformanceTestUtils {
          * Prints the time since this timer was created.
          */
         public void done() {
-            long dTime = getTimeSinceCreation();
+            long dTime = stopwatch.elapsed();
             if (measurementPlotsPlugin) {
                 measurementPlotsPluginOutput(name + "(ms)", dTime);
             } else {
@@ -93,16 +101,16 @@ public final class PerformanceTestUtils {
     public static void runPerformanceTest(String name, Runnable testRunner) {
         for (int i = 0; i < TIMES_WARMUP; i++) {
             cleanSystem();
-            PerformanceTestTimerCapture capture = new PerformanceTestTimerCapture();
+            Stopwatch capture = Stopwatch.createStarted();
             testRunner.run();
-            capture.getTimeSinceCreation();
+            capture.elapsed();
         }
         ArrayList<Long> times = new ArrayList<>();
         for (int i = 0; i < TIMES_RUN; i++) {
             cleanSystem();
-            PerformanceTestTimerCapture capture = new PerformanceTestTimerCapture();
+            Stopwatch stopwatch = Stopwatch.createStarted();
             testRunner.run();
-            times.add(capture.getTimeSinceCreation());
+            times.add(stopwatch.elapsed());
         }
         System.out.println(times);
         Collections.sort(times);

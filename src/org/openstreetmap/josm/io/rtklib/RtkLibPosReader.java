@@ -6,13 +6,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Date;
-import java.util.Locale;
 import java.util.Objects;
 
 import org.openstreetmap.josm.data.coor.LatLon;
@@ -49,9 +45,6 @@ public class RtkLibPosReader implements IGpxReader {
     private static final int IDX_AGE = 13;
     private static final int IDX_RATIO = 14;
 
-    private final SimpleDateFormat dateTimeFmtS = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.ENGLISH); // 2019/06/08 08:23:15
-    private final SimpleDateFormat dateTimeFmtL = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss.SSS", Locale.ENGLISH); // 2019/06/08 08:23:15.000
-
     private final InputStream source;
     private GpxData data;
     private int success; // number of successfully parsed lines
@@ -63,12 +56,6 @@ public class RtkLibPosReader implements IGpxReader {
      */
     public RtkLibPosReader(InputStream source) throws IOException {
         this.source = Objects.requireNonNull(source);
-        dateTimeFmtS.setTimeZone(DateUtils.UTC);
-        dateTimeFmtL.setTimeZone(DateUtils.UTC);
-    }
-
-    private Date parseDate(String date) throws ParseException {
-        return (date.length() > 20 ? dateTimeFmtL : dateTimeFmtS).parse(date);
     }
 
     @Override
@@ -77,7 +64,7 @@ public class RtkLibPosReader implements IGpxReader {
         Collection<Collection<WayPoint>> currentTrack = new ArrayList<>();
         Collection<WayPoint> waypoints = new ArrayList<>();
         try (BufferedReader rd = new BufferedReader(new InputStreamReader(source, StandardCharsets.UTF_8))) {
-            String line = null;
+            String line;
             do {
                 line = rd.readLine();
                 if (line != null) {
@@ -90,23 +77,24 @@ public class RtkLibPosReader implements IGpxReader {
                                     Double.parseDouble(fields[IDX_LAT]),
                                     Double.parseDouble(fields[IDX_LON])));
                             currentwp.put(GpxConstants.PT_ELE, fields[IDX_HEIGHT]);
-                            currentwp.setTime(parseDate(fields[IDX_DATE]+" "+fields[IDX_TIME]));
+                            currentwp.setInstant(DateUtils.parseInstant(fields[IDX_DATE]+" "+fields[IDX_TIME]));
                             currentwp.put(GpxConstants.RTKLIB_Q, Integer.parseInt(fields[IDX_Q]));
                             currentwp.put(GpxConstants.PT_SAT, fields[IDX_NS]);
                             currentwp.put(GpxConstants.RTKLIB_SDN, fields[IDX_SDN]);
                             currentwp.put(GpxConstants.RTKLIB_SDE, fields[IDX_SDE]);
-                            currentwp.put(GpxConstants.RTKLIB_SDE, fields[IDX_SDU]);
+                            currentwp.put(GpxConstants.RTKLIB_SDU, fields[IDX_SDU]);
                             currentwp.put(GpxConstants.RTKLIB_SDNE, fields[IDX_SDNE]);
                             currentwp.put(GpxConstants.RTKLIB_SDEU, fields[IDX_SDEU]);
                             currentwp.put(GpxConstants.RTKLIB_SDUN, fields[IDX_SDUN]);
                             currentwp.put(GpxConstants.RTKLIB_AGE, fields[IDX_AGE]);
                             currentwp.put(GpxConstants.RTKLIB_RATIO, fields[IDX_RATIO]);
                             double sdn = Double.parseDouble(fields[IDX_SDN]);
-                            double sde = Double.parseDouble(fields[IDX_SDN]);
-                            currentwp.put(GpxConstants.PT_HDOP, (float) Math.sqrt(sdn*sdn + sde*sde));
+                            double sde = Double.parseDouble(fields[IDX_SDE]);
+                            currentwp.put(GpxConstants.PT_STD_HDEV, (float) Math.sqrt(sdn*sdn + sde*sde));
+                            currentwp.put(GpxConstants.PT_STD_VDEV, fields[IDX_SDU]);
                             waypoints.add(currentwp);
                             success++;
-                        } catch (ParseException | IllegalArgumentException e) {
+                        } catch (IllegalArgumentException e) {
                             Logging.error(e);
                         }
                     }
@@ -123,10 +111,7 @@ public class RtkLibPosReader implements IGpxReader {
         return data;
     }
 
-    /**
-     * Returns the number of coordinates that have been successfuly read.
-     * @return the number of coordinates that have been successfuly read
-     */
+    @Override
     public int getNumberOfCoordinates() {
         return success;
     }

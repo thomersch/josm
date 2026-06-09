@@ -36,6 +36,7 @@ import org.openstreetmap.josm.actions.downloadtasks.DownloadSessionTask;
 import org.openstreetmap.josm.actions.downloadtasks.DownloadTask;
 import org.openstreetmap.josm.actions.downloadtasks.PostDownloadHandler;
 import org.openstreetmap.josm.data.preferences.BooleanProperty;
+import org.openstreetmap.josm.gui.ConditionalOptionPaneUtil;
 import org.openstreetmap.josm.gui.ExtendedDialog;
 import org.openstreetmap.josm.gui.HelpAwareOptionPane;
 import org.openstreetmap.josm.gui.MainApplication;
@@ -43,7 +44,6 @@ import org.openstreetmap.josm.gui.progress.swing.PleaseWaitProgressMonitor;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.util.WindowGeometry;
 import org.openstreetmap.josm.gui.widgets.HistoryComboBox;
-import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.Shortcut;
@@ -83,10 +83,16 @@ public class OpenLocationAction extends JosmAction {
      * Create an open action. The name is "Open a file".
      */
     public OpenLocationAction() {
+        this(Shortcut.registerShortcut("system:open_location", tr("File: {0}", tr("Open Location...")), KeyEvent.VK_L, Shortcut.CTRL));
+    }
+
+    /**
+     * Create an open action. The name is "Open a file".
+     * @param shortcut action shortcut, can be null for subclasses
+     */
+    protected OpenLocationAction(Shortcut shortcut) {
         /* I18N: Command to download a specific location/URL */
-        super(tr("Open Location..."), "openlocation", tr("Open an URL."),
-                Shortcut.registerShortcut("system:open_location", tr("File: {0}", tr("Open Location...")),
-                        KeyEvent.VK_L, Shortcut.CTRL), true, false);
+        super(tr("Open Location..."), "openlocation", tr("Open an URL."), shortcut, shortcut != null, false);
         setHelpId(ht("/Action/OpenLocation"));
         this.downloadTasks = new ArrayList<>();
         addDownloadTaskClass(DownloadOsmTask.class);
@@ -107,8 +113,7 @@ public class OpenLocationAction extends JosmAction {
      * @param cbHistory the history combo box
      */
     protected void restoreUploadAddressHistory(HistoryComboBox cbHistory) {
-        cbHistory.setPossibleItemsTopDown(Config.getPref().getList(getClass().getName() + ".uploadAddressHistory",
-                Collections.emptyList()));
+        cbHistory.getModel().prefs().load(getClass().getName() + ".uploadAddressHistory");
     }
 
     /**
@@ -117,7 +122,7 @@ public class OpenLocationAction extends JosmAction {
      */
     protected void remindUploadAddressHistory(HistoryComboBox cbHistory) {
         cbHistory.addCurrentItemToHistory();
-        Config.getPref().putList(getClass().getName() + ".uploadAddressHistory", cbHistory.getHistory());
+        cbHistory.getModel().prefs().save(getClass().getName() + ".uploadAddressHistory");
     }
 
     @Override
@@ -274,15 +279,30 @@ public class OpenLocationAction extends JosmAction {
 
         List<Future<?>> result = new ArrayList<>();
         for (final DownloadTask task : tasks) {
+            DownloadParams currentParams = settings;
+            if (task.providesOldData() && !settings.isNewLayer()) {
+                currentParams = GuiHelper.runInEDTAndWaitAndReturn(() -> confirmNoNewLayer(settings, url));
+            }
             try {
                 task.setZoomAfterDownload(zoomToData);
-                result.add(MainApplication.worker.submit(new PostDownloadHandler(task, task.loadUrl(settings, url,
+                result.add(MainApplication.worker.submit(new PostDownloadHandler(task, task.loadUrl(currentParams, url,
                         new PleaseWaitProgressMonitor(tr("Download data"))))));
             } catch (IllegalArgumentException e) {
                 Logging.error(e);
             }
         }
         return Collections.unmodifiableList(result);
+    }
+
+    private static DownloadParams confirmNoNewLayer(DownloadParams originalParams, String url) {
+        if (ConditionalOptionPaneUtil.showConfirmationDialog("open-location-action.confirm-no-new-layer",
+                MainApplication.getMainFrame(),
+                tr("Do you want to create a new layer for {0}?<br>You may be mixing old and new data otherwise!", url),
+                tr("No new layer"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE, JOptionPane.YES_OPTION)
+        ) {
+            return new DownloadParams(originalParams).withNewLayer(true);
+        }
+        return originalParams;
     }
 
     /**

@@ -1,7 +1,7 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.help;
 
-import static org.junit.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.io.StringReader;
 
@@ -10,31 +10,22 @@ import javax.swing.text.Element;
 import javax.swing.text.html.HTMLDocument;
 import javax.swing.text.html.HTMLEditorKit;
 
-import org.junit.Rule;
-import org.junit.Test;
 import org.openstreetmap.josm.gui.widgets.JosmEditorPane;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests of {@link HyperlinkHandler} class.
  */
-public class HyperlinkHandlerTest {
-
-    /**
-     * Setup tests
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences();
-
+@BasicPreferences
+class HyperlinkHandlerTest {
     /**
      * Non-regression test for ticket <a href="https://josm.openstreetmap.de/ticket/17338">#17338</a>.
      * @throws Exception if an error occurs
      */
     @Test
-    public void testTicket17338() throws Exception {
+    void testTicket17338() throws Exception {
         JosmEditorPane help = new JosmEditorPane();
         HTMLEditorKit htmlKit = new HTMLEditorKit();
         HTMLDocument htmlDoc = (HTMLDocument) htmlKit.createDefaultDocument();

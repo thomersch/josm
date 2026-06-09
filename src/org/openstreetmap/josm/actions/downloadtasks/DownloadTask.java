@@ -3,11 +3,15 @@ package org.openstreetmap.josm.actions.downloadtasks;
 
 import java.net.URL;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.Future;
+import java.util.stream.Collectors;
 
 import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.gui.progress.NullProgressMonitor;
 import org.openstreetmap.josm.gui.progress.ProgressMonitor;
+import org.openstreetmap.josm.io.XmlWriter;
+import org.openstreetmap.josm.tools.ExceptionUtil;
 
 /**
  * Interface defining a general download task used to download geographic data (OSM data, GPX tracks, etc.) for a given URL or geographic area.
@@ -16,11 +20,11 @@ public interface DownloadTask {
 
     /**
      * Asynchronously launches the download task for a given bounding box.
-     *
+     * <p>
      * Set <code>progressMonitor</code> to null, if the task should create, open, and close a progress monitor.
      * Set progressMonitor to {@link NullProgressMonitor#INSTANCE} if progress information is to
      * be discarded.
-     *
+     * <p>
      * You can wait for the asynchronous download task to finish by synchronizing on the returned
      * {@link Future}, but make sure not to freeze up JOSM. Example:
      * <pre>
@@ -56,7 +60,7 @@ public interface DownloadTask {
 
     /**
      * Asynchronously launches the download task for a given bounding URL.
-     *
+     * <p>
      * Set progressMonitor to null, if the task should create, open, and close a progress monitor.
      * Set progressMonitor to {@link NullProgressMonitor#INSTANCE} if progress information is to
      * be discarded.
@@ -89,7 +93,24 @@ public interface DownloadTask {
      * @return The HTML documentation
      * @since 6031
      */
-    String acceptsDocumentationSummary();
+    default String acceptsDocumentationSummary() {
+        StringBuilder buff = new StringBuilder(128)
+                .append("<tr><td>")
+                .append(getTitle())
+                .append(":</td><td>");
+        String[] patterns = getPatterns();
+        if (patterns.length > 0) {
+            buff.append("<ul>");
+            for (String pattern: patterns) {
+                buff.append("<li>")
+                        .append(XmlWriter.encode(pattern))
+                        .append("</li>");
+            }
+            buff.append("</ul>");
+        }
+        buff.append("</td></tr>");
+        return buff.toString();
+    }
 
     /**
      * Returns human-readable description of the task
@@ -107,12 +128,40 @@ public interface DownloadTask {
 
     /**
      * Replies the error objects of the task. Empty list, if no error messages are available.
-     *
+     * <p>
      * Error objects are either {@link String}s with error messages or {@link Exception}s.
      *
      * @return the list of error objects
      */
     List<Object> getErrorObjects();
+
+    /**
+     * Replies the error messages of the task. Empty list, if no error messages are available.
+     *
+     * @return the list of error messages
+     * @since 17330
+     */
+    default List<String> getErrorMessages() {
+        return getErrorObjects().stream().map(o -> {
+            if (o instanceof String) {
+                return (String) o;
+            } else if (o instanceof Exception) {
+                return ExceptionUtil.explainException((Exception) o).replace("<html>", "").replace("</html>", "");
+            } else {
+                return null;
+            }
+        }).filter(Objects::nonNull).collect(Collectors.toList());
+    }
+
+    /**
+     * If this task provides potentially old data, this should return {@code true}. If so, it would be a good decision
+     * to prompt users to verify if they want the data to be downloaded to the current layer.
+     * @return {@code true} if the data could be old.
+     * @since 19550
+     */
+    default boolean providesOldData() {
+        return false;
+    }
 
     /**
      * Cancels the asynchronous download task.

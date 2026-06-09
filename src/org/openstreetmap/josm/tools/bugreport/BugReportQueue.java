@@ -40,6 +40,7 @@ public class BugReportQueue {
     /**
      * Class that handles reporting a bug to the user.
      */
+    @FunctionalInterface
     public interface BugReportHandler {
         /**
          * Handle the bug report for a given exception
@@ -88,7 +89,7 @@ public class BugReportQueue {
         }
     }
 
-    private class BugReportDisplayRunnable implements Runnable {
+    private final class BugReportDisplayRunnable implements Runnable {
 
         private volatile boolean running = true;
 

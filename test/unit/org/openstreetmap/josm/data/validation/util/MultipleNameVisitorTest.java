@@ -1,35 +1,26 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.validation.util;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.Arrays;
 
-import org.junit.Rule;
-import org.junit.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.osm.Way;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for class {@link MultipleNameVisitor}.
  */
-public class MultipleNameVisitorTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences();
-
+@BasicPreferences
+class MultipleNameVisitorTest {
     /**
      * Non-regression test for bug #11967.
      */
     @Test
-    public void testTicket11967() {
+    void testTicket11967() {
         MultipleNameVisitor visitor = new MultipleNameVisitor();
         visitor.visit(Arrays.asList(new Way(), new Way()));
         assertEquals("2 ways: \u200E0\u200E (0 nodes)\u200C, \u200E0\u200E (0 nodes)\u200C", visitor.toString());
@@ -39,7 +30,7 @@ public class MultipleNameVisitorTest {
      * Non-regression test for bug #16652.
      */
     @Test
-    public void testTicket16652() {
+    void testTicket16652() {
         MultipleNameVisitor visitor = new MultipleNameVisitor();
         visitor.visit(Arrays.asList(
                 TestUtils.newNode("name=foo"),

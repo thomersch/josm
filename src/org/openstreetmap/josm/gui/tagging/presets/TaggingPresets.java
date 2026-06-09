@@ -8,6 +8,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -17,6 +18,9 @@ import javax.swing.JSeparator;
 
 import org.openstreetmap.josm.actions.PreferencesAction;
 import org.openstreetmap.josm.data.osm.IPrimitive;
+import org.openstreetmap.josm.data.preferences.BooleanProperty;
+import org.openstreetmap.josm.data.preferences.IntegerProperty;
+import org.openstreetmap.josm.data.preferences.ListProperty;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.MainMenu;
 import org.openstreetmap.josm.gui.MenuScroller;
@@ -26,7 +30,6 @@ import org.openstreetmap.josm.gui.tagging.presets.items.CheckGroup;
 import org.openstreetmap.josm.gui.tagging.presets.items.KeyedItem;
 import org.openstreetmap.josm.gui.tagging.presets.items.Roles;
 import org.openstreetmap.josm.gui.tagging.presets.items.Roles.Role;
-import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.MultiMap;
 import org.openstreetmap.josm.tools.SubclassFilteredCollection;
@@ -38,7 +41,7 @@ import org.openstreetmap.josm.tools.SubclassFilteredCollection;
 public final class TaggingPresets {
 
     /** The collection of tagging presets */
-    private static final Collection<TaggingPreset> taggingPresets = new ArrayList<>();
+    private static final List<TaggingPreset> TAGGING_PRESETS = new ArrayList<>();
 
     /** cache for key/value pairs found in the preset */
     private static final MultiMap<String, String> PRESET_TAG_CACHE = new MultiMap<>();
@@ -47,6 +50,15 @@ public final class TaggingPresets {
 
     /** The collection of listeners */
     private static final Collection<TaggingPresetListener> listeners = new ArrayList<>();
+    /**
+     * Sort presets menu alphabetically
+     */
+    public static final BooleanProperty SORT_MENU = new BooleanProperty("taggingpreset.sortvalues", true);
+    /**
+     * Custom icon sources
+     */
+    public static final ListProperty ICON_SOURCES = new ListProperty("taggingpreset.icon.sources", null);
+    private static final IntegerProperty MIN_ELEMENTS_FOR_SCROLLER = new IntegerProperty("taggingpreset.min-elements-for-scroller", 15);
 
     private TaggingPresets() {
         // Hide constructor for utility classes
@@ -56,9 +68,9 @@ public final class TaggingPresets {
      * Initializes tagging presets from preferences.
      */
     public static void readFromPreferences() {
-        taggingPresets.clear();
-        taggingPresets.addAll(TaggingPresetReader.readFromPreferences(false, false));
-        cachePresets(taggingPresets);
+        TAGGING_PRESETS.clear();
+        TAGGING_PRESETS.addAll(TaggingPresetReader.readFromPreferences(false, false));
+        cachePresets(TAGGING_PRESETS);
     }
 
     /**
@@ -76,16 +88,19 @@ public final class TaggingPresets {
         }
 
         readFromPreferences();
-        for (TaggingPreset tp: taggingPresets) {
+        final List<TaggingPreset> activeLayerChangeListeners = new ArrayList<>(TAGGING_PRESETS.size());
+        for (TaggingPreset tp: TAGGING_PRESETS) {
             if (!(tp instanceof TaggingPresetSeparator)) {
                 MainApplication.getToolbar().register(tp);
+                activeLayerChangeListeners.add(tp);
             }
         }
-        if (taggingPresets.isEmpty()) {
+        MainApplication.getLayerManager().addActiveLayerChangeListeners(activeLayerChangeListeners);
+        if (TAGGING_PRESETS.isEmpty()) {
             presetsMenu.setVisible(false);
         } else {
             Map<TaggingPresetMenu, JMenu> submenus = new HashMap<>();
-            for (final TaggingPreset p : taggingPresets) {
+            for (final TaggingPreset p : TAGGING_PRESETS) {
                 JMenu m = p.group != null ? submenus.get(p.group) : presetsMenu;
                 if (m == null && p.group != null) {
                     Logging.error("No tagging preset submenu for " + p.group);
@@ -106,12 +121,12 @@ public final class TaggingPresets {
                 }
             }
             for (JMenu submenu : submenus.values()) {
-                if (submenu.getItemCount() >= Config.getPref().getInt("taggingpreset.min-elements-for-scroller", 15)) {
+                if (submenu.getItemCount() >= MIN_ELEMENTS_FOR_SCROLLER.get()) {
                     MenuScroller.setScrollerFor(submenu);
                 }
             }
         }
-        if (Config.getPref().getBoolean("taggingpreset.sortmenu")) {
+        if (Boolean.TRUE.equals(SORT_MENU.get())) {
             TaggingPresetMenu.sortMenu(presetsMenu);
         }
         listeners.forEach(TaggingPresetListener::taggingPresetsModified);
@@ -126,12 +141,16 @@ public final class TaggingPresets {
      */
     public static void destroy() {
         ToolbarPreferences toolBar = MainApplication.getToolbar();
-        taggingPresets.forEach(toolBar::unregister);
-        taggingPresets.clear();
+        for (TaggingPreset tp: TAGGING_PRESETS) {
+            toolBar.unregister(tp);
+            if (!(tp instanceof TaggingPresetSeparator)) {
+                MainApplication.getLayerManager().removeActiveLayerChangeListener(tp);
+            }
+        }
+        TAGGING_PRESETS.clear();
         PRESET_TAG_CACHE.clear();
         PRESET_ROLE_CACHE.clear();
         MainApplication.getMenu().presetsMenu.removeAll();
-        listeners.forEach(TaggingPresetListener::taggingPresetsModified);
     }
 
     /**
@@ -171,7 +190,7 @@ public final class TaggingPresets {
      * @return a new collection containing all tagging presets. Empty if presets are not initialized (never null)
      */
     public static Collection<TaggingPreset> getTaggingPresets() {
-        return Collections.unmodifiableCollection(taggingPresets);
+        return Collections.unmodifiableList(TAGGING_PRESETS);
     }
 
     /**
@@ -193,13 +212,23 @@ public final class TaggingPresets {
     /**
      * Return set of values for a key in the tagging presets
      * @param key the key
-     * @return set of values for a key in the tagging presets or null if none is found
+     * @return set of values for a key in the tagging presets
      */
     public static Set<String> getPresetValues(String key) {
         Set<String> values = PRESET_TAG_CACHE.get(key);
         if (values != null)
             return Collections.unmodifiableSet(values);
-        return null;
+        return Collections.emptySet();
+    }
+
+    /**
+     * Determines if the given key is in the loaded presets.
+     * @param key key
+     * @return {@code true} if the given key in the loaded presets
+     * @since 18281
+     */
+    public static boolean isKeyInPresets(String key) {
+        return PRESET_TAG_CACHE.get(key) != null;
     }
 
     /**
@@ -234,7 +263,7 @@ public final class TaggingPresets {
      * @param presets The tagging presets to add
      */
     public static void addTaggingPresets(Collection<TaggingPreset> presets) {
-        if (presets != null && taggingPresets.addAll(presets)) {
+        if (presets != null && TAGGING_PRESETS.addAll(presets)) {
             listeners.forEach(TaggingPresetListener::taggingPresetsModified);
         }
     }

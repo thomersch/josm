@@ -1,16 +1,16 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.actions.upload;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Arrays;
 import java.util.Collection;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.command.PseudoCommand;
 import org.openstreetmap.josm.command.SequenceCommand;
 import org.openstreetmap.josm.data.APIDataSet;
@@ -19,27 +19,18 @@ import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Relation;
 import org.openstreetmap.josm.data.osm.Way;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.testutils.annotations.Main;
 
 /**
  * Unit tests for class {@link FixDataHook}.
  */
-public class FixDataHookTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().main();
-
+@Main
+class FixDataHookTest {
     /**
      * Test of {@link FixDataHook#checkUpload} method.
      */
     @Test
-    public void testCheckUpload() {
+    void testCheckUpload() {
         // Empty data set
         UndoRedoHandler.getInstance().clean();
         new FixDataHook().checkUpload(new APIDataSet());
@@ -84,7 +75,7 @@ public class FixDataHookTest {
         assertNotNull(prims);
         assertEquals(9, prims.size());
         for (OsmPrimitive o : Arrays.asList(w1, w2, w3, w4, w5, w6, w7, r1, r2)) {
-            assertTrue(o.toString(), prims.contains(o));
+            assertTrue(prims.contains(o), o.toString());
         }
         Collection<PseudoCommand> cmds = seq.getChildren();
         assertNotNull(cmds);
@@ -98,27 +89,27 @@ public class FixDataHookTest {
         assertFalse(w2.hasKey("highway"));
         assertTrue(w2.hasKey("ford"));
 
-        assertFalse("false".equals(w3.get("oneway")));
-        assertTrue("no".equals(w3.get("oneway")));
+        assertNotEquals("false", w3.get("oneway"));
+        assertEquals("no", w3.get("oneway"));
 
-        assertFalse("0".equals(w4.get("oneway")));
-        assertTrue("no".equals(w4.get("oneway")));
+        assertNotEquals("0", w4.get("oneway"));
+        assertEquals("no", w4.get("oneway"));
 
-        assertFalse("true".equals(w5.get("oneway")));
-        assertTrue("yes".equals(w5.get("oneway")));
+        assertNotEquals("true", w5.get("oneway"));
+        assertEquals("yes", w5.get("oneway"));
 
-        assertFalse("1".equals(w6.get("oneway")));
-        assertTrue("yes".equals(w6.get("oneway")));
+        assertNotEquals("1", w6.get("oneway"));
+        assertEquals("yes", w6.get("oneway"));
 
         assertFalse(w7.hasKey("highway"));
         assertTrue(w7.hasKey("barrier"));
 
-        assertFalse("multipolygon".equals(r1.get("type")));
-        assertTrue("boundary".equals(r1.get("type")));
+        assertNotEquals("multipolygon", r1.get("type"));
+        assertEquals("boundary", r1.get("type"));
 
-        assertTrue("space_end".equals(r2.get("foo")));
-        assertTrue("space_begin".equals(r2.get("bar")));
-        assertTrue("space_both".equals(r2.get("baz")));
+        assertEquals("space_end", r2.get("foo"));
+        assertEquals("space_begin", r2.get("bar"));
+        assertEquals("space_both", r2.get("baz"));
         assertFalse(r2.hasKey(" space_begin"));
         assertFalse(r2.hasKey("space_end "));
         assertFalse(r2.hasKey(" space_both "));

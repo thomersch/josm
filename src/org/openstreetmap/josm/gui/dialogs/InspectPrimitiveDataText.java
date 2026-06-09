@@ -11,6 +11,7 @@ import java.util.stream.Stream;
 
 import org.openstreetmap.josm.data.SystemOfMeasurement;
 import org.openstreetmap.josm.data.conflict.Conflict;
+import org.openstreetmap.josm.data.coor.EastNorth;
 import org.openstreetmap.josm.data.coor.ILatLon;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.coor.conversion.AbstractCoordinateFormat;
@@ -32,7 +33,7 @@ import org.openstreetmap.josm.data.projection.proj.TransverseMercator;
 import org.openstreetmap.josm.data.projection.proj.TransverseMercator.Hemisphere;
 import org.openstreetmap.josm.tools.Geometry;
 import org.openstreetmap.josm.tools.Pair;
-import org.openstreetmap.josm.tools.date.DateUtils;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * Textual representation of primitive contents, used in {@code InspectPrimitiveDialog}.
@@ -128,6 +129,11 @@ public class InspectPrimitiveDataText {
         if (!o.isVisible()) {
             sb.append(tr("deleted-on-server")).append(INDENT);
         }
+        if (o.isReferrersDownloaded()) {
+            sb.append(tr("all-referrers-downloaded")).append(INDENT);
+        } else {
+            sb.append(tr("referrers-not-all-downloaded")).append(INDENT);
+        }
         if (o.isModified()) {
             sb.append(tr("modified")).append(INDENT);
         }
@@ -153,7 +159,7 @@ public class InspectPrimitiveDataText {
     void addCommon(IPrimitive o) {
         add(tr("Data Set: "), Integer.toHexString(o.getDataSet().hashCode()));
         add(tr("Edited at: "), o.isTimestampEmpty() ? tr("<new object>")
-                : DateUtils.fromTimestamp(o.getRawTimestamp()));
+                : o.getInstant().toString());
         add(tr("Edited by: "), o.getUser() == null ? tr("<new object>")
                 : getNameAndId(o.getUser().getName(), o.getUser().getId()));
         add(tr("Version:"), " ", Integer.toString(o.getVersion()));
@@ -163,10 +169,7 @@ public class InspectPrimitiveDataText {
     void addAttributes(IPrimitive o) {
         if (o.hasKeys()) {
             add(tr("Tags: "));
-            for (String key : o.keySet()) {
-                s.append(INDENT).append(INDENT);
-                s.append(String.format("\"%s\"=\"%s\"%n", key, o.get(key)));
-            }
+            o.visitKeys((primitive, key, value) -> s.append(INDENT).append(INDENT).append(String.format("\"%s\"=\"%s\"%n", key, value)));
         }
     }
 
@@ -175,12 +178,27 @@ public class InspectPrimitiveDataText {
             addCoordinates((INode) o);
         } else if (o instanceof IWay) {
             addBbox(o);
-            add(tr("Centroid: "), toStringCSV(false,
-                    ProjectionRegistry.getProjection().eastNorth2latlon(Geometry.getCentroid(((IWay<?>) o).getNodes()))));
+            final EastNorth centroid = Geometry.getCentroid(((IWay<?>) o).getNodes());
+            final String centroidMessage;
+            if (centroid == null) {
+                centroidMessage = tr("unknown");
+            } else {
+                centroidMessage = toStringCSV(false,
+                        ProjectionRegistry.getProjection().eastNorth2latlon(centroid));
+            }
+            add(tr("Centroid: "), centroidMessage);
             if (o instanceof Way) {
-                double dist = ((Way) o).getLength();
-                String distText = SystemOfMeasurement.getSystemOfMeasurement().getDistText(dist);
-                add(tr("Length: {0}", distText));
+                double length = ((Way) o).getLength();
+                String lenText = SystemOfMeasurement.getSystemOfMeasurement().getDistText(length);
+                add(tr("Length: {0}", lenText));
+
+                double avgNodeDistance = length / (((Way) o).getNodesCount() - 1);
+                String nodeDistText = SystemOfMeasurement.getSystemOfMeasurement().getDistText(avgNodeDistance);
+                add(tr("Average segment length: {0}", nodeDistText));
+
+                double stdDev = Utils.getStandardDeviation(((Way) o).getSegmentLengths(), avgNodeDistance);
+                String stdDevText = SystemOfMeasurement.getSystemOfMeasurement().getDistText(stdDev);
+                add(tr("Standard deviation: {0}", stdDevText));
             }
             if (o instanceof Way && ((Way) o).concernsArea() && ((Way) o).isClosed()) {
                 double area = Geometry.closedWayArea((Way) o);
@@ -204,8 +222,8 @@ public class InspectPrimitiveDataText {
         for (IRelationMember<?> m : r.getMembers()) {
             s.append(INDENT).append(INDENT);
             addHeadline(m.getMember());
-            s.append(tr(" as \"{0}\"", m.getRole()));
-            s.append(NL);
+            s.append(tr(" as \"{0}\"", m.getRole()))
+                .append(NL);
         }
     }
 

@@ -1,10 +1,12 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.osm;
 
-import java.util.Date;
+import java.time.Instant;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+import org.openstreetmap.josm.data.IQuadBucketType;
 import org.openstreetmap.josm.data.osm.visitor.PrimitiveVisitor;
 import org.openstreetmap.josm.tools.LanguageInfo;
 
@@ -12,12 +14,12 @@ import org.openstreetmap.josm.tools.LanguageInfo;
  * IPrimitive captures the common functions of {@link OsmPrimitive} and {@link PrimitiveData}.
  * @since 4098
  */
-public interface IPrimitive extends Tagged, PrimitiveId, Stylable, Comparable<IPrimitive> {
+public interface IPrimitive extends IQuadBucketType, Tagged, PrimitiveId, Stylable, Comparable<IPrimitive> {
 
     /**
      * Replies <code>true</code> if the object has been modified since it was loaded from
      * the server. In this case, on next upload, this object will be updated.
-     *
+     * <p>
      * Deleted objects are deleted from the server. If the objects are added (id=0),
      * the modified is ignored and the object is added to the server.
      *
@@ -32,6 +34,15 @@ public interface IPrimitive extends Tagged, PrimitiveId, Stylable, Comparable<IP
      * @param modified true, if this primitive is to be modified
      */
     void setModified(boolean modified);
+
+    /**
+     * Set the status of the referrers
+     * @param referrersDownloaded {@code true} if all referrers for this object have been downloaded
+     * @since 19078
+     */
+    default void setReferrersDownloaded(boolean referrersDownloaded) {
+        throw new UnsupportedOperationException(this.getClass().getName() + " does not support referrers status");
+    }
 
     /**
      * Checks if object is known to the server.
@@ -65,12 +76,22 @@ public interface IPrimitive extends Tagged, PrimitiveId, Stylable, Comparable<IP
 
     /**
      * Sets whether this primitive is deleted or not.
-     *
+     * <p>
      * Also marks this primitive as modified if deleted is true.
      *
      * @param deleted  true, if this primitive is deleted; false, otherwise
      */
     void setDeleted(boolean deleted);
+
+    /**
+     * Determines if this primitive is fully downloaded
+     * @return {@code true} if the primitive is fully downloaded and all parents and children should be available.
+     * {@code false} otherwise.
+     * @since 19078
+     */
+    default boolean isReferrersDownloaded() {
+        return false;
+    }
 
     /**
      * Determines if this primitive is incomplete.
@@ -200,7 +221,7 @@ public interface IPrimitive extends Tagged, PrimitiveId, Stylable, Comparable<IP
     /**
      * Replies the OSM id of this primitive.
      * By default, returns the same value as {@link #getId}.
-     * Can be overidden by primitive implementations handling an internal id different from the OSM one.
+     * Can be overridden by primitive implementations handling an internal id different from the OSM one.
      *
      * @return the OSM id of this primitive.
      * @since 13924
@@ -241,7 +262,7 @@ public interface IPrimitive extends Tagged, PrimitiveId, Stylable, Comparable<IP
 
     /**
      * Sets the id and the version of this primitive if it is known to the OSM API.
-     *
+     * <p>
      * Since we know the id and its version it can't be incomplete anymore. incomplete
      * is set to false.
      *
@@ -273,9 +294,9 @@ public interface IPrimitive extends Tagged, PrimitiveId, Stylable, Comparable<IP
      * used to check against edit conflicts.
      *
      * @return date of last modification
-     * @see #setTimestamp
+     * @see #setInstant
      */
-    Date getTimestamp();
+    Instant getInstant();
 
     /**
      * Time of last modification to this object. This is not set by JOSM but
@@ -290,9 +311,9 @@ public interface IPrimitive extends Tagged, PrimitiveId, Stylable, Comparable<IP
     /**
      * Sets time of last modification to this object
      * @param timestamp date of last modification
-     * @see #getTimestamp
+     * @see #getInstant
      */
-    void setTimestamp(Date timestamp);
+    void setInstant(Instant timestamp);
 
     /**
      * Sets time of last modification to this object
@@ -304,7 +325,7 @@ public interface IPrimitive extends Tagged, PrimitiveId, Stylable, Comparable<IP
     /**
      * Determines if this primitive has no timestamp information.
      * @return {@code true} if this primitive has no timestamp information
-     * @see #getTimestamp
+     * @see #getInstant
      * @see #getRawTimestamp
      */
     boolean isTimestampEmpty();
@@ -356,16 +377,25 @@ public interface IPrimitive extends Tagged, PrimitiveId, Stylable, Comparable<IP
      * accessed from very specific (language variant) to more generic (default name).
      *
      * @return the name of this primitive, <code>null</code> if no name exists
-     * @see LanguageInfo#getLanguageCodes
+     * @see LanguageInfo#getOSMLocaleCodes
      */
     default String getLocalName() {
-        for (String s : LanguageInfo.getLanguageCodes(null)) {
-            String val = get("name:" + s);
+        for (String s : LanguageInfo.getOSMLocaleCodes("name:")) {
+            String val = get(s);
             if (val != null)
                 return val;
         }
 
         return getName();
+    }
+
+    /**
+     * Get an object to synchronize the style cache on. This <i>should</i> be a field that does not change during paint.
+     * By default, it returns the current object, but should be overridden to avoid some performance issues.
+     * @return A non-{@code null} object to synchronize on when painting
+     */
+    default Object getStyleCacheSyncObject() {
+        return this;
     }
 
     /**
@@ -442,9 +472,11 @@ public interface IPrimitive extends Tagged, PrimitiveId, Stylable, Comparable<IP
 
     /**
      * Fetches the bounding box of the primitive.
+     * Since 17752, the returned bounding box might be immutable, i.e., modifying calls throw an {@link UnsupportedOperationException}.
      * @return Bounding box of the object
      * @since 13764
      */
+    @Override
     BBox getBBox();
 
     /**
@@ -497,5 +529,30 @@ public interface IPrimitive extends Tagged, PrimitiveId, Stylable, Comparable<IP
     default boolean hasSameInterestingTags(IPrimitive other) {
         return (!hasKeys() && !other.hasKeys())
                 || getInterestingTags().equals(other.getInterestingTags());
+    }
+
+    /**
+     * Resets primitive children, if applicable.
+     * @param p primitive
+     * @since 17981
+     */
+    static void resetPrimitiveChildren(IPrimitive p) {
+        if (p instanceof IWay<?>) {
+            ((IWay<?>) p).setNodes(null);
+        } else if (p instanceof IRelation<?>) {
+            ((IRelation<?>) p).setMembers(null);
+        }
+    }
+
+    /**
+     * Get child primitives that are referred by this primitive.
+     * {@link Relation}: Members of the relation
+     * {@link Way}: Nodes used by the way
+     * {@link Node}: None
+     * @return List of child primitives
+     * @since 18814
+     */
+    default List<? extends IPrimitive> getChildren() {
+        return Collections.emptyList();
     }
 }

@@ -1,36 +1,24 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.notes;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.util.Date;
+import java.time.Instant;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for class {@link NoteComment}.
  */
-public class NoteCommentTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+class NoteCommentTest {
     /**
      * Unit test of {@link NoteComment} class.
      */
     @Test
-    public void testNoteComment() {
-        NoteComment comment = new NoteComment(new Date(), null, "foo", null, true);
+    void testNoteComment() {
+        NoteComment comment = new NoteComment(Instant.now(), null, "foo", null, true);
         assertEquals("foo", comment.toString());
         assertTrue(comment.isNew());
         comment.setNew(false);

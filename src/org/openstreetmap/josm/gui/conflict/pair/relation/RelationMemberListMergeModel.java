@@ -3,6 +3,7 @@ package org.openstreetmap.josm.gui.conflict.pair.relation;
 
 import static org.openstreetmap.josm.tools.I18n.tr;
 
+import java.util.ArrayList;
 import java.util.Map;
 
 import javax.swing.table.DefaultTableModel;
@@ -33,13 +34,10 @@ public class RelationMemberListMergeModel extends AbstractListMergeModel<Relatio
         // the table model for merged entries is different because it supports
         // editing cells in the first column
         //
-        mergedEntriesTableModel = this.new EntriesTableModel(ListRole.MERGED_ENTRIES) {
+        mergedEntriesTableModel = new EntriesTableModel(ListRole.MERGED_ENTRIES) {
             @Override
             public boolean isCellEditable(int row, int column) {
-                switch(column) {
-                case 1: return true;
-                default: return false;
-                }
+                return column == 1;
             }
         };
     }
@@ -101,6 +99,6 @@ public class RelationMemberListMergeModel extends AbstractListMergeModel<Relatio
         CheckParameterUtil.ensureParameterNotNull(conflict, "conflict");
         if (!isFrozen())
             throw new IllegalArgumentException(tr("Merged members not frozen yet. Cannot build resolution command"));
-        return new RelationMemberConflictResolverCommand(conflict, getMergedEntries());
+        return new RelationMemberConflictResolverCommand(conflict, new ArrayList<>(getMergedEntries()));
     }
 }

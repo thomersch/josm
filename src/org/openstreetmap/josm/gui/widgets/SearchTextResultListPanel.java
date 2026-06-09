@@ -1,6 +1,8 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.widgets;
 
+import org.openstreetmap.josm.gui.util.DocumentAdapter;
+
 import java.awt.BorderLayout;
 import java.awt.event.ActionListener;
 import java.awt.event.KeyAdapter;
@@ -15,8 +17,6 @@ import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.ListSelectionModel;
-import javax.swing.event.DocumentEvent;
-import javax.swing.event.DocumentListener;
 import javax.swing.event.ListSelectionListener;
 
 /**
@@ -42,23 +42,8 @@ public abstract class SearchTextResultListPanel<T> extends JPanel {
     protected SearchTextResultListPanel() {
         super(new BorderLayout());
 
-        edSearchText = new JosmTextField();
-        edSearchText.getDocument().addDocumentListener(new DocumentListener() {
-            @Override
-            public void removeUpdate(DocumentEvent e) {
-                filterItems();
-            }
-
-            @Override
-            public void insertUpdate(DocumentEvent e) {
-                filterItems();
-            }
-
-            @Override
-            public void changedUpdate(DocumentEvent e) {
-                filterItems();
-            }
-        });
+        edSearchText = new FilterField();
+        edSearchText.getDocument().addDocumentListener(DocumentAdapter.create(ignore -> filterItems()));
         edSearchText.addKeyListener(new KeyAdapter() {
             @Override
             public void keyPressed(KeyEvent e) {
@@ -181,7 +166,7 @@ public abstract class SearchTextResultListPanel<T> extends JPanel {
     }
 
     /**
-     * Sets a listener to be invoked on ssingle click
+     * Sets a listener to be invoked on single click
      * @param clickListener The click listener
      */
     public void setClickListener(ActionListener clickListener) {

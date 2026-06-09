@@ -10,12 +10,14 @@ import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Graphics;
 import java.awt.GraphicsEnvironment;
+import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.GridLayout;
 import java.awt.Rectangle;
 import java.awt.Toolkit;
 import java.awt.event.AWTEventListener;
 import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import java.awt.event.MouseEvent;
@@ -44,6 +46,7 @@ import javax.swing.JRadioButtonMenuItem;
 import javax.swing.JScrollPane;
 import javax.swing.JToggleButton;
 import javax.swing.Scrollable;
+import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 
 import org.openstreetmap.josm.actions.JosmAction;
@@ -54,6 +57,7 @@ import org.openstreetmap.josm.gui.MainMenu;
 import org.openstreetmap.josm.gui.ShowHideButtonListener;
 import org.openstreetmap.josm.gui.SideButton;
 import org.openstreetmap.josm.gui.dialogs.DialogsPanel.Action;
+import org.openstreetmap.josm.gui.help.HelpBrowser;
 import org.openstreetmap.josm.gui.help.HelpUtil;
 import org.openstreetmap.josm.gui.help.Helpful;
 import org.openstreetmap.josm.gui.preferences.PreferenceDialog;
@@ -72,6 +76,7 @@ import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.Shortcut;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * This class is a toggle dialog that can be turned on and off.
@@ -96,25 +101,26 @@ public class ToggleDialog extends JPanel implements ShowHideButtonListener, Help
      * @since 6752
      */
     public static final BooleanProperty PROP_DYNAMIC_BUTTONS = new BooleanProperty("dialog.dynamic.buttons", false);
+    private static final String SELECTED = "selected";
 
     private final transient ParametrizedEnumProperty<ButtonHidingType> propButtonHiding =
-            new ParametrizedEnumProperty<ToggleDialog.ButtonHidingType>(ButtonHidingType.class, ButtonHidingType.DYNAMIC) {
-        @Override
-        protected String getKey(String... params) {
-            return preferencePrefix + ".buttonhiding";
-        }
+            new ParametrizedEnumProperty<>(ButtonHidingType.class, ButtonHidingType.DYNAMIC) {
+                @Override
+                protected String getKey(String... params) {
+                    return preferencePrefix + ".buttonhiding";
+                }
 
-        @Override
-        protected ButtonHidingType parse(String s) {
-            try {
-                return super.parse(s);
-            } catch (IllegalArgumentException e) {
-                // Legacy settings
-                Logging.trace(e);
-                return Boolean.parseBoolean(s) ? ButtonHidingType.DYNAMIC : ButtonHidingType.ALWAYS_SHOWN;
-            }
-        }
-    };
+                @Override
+                protected ButtonHidingType parse(String s) {
+                    try {
+                        return super.parse(s);
+                    } catch (IllegalArgumentException e) {
+                        // Legacy settings
+                        Logging.trace(e);
+                        return Boolean.parseBoolean(s) ? ButtonHidingType.DYNAMIC : ButtonHidingType.ALWAYS_SHOWN;
+                    }
+                }
+            };
 
     /** The action to toggle this dialog */
     protected final ToggleDialogAction toggleAction;
@@ -252,9 +258,9 @@ public class ToggleDialog extends JPanel implements ShowHideButtonListener, Help
         this.name = name;
         this.preferenceClass = prefClass;
 
-        /** Use the full width of the parent element */
+        /* Use the full width of the parent element */
         setPreferredSize(new Dimension(0, preferredHeight));
-        /** Override any minimum sizes of child elements so the user can resize freely */
+        /* Override any minimum sizes of child elements so the user can resize freely */
         setMinimumSize(new Dimension(0, 0));
         this.preferredHeight = Config.getPref().getInt(preferencePrefix+".preferredHeight", preferredHeight);
         toggleAction = new ToggleDialogAction(name, "dialogs/"+iconName, tooltip, shortcut, helpTopic());
@@ -264,7 +270,7 @@ public class ToggleDialog extends JPanel implements ShowHideButtonListener, Help
         isCollapsed = Config.getPref().getBoolean(preferencePrefix+".minimized", false);
         buttonHiding = propButtonHiding.get();
 
-        /** show the minimize button */
+        /* show the minimize button */
         titleBar = new TitleBar(name, iconName);
         add(titleBar, BorderLayout.NORTH);
 
@@ -289,7 +295,7 @@ public class ToggleDialog extends JPanel implements ShowHideButtonListener, Help
 
     /**
      * The action to toggle the visibility state of this toggle dialog.
-     *
+     * <p>
      * Emits {@link PropertyChangeEvent}s for the property <code>selected</code>:
      * <ul>
      *   <li>true, if the dialog is currently visible</li>
@@ -350,8 +356,8 @@ public class ToggleDialog extends JPanel implements ShowHideButtonListener, Help
         if (windowMenuItem != null) {
             windowMenuItem.setState(true);
         }
-        toggleAction.putValue("selected", Boolean.FALSE);
-        toggleAction.putValue("selected", Boolean.TRUE);
+        toggleAction.putValue(SELECTED, Boolean.FALSE);
+        toggleAction.putValue(SELECTED, Boolean.TRUE);
     }
 
     /**
@@ -378,7 +384,7 @@ public class ToggleDialog extends JPanel implements ShowHideButtonListener, Help
 
     @Override
     public void buttonHidden() {
-        if ((Boolean) toggleAction.getValue("selected")) {
+        if (Boolean.TRUE.equals(toggleAction.getValue(SELECTED))) {
             toggleAction.actionPerformed(null);
         }
     }
@@ -398,7 +404,7 @@ public class ToggleDialog extends JPanel implements ShowHideButtonListener, Help
             windowMenuItem.setState(false);
         }
         setIsShowing(false);
-        toggleAction.putValue("selected", Boolean.FALSE);
+        toggleAction.putValue(SELECTED, Boolean.FALSE);
     }
 
     /**
@@ -474,7 +480,10 @@ public class ToggleDialog extends JPanel implements ShowHideButtonListener, Help
 
     @Override
     public void destroy() {
-        dialogsPanel = null;
+        if (dialogsPanel != null) {
+            dialogsPanel.remove(this);
+            dialogsPanel = null;
+        }
         rememberHeight();
         closeDetachedDialog();
         if (isShowing) {
@@ -544,7 +553,7 @@ public class ToggleDialog extends JPanel implements ShowHideButtonListener, Help
 
             // scale down the dialog icon
             ImageIcon icon = ImageProvider.get("dialogs", iconName, ImageProvider.ImageSizes.SMALLICON);
-            lblTitle = new JLabel("", icon, JLabel.TRAILING);
+            lblTitle = new JLabel("", icon, SwingConstants.TRAILING);
             lblTitle.setIconTextGap(8);
 
             JPanel conceal = new JPanel();
@@ -556,63 +565,69 @@ public class ToggleDialog extends JPanel implements ShowHideButtonListener, Help
             lblTitleWeak = new JComponent() {
                 @Override
                 public void paintComponent(Graphics g) {
+                    super.paintComponent(g);
                     lblTitle.paint(g);
                 }
             };
             lblTitleWeak.setPreferredSize(new Dimension(Integer.MAX_VALUE, 20));
             lblTitleWeak.setMinimumSize(new Dimension(0, 20));
-            add(lblTitleWeak, GBC.std().fill(GBC.HORIZONTAL));
+            add(lblTitleWeak, GBC.std().fill(GridBagConstraints.HORIZONTAL));
 
             buttonsHide = new JButton(ImageProvider.get("misc", buttonHiding != ButtonHidingType.ALWAYS_SHOWN
                 ? /* ICON(misc/)*/ "buttonhide" :  /* ICON(misc/)*/ "buttonshow"));
-            buttonsHide.setToolTipText(tr("Toggle dynamic buttons"));
-            buttonsHide.setBorder(BorderFactory.createEmptyBorder());
-            buttonsHide.addActionListener(e -> {
+            addButton(buttonsHide, tr("Toggle dynamic buttons"), e -> {
                 JRadioButtonMenuItem item = (buttonHiding == ButtonHidingType.DYNAMIC) ? alwaysShown : dynamic;
                 item.setSelected(true);
                 item.getAction().actionPerformed(null);
             });
-            add(buttonsHide);
 
             // show the pref button if applicable
             if (preferenceClass != null) {
-                JButton pref = new JButton(ImageProvider.get("preference_small", ImageProvider.ImageSizes.SMALLICON));
-                pref.setToolTipText(tr("Open preferences for this panel"));
-                pref.setBorder(BorderFactory.createEmptyBorder());
-                pref.addActionListener(e -> {
+                addButton(new JButton(ImageProvider.get("preference_small", ImageProvider.ImageSizes.SMALLICON)),
+                        tr("Open preferences for this panel"), e -> {
                     final PreferenceDialog p = new PreferenceDialog(MainApplication.getMainFrame());
-                    if (TabPreferenceSetting.class.isAssignableFrom(preferenceClass)) {
-                        p.selectPreferencesTabByClass((Class<? extends TabPreferenceSetting>) preferenceClass);
-                    } else if (SubPreferenceSetting.class.isAssignableFrom(preferenceClass)) {
-                        p.selectSubPreferencesTabByClass((Class<? extends SubPreferenceSetting>) preferenceClass);
-                    }
+                    SwingUtilities.invokeLater(() -> {
+                        if (TabPreferenceSetting.class.isAssignableFrom(preferenceClass)) {
+                            p.selectPreferencesTabByClass((Class<? extends TabPreferenceSetting>) preferenceClass);
+                        } else if (SubPreferenceSetting.class.isAssignableFrom(preferenceClass)) {
+                            p.selectSubPreferencesTabByClass((Class<? extends SubPreferenceSetting>) preferenceClass);
+                        }
+                    });
                     p.setVisible(true);
                 });
-                add(pref);
             }
 
+            // show the help button
+            addButton(new JButton(ImageProvider.get("help", ImageProvider.ImageSizes.SMALLICON)),
+                    tr("Open help for this panel"), e -> HelpBrowser.setUrlForHelpTopic(helpTopic()));
+
             // show the sticky button
-            JButton sticky = new JButton(ImageProvider.get("misc", "sticky"));
-            sticky.setToolTipText(tr("Undock the panel"));
-            sticky.setBorder(BorderFactory.createEmptyBorder());
-            sticky.addActionListener(e -> {
+            addButton(new JButton(ImageProvider.get("misc", "sticky")), tr("Undock the panel"), e -> {
                 detach();
-                dialogsPanel.reconstruct(Action.ELEMENT_SHRINKS, null);
+                if (dialogsPanel != null) {
+                    dialogsPanel.reconstruct(Action.ELEMENT_SHRINKS, null);
+                }
             });
-            add(sticky);
 
             // show the close button
-            JButton close = new JButton(ImageProvider.get("misc", "close"));
-            close.setToolTipText(tr("Close this panel. You can reopen it with the buttons in the left toolbar."));
-            close.setBorder(BorderFactory.createEmptyBorder());
-            close.addActionListener(e -> {
+            addButton(new JButton(ImageProvider.get("misc", "close")),
+                    tr("Close this panel. You can reopen it with the buttons in the left toolbar."), e -> {
                 hideDialog();
-                dialogsPanel.reconstruct(Action.ELEMENT_SHRINKS, null);
+                if (dialogsPanel != null) {
+                    dialogsPanel.reconstruct(Action.ELEMENT_SHRINKS, null);
+                }
                 hideNotify();
             });
-            add(close);
+
             setToolTipText(tr("Click to minimize/maximize the panel content"));
             setTitle(toggleDialogName);
+        }
+
+        protected final Component addButton(JButton button, String tooltip, ActionListener actionListener) {
+            button.setBorder(BorderFactory.createEmptyBorder());
+            button.addActionListener(actionListener);
+            button.setToolTipText(tooltip);
+            return add(button);
         }
 
         public void setTitle(String title) {
@@ -943,7 +958,7 @@ public class ToggleDialog extends JPanel implements ShowHideButtonListener, Help
             buttons.addAll(Arrays.asList(nextButtons));
         }
         add(data, BorderLayout.CENTER);
-        if (!buttons.isEmpty() && buttons.get(0) != null && !buttons.get(0).isEmpty()) {
+        if (!buttons.isEmpty() && !Utils.isEmpty(buttons.get(0))) {
             buttonsPanel = new JPanel(new GridLayout(buttons.size(), 1));
             for (Collection<SideButton> buttonRow : buttons) {
                 if (buttonRow == null) {
@@ -952,13 +967,13 @@ public class ToggleDialog extends JPanel implements ShowHideButtonListener, Help
                 final JPanel buttonRowPanel = new JPanel(Config.getPref().getBoolean("dialog.align.left", false)
                         ? new FlowLayout(FlowLayout.LEFT) : new GridLayout(1, buttonRow.size()));
                 buttonsPanel.add(buttonRowPanel);
-                for (SideButton button : buttonRow) {
-                    buttonRowPanel.add(button);
-                    javax.swing.Action action = button.getAction();
+                for (SideButton sideButton : buttonRow) {
+                    buttonRowPanel.add(sideButton);
+                    javax.swing.Action action = sideButton.getAction();
                     if (action != null) {
                         buttonActions.add(action);
                     } else {
-                        Logging.warn("Button " + button + " doesn't have action defined");
+                        Logging.warn("Button " + sideButton + " doesn't have action defined");
                         Logging.error(new Exception());
                     }
                 }

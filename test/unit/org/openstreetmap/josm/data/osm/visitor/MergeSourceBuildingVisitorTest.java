@@ -1,15 +1,14 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.osm.visitor;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Collection;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Node;
@@ -18,14 +17,11 @@ import org.openstreetmap.josm.data.osm.OsmPrimitiveType;
 import org.openstreetmap.josm.data.osm.Relation;
 import org.openstreetmap.josm.data.osm.RelationMember;
 import org.openstreetmap.josm.data.osm.Way;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
  * Unit tests for class {@link MergeSourceBuildingVisitor}.
  */
-public class MergeSourceBuildingVisitorTest {
+class MergeSourceBuildingVisitorTest {
 
     protected OsmPrimitive lookupByName(Collection<? extends OsmPrimitive> primitives, String name) {
         if (primitives == null) return null;
@@ -35,15 +31,8 @@ public class MergeSourceBuildingVisitorTest {
                 .findFirst().orElse(null);
     }
 
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
     @Test
-    public void testNodes() {
+    void testNodes() {
         DataSet source = new DataSet();
         Node n1 = new Node(1);
         Node n2 = new Node(new LatLon(10.0, 10.0));
@@ -77,7 +66,7 @@ public class MergeSourceBuildingVisitorTest {
     }
 
     @Test
-    public void testOneWay() {
+    void testOneWay() {
         DataSet source = new DataSet();
         Node n1 = new Node(1);
         Node n2 = new Node(2);
@@ -109,7 +98,7 @@ public class MergeSourceBuildingVisitorTest {
     }
 
     @Test
-    public void testOneWayNodesSelectedToo() {
+    void testOneWayNodesSelectedToo() {
         DataSet source = new DataSet();
         Node n1 = new Node(1);
         Node n2 = new Node(2);
@@ -141,7 +130,7 @@ public class MergeSourceBuildingVisitorTest {
     }
 
     @Test
-    public void testOneWayIncomplete() {
+    void testOneWayIncomplete() {
         DataSet source = new DataSet();
         Way w1 = new Way(3);
         source.addPrimitive(w1);
@@ -159,7 +148,7 @@ public class MergeSourceBuildingVisitorTest {
     }
 
     @Test
-    public void testOneRelationExistingMembersSelected() {
+    void testOneRelationExistingMembersSelected() {
         DataSet source = new DataSet();
         Relation r1 = new Relation(1, 1);
         Node n20 = new Node(20, 1);
@@ -218,7 +207,7 @@ public class MergeSourceBuildingVisitorTest {
     }
 
     @Test
-    public void testOneRelationExistingMembersNotSelected() {
+    void testOneRelationExistingMembersNotSelected() {
         DataSet source = new DataSet();
         Relation r1 = new Relation(1, 1);
         Node n20 = new Node(20);
@@ -277,7 +266,7 @@ public class MergeSourceBuildingVisitorTest {
     }
 
     @Test
-    public void testOneRelationNewMembersNotSelected() {
+    void testOneRelationNewMembersNotSelected() {
         DataSet source = new DataSet();
         Relation r1 = new Relation();
         r1.put("name", "r1");
@@ -344,7 +333,7 @@ public class MergeSourceBuildingVisitorTest {
     }
 
     @Test
-    public void testOneRelationExistingRecursive() {
+    void testOneRelationExistingRecursive() {
         DataSet source = new DataSet();
         Relation r1 = new Relation(1, 1);
         r1.addMember(new RelationMember("relation-1", r1));
@@ -363,7 +352,7 @@ public class MergeSourceBuildingVisitorTest {
     }
 
     @Test
-    public void testOneRelationNewRecursive() {
+    void testOneRelationNewRecursive() {
         DataSet source = new DataSet();
         Relation r1 = new Relation();
         r1.put("name", "r1");
@@ -383,7 +372,7 @@ public class MergeSourceBuildingVisitorTest {
     }
 
     @Test
-    public void testTwoRelationExistingCircular() {
+    void testTwoRelationExistingCircular() {
         DataSet source = new DataSet();
         Relation r1 = new Relation(1, 1);
         source.addPrimitive(r1);

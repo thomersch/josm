@@ -4,8 +4,8 @@ package org.openstreetmap.josm.gui.dialogs.changeset;
 import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.awt.Font;
-import java.text.DateFormat;
-import java.util.Date;
+import java.time.Instant;
+import java.time.format.FormatStyle;
 
 import javax.swing.JComponent;
 import javax.swing.JLabel;
@@ -13,6 +13,7 @@ import javax.swing.UIManager;
 import javax.swing.table.TableCellRenderer;
 
 import org.openstreetmap.josm.data.osm.User;
+import org.openstreetmap.josm.tools.Utils;
 import org.openstreetmap.josm.tools.date.DateUtils;
 
 /**
@@ -55,7 +56,7 @@ public abstract class AbstractCellRenderer extends JLabel implements TableCellRe
     }
 
     protected void renderUser(User user) {
-        if (user == null || user.getName().trim().isEmpty()) {
+        if (user == null || Utils.isStripEmpty(user.getName())) {
             setFont(UIManager.getFont("Table.font").deriveFont(Font.ITALIC));
             setText(tr("anonymous"));
         } else {
@@ -65,11 +66,11 @@ public abstract class AbstractCellRenderer extends JLabel implements TableCellRe
         }
     }
 
-    protected void renderDate(Date d) {
+    protected void renderInstant(Instant d) {
         if (d == null) {
             setText("");
         } else {
-            setText(DateUtils.formatDateTime(d, DateFormat.SHORT, DateFormat.SHORT));
+            setText(DateUtils.getDateTimeFormatter(FormatStyle.SHORT, FormatStyle.SHORT).format(d));
         }
         setToolTipText(null);
     }

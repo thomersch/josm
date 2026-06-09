@@ -13,6 +13,7 @@ import java.lang.management.ManagementFactory;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -51,6 +52,7 @@ import org.openstreetmap.josm.gui.layer.LayerManager.LayerOrderChangeEvent;
 import org.openstreetmap.josm.gui.layer.LayerManager.LayerRemoveEvent;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.spi.preferences.Config;
+import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.Utils;
 
@@ -189,11 +191,11 @@ public class AutosaveTask extends TimerTask implements LayerChangeListener, List
         }
     }
 
-    protected File getNewLayerFile(AutosaveLayerInfo<?> layer, Date now, int startIndex) {
+    protected File getNewLayerFile(AutosaveLayerInfo<?> layer, Instant now, int startIndex) {
         int index = startIndex;
         while (true) {
             String filename = String.format(Locale.ENGLISH, "%1$s_%2$tY%2$tm%2$td_%2$tH%2$tM%2$tS%2$tL%3$s",
-                    layer.layerFileName, now, index == 0 ? "" : ('_' + Integer.toString(index)));
+                    layer.layerFileName, Date.from(now), index == 0 ? "" : ('_' + Integer.toString(index)));
             File result = new File(autosaveDir, filename + '.' +
                     (layer.layer instanceof NoteLayer ?
                             Config.getPref().get("autosave.notes.extension", "osn") :
@@ -233,7 +235,7 @@ public class AutosaveTask extends TimerTask implements LayerChangeListener, List
         try {
             Data data = info.layer.getData();
             if (data != null && changedData.remove(data)) {
-                File file = getNewLayerFile(info, new Date(), 0);
+                File file = getNewLayerFile(info, Instant.now(), 0);
                 if (file != null) {
                     info.backupFiles.add(file);
                     info.layer.autosave(file);
@@ -261,7 +263,7 @@ public class AutosaveTask extends TimerTask implements LayerChangeListener, List
                 if (PROP_NOTIFICATION.get() && !layersInfo.isEmpty()) {
                     GuiHelper.runInEDT(this::displayNotification);
                 }
-            } catch (RuntimeException t) { // NOPMD
+            } catch (RuntimeException t) {
                 // Don't let exception stop time thread
                 Logging.error("Autosave failed:");
                 Logging.error(t);
@@ -271,8 +273,9 @@ public class AutosaveTask extends TimerTask implements LayerChangeListener, List
 
     protected void displayNotification() {
         new Notification(tr("Your work has been saved automatically."))
-        .setDuration(Notification.TIME_SHORT)
-        .show();
+                .setIcon(ImageProvider.get("save"))
+                .setDuration(Notification.TIME_SHORT)
+                .show();
     }
 
     @Override
@@ -296,13 +299,18 @@ public class AutosaveTask extends TimerTask implements LayerChangeListener, List
 
     @Override
     public void layerAdded(LayerAddEvent e) {
-        if (e.getAddedLayer() instanceof OsmDataLayer) {
-            registerNewlayer((OsmDataLayer) e.getAddedLayer());
-        } else if (e.getAddedLayer() instanceof NoteLayer) {
-            registerNewlayer((NoteLayer) e.getAddedLayer());
-        } else if (e.getAddedLayer() instanceof AbstractModifiableLayer) {
-            synchronized (layersLock) {
-                layersInfo.add(new AutosaveLayerInfo<>((AbstractModifiableLayer) e.getAddedLayer()));
+        Layer layer = e.getAddedLayer();
+        if (layer.isSavable()) {
+            if (layer instanceof OsmDataLayer) {
+                registerNewlayer((OsmDataLayer) layer);
+            } else if (layer instanceof NoteLayer) {
+                registerNewlayer((NoteLayer) layer);
+            } else if (layer instanceof AbstractModifiableLayer) {
+                synchronized (layersLock) {
+                    layersInfo.add(new AutosaveLayerInfo<>((AbstractModifiableLayer) layer));
+                }
+            } else {
+                Logging.debug("Unsupported savable layer type: {0}", layer.getClass().getSimpleName());
             }
         }
     }
@@ -388,7 +396,7 @@ public class AutosaveTask extends TimerTask implements LayerChangeListener, List
     public List<File> getUnsavedLayersFiles() {
         List<File> result = new ArrayList<>();
         try {
-            File[] files = autosaveDir.listFiles((FileFilter)
+            File[] files = autosaveDir.listFiles(
                     pathname -> OsmImporter.FILE_FILTER.accept(pathname) || NoteImporter.FILE_FILTER.accept(pathname));
             if (files == null)
                 return result;

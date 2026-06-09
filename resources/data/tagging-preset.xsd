@@ -106,6 +106,7 @@
         <complexContent>
             <extension base="tns:group-parent">
                 <attributeGroup ref="tns:attributes.name" />
+                <attributeGroup ref="tns:attributes.regions"/>
             </extension>
         </complexContent>
     </complexType>
@@ -121,7 +122,7 @@
     <complexType name="item">
         <annotation>
             <documentation>
-                Every item is one annotation set to select from. name is required, type and preset_name_label are recommended, icon and name_template are optional attributes.
+                Every item is one annotation set to select from. name is required, type and preset_name_label are recommended and icon, name_template, regions and exclude_regions are optional attributes.
             </documentation>
         </annotation>
         <sequence>
@@ -134,6 +135,7 @@
         </sequence>
         <attributeGroup ref="tns:attributes.name" />
         <attributeGroup ref="tns:attributes.icon" />
+        <attributeGroup ref="tns:attributes.regions"/>
         <attribute name="type" type="string">
             <annotation>
                 <documentation><![CDATA[
@@ -152,6 +154,15 @@
             <annotation>
                 <documentation>
                     Name templates can be used to define custom formatting for OSM primitives or GPX waypoints (for example in the Relations or the Selection).
+                </documentation>
+            </annotation>
+        </attribute>
+        <attribute name="match_expression" type="string">
+            <annotation>
+                <documentation>
+                    Additional criteria for matching primitives. Specified in <a href="https://josm.openstreetmap.de/wiki/Help/Action/Search">JOSM search syntax</a>.
+                    For instance, a preset with <code>match_expression="foo=bar"</code> requires OSM objects to have the tag <code>foo=bar</code>.
+                    You may want to use the <code>match_expression</code> to exclude certain OSM objects, for instance when a more specific preset is present.
                 </documentation>
             </annotation>
         </attribute>
@@ -270,6 +281,7 @@
         <attribute name="wiki" type="string" />
         <attribute name="href" type="string" />
         <attributeGroup ref="tns:attributes.text" />
+        <attributeGroup ref="tns:attributes.icon" />
 
         <attribute name="name" use="prohibited" />
         <anyAttribute processContents="skip" />
@@ -290,6 +302,7 @@
         </attribute>
         <attributeGroup ref="tns:attributes.text" />
         <attribute name="name" use="prohibited" />
+        <anyAttribute processContents="skip" />
     </complexType>
 
     <complexType name="label">
@@ -316,6 +329,7 @@
     <complexType name="text">
         <attributeGroup ref="tns:attributes.key" />
         <attributeGroup ref="tns:attributes.text" />
+        <attributeGroup ref="tns:attributes.icon" />
         <attribute name="use_last_as_default" type="tns:last_default" />
         <attribute name="auto_increment" type="string">
             <annotation>
@@ -326,10 +340,19 @@
         </attribute>
         <attribute name="match" type="tns:match" />
         <attributeGroup ref="tns:attributes.length" />
+        <attributeGroup ref="tns:attributes.regions"/>
         <attribute name="alternative_autocomplete_keys" type="string">
             <annotation>
                 <documentation><![CDATA[
-                    A comma separated list of alternative keys to use for auto completion of <text<.
+                    A comma separated list of alternative keys to use for auto completion of <text>.
+                ]]></documentation>
+            </annotation>
+        </attribute>
+        <attribute name="value_template" type="string">
+            <annotation>
+                <documentation><![CDATA[
+                    A template to generate the value automatically based on other <text> values of this preset.
+                    For instance, "Bus {ref}: {from} → {to}" can be used to generate the name of a bus route relation.
                 ]]></documentation>
             </annotation>
         </attribute>
@@ -344,7 +367,7 @@
     <complexType name="list_entry">
         <annotation>
             <documentation><![CDATA[
-                Used in <combo/> and <multiselect/>. More information see short_descriptions below. The attributes are value, display_value, short_description, icon and icon_size.
+                Used in <combo/> and <multiselect/>. More information see short_descriptions below. The attributes are value, display_value, short_description, icon, icon_size, regions, and exclude_regions.
             ]]></documentation>
         </annotation>
         <attribute name="value" type="string" use="required" />
@@ -358,6 +381,7 @@
             </annotation>
         </attribute>
         <attributeGroup ref="tns:attributes.icon" />
+        <attributeGroup ref="tns:attributes.regions"/>
         <anyAttribute processContents="skip" />
     </complexType>
 
@@ -365,7 +389,7 @@
         <annotation>
             <documentation>
                 <p>
-                    Displays a multiple choice combo box. key and values are mandatory, text, default, editable, delimiter, values_from, display_values, short_descriptions, use_last_as_default, values_searchable, length, values_no_i18n, values_sort and match is optional.
+                    Displays a multiple choice combo box. key and values are mandatory, text, default, editable, delimiter, values_from, display_values, short_descriptions, use_last_as_default, values_searchable, length, values_no_i18n, values_sort, match, regions, and exclude_regions are optional.
                 </p>
                 <p>
                     If editable is "true" (default), combo boxes can be edited as if they were text fields (additional to the drop down menu). Non editable combo boxes can only contain one of the specified values.
@@ -381,17 +405,19 @@
         </sequence>
         <attributeGroup ref="tns:attributes.key" />
         <attributeGroup ref="tns:attributes.text" />
+        <attributeGroup ref="tns:attributes.icon" />
         <attributeGroup ref="tns:attributes.values" />
         <attribute name="use_last_as_default" type="tns:last_default" />
         <attribute name="editable" type="boolean">
             <annotation>
                 <documentation>
-                    The combo box is read only, which means that the user can only select an item in the list. Default is "true", which means, the user can add other values as text. Feature is broken, see #6157.
+                    The combo box is read only, which means that the user can only select an item in the list. Default is "true", which means, the user can add other values as text.
                 </documentation>
             </annotation>
         </attribute>
         <attribute name="match" type="tns:match" />
         <attributeGroup ref="tns:attributes.length" />
+        <attributeGroup ref="tns:attributes.regions"/>
 
         <attribute name="type" use="prohibited" />
         <attribute name="value" use="prohibited" />
@@ -408,7 +434,9 @@
         </sequence>
         <attributeGroup ref="tns:attributes.key" />
         <attributeGroup ref="tns:attributes.text" />
+        <attributeGroup ref="tns:attributes.icon" />
         <attributeGroup ref="tns:attributes.values" />
+        <attributeGroup ref="tns:attributes.regions"/>
         <attribute name="use_last_as_default" type="tns:last_default" />
         <attribute name="match" type="tns:match" />
 
@@ -467,6 +495,7 @@
         </attribute>
         <attribute name="match" type="tns:match" />
         <attributeGroup ref="tns:attributes.icon" />
+        <attributeGroup ref="tns:attributes.regions"/>
 
         <attribute name="name" use="prohibited" />
         <attribute name="type" use="prohibited" />
@@ -536,7 +565,7 @@
     <complexType name="role">
         <annotation>
             <documentation>
-                To specify possible roles of members in relations. The key attribute is required, text, requisite, count, type and member_expression are optional.
+                To specify possible roles of members in relations. The key attribute is required, text, requisite, count, type, member_expression, regions, and exclude_regions are optional.
             </documentation>
         </annotation>
         <attribute name="key" type="string">
@@ -552,6 +581,7 @@
         <attribute name="count" type="integer" />
         <attribute name="member_expression" type="string" />
         <attribute name="regexp" type="boolean" />
+        <attributeGroup ref="tns:attributes.regions"/>
         <anyAttribute processContents="skip" />
     </complexType>
 
@@ -615,6 +645,20 @@
             <annotation>
                 <documentation>
                     Translation context for text attribute to separate equals words with different meaning (not required for in-file translations).
+                </documentation>
+            </annotation>
+        </attribute>
+        <attribute name="multiline" type="boolean">
+            <annotation>
+                <documentation>
+                    The text is expected to be multiline, and newlines must not be normalized (default is false)
+                </documentation>
+            </annotation>
+        </attribute>
+        <attribute name="normalize" type="boolean">
+            <annotation>
+                <documentation>
+                    This performs normalization of the value by stripping extraneous spaces and consolidating whitespace (default is true for JOSM)
                 </documentation>
             </annotation>
         </attribute>
@@ -703,6 +747,23 @@
                 <documentation><![CDATA[
                     The length of a <text /> or <combo /> box (number of characters allowed).
                 ]]></documentation>
+            </annotation>
+        </attribute>
+    </attributeGroup>
+
+    <attributeGroup name="attributes.regions">
+        <attribute name="regions" type="string">
+            <annotation>
+                <documentation>
+                    Comma separated list of countries this preset group or item is applicable for. If not specified, the preset is applicable for all countries.
+                </documentation>
+            </annotation>
+        </attribute>
+        <attribute name="exclude_regions" type="boolean">
+            <annotation>
+                <documentation>
+                    If true, invert the meaning of regions.
+                </documentation>
             </annotation>
         </attribute>
     </attributeGroup>

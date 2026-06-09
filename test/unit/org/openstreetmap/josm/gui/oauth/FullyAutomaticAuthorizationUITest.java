@@ -1,32 +1,25 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.oauth;
 
-import static org.junit.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.openstreetmap.josm.data.oauth.OAuthVersion;
 import org.openstreetmap.josm.gui.MainApplication;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
 /**
  * Unit tests of {@link FullyAutomaticAuthorizationUI} class.
  */
-public class FullyAutomaticAuthorizationUITest {
-
-    /**
-     * Setup tests
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences();
-
+@BasicPreferences
+class FullyAutomaticAuthorizationUITest {
     /**
      * Unit test of {@link FullyAutomaticAuthorizationUI#FullyAutomaticAuthorizationUI}.
      */
-    @Test
-    public void testFullyAutomaticAuthorizationUI() {
-        assertNotNull(new FullyAutomaticAuthorizationUI("", MainApplication.worker));
+    @ParameterizedTest
+    @EnumSource(OAuthVersion.class)
+    void testFullyAutomaticAuthorizationUI(OAuthVersion version) {
+        assertDoesNotThrow(() -> new FullyAutomaticAuthorizationUI("", MainApplication.worker, version));
     }
 }

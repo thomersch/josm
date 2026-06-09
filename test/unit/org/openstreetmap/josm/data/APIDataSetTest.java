@@ -1,15 +1,14 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.conflict.ConflictCollection;
 import org.openstreetmap.josm.data.osm.CyclicUploadDependencyException;
 import org.openstreetmap.josm.data.osm.DataSet;
@@ -18,24 +17,13 @@ import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Relation;
 import org.openstreetmap.josm.data.osm.RelationMember;
 import org.openstreetmap.josm.data.osm.Way;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
  * Unit tests for class {@link APIDataSet}.
  */
-public class APIDataSetTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+class APIDataSetTest {
     @Test
-    public void testOneNewRelationOnly() throws CyclicUploadDependencyException {
+    void testOneNewRelationOnly() throws CyclicUploadDependencyException {
         Relation r = new Relation();
         r.put("name", "r1");
         DataSet ds = new DataSet();
@@ -51,7 +39,7 @@ public class APIDataSetTest {
     }
 
     @Test
-    public void testNewParentChildPair() throws CyclicUploadDependencyException {
+    void testNewParentChildPair() throws CyclicUploadDependencyException {
         DataSet ds = new DataSet();
         Relation r1 = new Relation();
         ds.addPrimitive(r1);
@@ -74,7 +62,7 @@ public class APIDataSetTest {
     }
 
     @Test
-    public void testOneExistingAndThreNewInAChain() throws CyclicUploadDependencyException {
+    void testOneExistingAndThreNewInAChain() throws CyclicUploadDependencyException {
         DataSet ds = new DataSet();
 
         Relation r1 = new Relation();
@@ -120,7 +108,7 @@ public class APIDataSetTest {
     }
 
     @Test
-    public void testOneParentTwoNewChildren() throws CyclicUploadDependencyException {
+    void testOneParentTwoNewChildren() throws CyclicUploadDependencyException {
         DataSet ds = new DataSet();
         Relation r1 = new Relation();
         ds.addPrimitive(r1);
@@ -149,7 +137,7 @@ public class APIDataSetTest {
     }
 
     @Test // for ticket #9624
-    public void testDeleteOneParentTwoNewChildren() throws CyclicUploadDependencyException {
+    void testDeleteOneParentTwoNewChildren() throws CyclicUploadDependencyException {
         DataSet ds = new DataSet();
         Relation r1 = new Relation(1);
         ds.addPrimitive(r1);
@@ -192,7 +180,7 @@ public class APIDataSetTest {
     }
 
     @Test // for ticket #9656
-    public void testDeleteWay() throws CyclicUploadDependencyException {
+    void testDeleteWay() throws CyclicUploadDependencyException {
         DataSet ds = new DataSet();
         final Way way = new Way(1, 2);
         way.put("highway", "unclassified");
@@ -229,7 +217,7 @@ public class APIDataSetTest {
     }
 
     @Test
-    public void testOneCycle() {
+    void testOneCycle() {
         DataSet ds = new DataSet();
         Relation r1 = new Relation();
         ds.addPrimitive(r1);
@@ -249,11 +237,6 @@ public class APIDataSetTest {
 
         APIDataSet apiDataSet = new APIDataSet();
         apiDataSet.init(ds);
-        try {
-            apiDataSet.adjustRelationUploadOrder();
-            fail("expected cyclic upload dependency exception not thrown");
-        } catch (CyclicUploadDependencyException e) {
-            System.out.println(e);
-        }
+        assertThrows(CyclicUploadDependencyException.class, apiDataSet::adjustRelationUploadOrder);
     }
 }

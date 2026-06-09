@@ -19,8 +19,8 @@ import java.awt.image.ColorModel;
 import java.awt.image.FilteredImageSource;
 import java.awt.image.ImageFilter;
 import java.awt.image.ImageProducer;
-import java.awt.image.RenderedImage;
 import java.awt.image.RGBImageFilter;
+import java.awt.image.RenderedImage;
 import java.awt.image.WritableRaster;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -44,9 +44,11 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.UnaryOperator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -83,12 +85,12 @@ import com.kitfox.svg.SVGUniverse;
 
 /**
  * Helper class to support the application with images.
- *
+ * <p>
  * How to use:
- *
+ * <p>
  * <code>ImageIcon icon = new ImageProvider(name).setMaxSize(ImageSizes.MAP).get();</code>
  * (there are more options, see below)
- *
+ * <p>
  * short form:
  * <code>ImageIcon icon = ImageProvider.get(name);</code>
  *
@@ -245,6 +247,11 @@ public class ImageProvider {
         }
     }
 
+    private enum ImageLocations {
+        LOCAL,
+        ARCHIVE
+    }
+
     /**
      * Property set on {@code BufferedImage} returned by {@link #makeImageTransparent}.
      * @since 7132
@@ -370,7 +377,7 @@ public class ImageProvider {
 
     /**
      * Specify a zip file where the image is located.
-     *
+     * <p>
      * (optional)
      * @param archive zip file where the image is located
      * @return the current object, for convenience
@@ -382,9 +389,9 @@ public class ImageProvider {
 
     /**
      * Specify a base path inside the zip file.
-     *
+     * <p>
      * The subdir and name will be relative to this path.
-     *
+     * <p>
      * (optional)
      * @param inArchiveDir path inside the archive
      * @return the current object, for convenience
@@ -411,7 +418,7 @@ public class ImageProvider {
 
     /**
      * Set the dimensions of the image.
-     *
+     * <p>
      * If not specified, the original size of the image is used.
      * The width part of the dimension can be -1. Then it will only set the height but
      * keep the aspect ratio. (And the other way around.)
@@ -426,7 +433,7 @@ public class ImageProvider {
 
     /**
      * Set the dimensions of the image.
-     *
+     * <p>
      * If not specified, the original size of the image is used.
      * @param size final dimensions of the image
      * @return the current object, for convenience
@@ -474,10 +481,10 @@ public class ImageProvider {
 
     /**
      * Limit the maximum size of the image.
-     *
+     * <p>
      * It will shrink the image if necessary, but keep the aspect ratio.
      * The given width or height can be -1 which means this direction is not bounded.
-     *
+     * <p>
      * 'size' and 'maxSize' are not compatible, you should set only one of them.
      * @param maxSize maximum image size
      * @return the current object, for convenience
@@ -490,10 +497,10 @@ public class ImageProvider {
 
     /**
      * Limit the maximum size of the image.
-     *
+     * <p>
      * It will shrink the image if necessary, but keep the aspect ratio.
      * The given width or height can be -1 which means this direction is not bounded.
-     *
+     * <p>
      * This function sets value using the most restrictive of the new or existing set of
      * values.
      *
@@ -513,10 +520,10 @@ public class ImageProvider {
 
     /**
      * Limit the maximum size of the image.
-     *
+     * <p>
      * It will shrink the image if necessary, but keep the aspect ratio.
      * The given width or height can be -1 which means this direction is not bounded.
-     *
+     * <p>
      * 'size' and 'maxSize' are not compatible, you should set only one of them.
      * @param size maximum image size
      * @return the current object, for convenience
@@ -559,7 +566,7 @@ public class ImageProvider {
 
     /**
      * Decide, if an exception should be thrown, when the image cannot be located.
-     *
+     * <p>
      * Set to true, when the image URL comes from user data and the image may be missing.
      *
      * @param optional true, if JOSM should <b>not</b> throw a RuntimeException
@@ -573,7 +580,7 @@ public class ImageProvider {
 
     /**
      * Suppresses warning on the command line in case the image cannot be found.
-     *
+     * <p>
      * In combination with setOptional(true);
      * @param suppressWarnings if <code>true</code> warnings are suppressed
      * @return the current object, for convenience
@@ -581,30 +588,6 @@ public class ImageProvider {
     public ImageProvider setSuppressWarnings(boolean suppressWarnings) {
         this.suppressWarnings = suppressWarnings;
         return this;
-    }
-
-    /**
-     * Add an additional class loader to search image for.
-     * @param additionalClassLoader class loader to add to the internal set
-     * @return {@code true} if the set changed as a result of the call
-     * @since 12870
-     * @deprecated Use ResourceProvider#addAdditionalClassLoader
-     */
-    @Deprecated
-    public static boolean addAdditionalClassLoader(ClassLoader additionalClassLoader) {
-        return ResourceProvider.addAdditionalClassLoader(additionalClassLoader);
-    }
-
-    /**
-     * Add a collection of additional class loaders to search image for.
-     * @param additionalClassLoaders class loaders to add to the internal set
-     * @return {@code true} if the set changed as a result of the call
-     * @since 12870
-     * @deprecated Use ResourceProvider#addAdditionalClassLoaders
-     */
-    @Deprecated
-    public static boolean addAdditionalClassLoaders(Collection<ClassLoader> additionalClassLoaders) {
-        return ResourceProvider.addAdditionalClassLoaders(additionalClassLoaders);
     }
 
     /**
@@ -689,7 +672,7 @@ public class ImageProvider {
 
     /**
      * Load the image in a background thread.
-     *
+     * <p>
      * This method returns immediately and runs the image request asynchronously.
      * @param action the action that will deal with the image
      *
@@ -734,8 +717,9 @@ public class ImageProvider {
 
     /**
      * Load the image in a background thread.
-     *
-     * This method returns immediately and runs the image request asynchronously.
+     * <p>
+     * This method returns immediately and runs the image request asynchronously for remote resources.
+     * For local resources, the request is executed synchronously in the current thread.
      * @param action the action that will deal with the image
      *
      * @return the future of the requested image
@@ -745,6 +729,17 @@ public class ImageProvider {
         return isRemote()
                 ? CompletableFuture.supplyAsync(this::getResource, IMAGE_FETCHER).thenAcceptAsync(action, IMAGE_FETCHER)
                 : CompletableFuture.completedFuture(getResource()).thenAccept(action);
+    }
+
+    /**
+     * Returns the executor used for background image fetching.
+     * Callers that need to force asynchronous loading even for local resources
+     * (e.g. to off-load expensive SVG pre-rendering) may use this executor directly.
+     * @return the image fetch executor
+     * @since 19553
+     */
+    public static Executor getImageFetchExecutor() {
+        return IMAGE_FETCHER;
     }
 
     /**
@@ -906,9 +901,7 @@ public class ImageProvider {
         } else {
             extensions = new String[] {".png", ".svg"};
         }
-        final int typeArchive = 0;
-        final int typeLocal = 1;
-        for (int place : new Integer[] {typeArchive, typeLocal}) {
+        for (ImageLocations place : ImageLocations.values()) {
             for (String ext : extensions) {
 
                 if (".svg".equals(ext)) {
@@ -920,7 +913,7 @@ public class ImageProvider {
                 String fullName = subdir + name + ext;
                 String cacheName = prefix + fullName;
                 /* cache separately */
-                if (dirs != null && !dirs.isEmpty()) {
+                if (!Utils.isEmpty(dirs)) {
                     cacheName = "id:" + id + ':' + fullName;
                     if (archive != null) {
                         cacheName += ':' + archive.getName();
@@ -928,7 +921,7 @@ public class ImageProvider {
                 }
 
                 switch (place) {
-                case typeArchive:
+                case ARCHIVE:
                     if (archive != null) {
                         cacheName = "zip:" + archive.hashCode() + ':' + cacheName;
                         ImageResource ir = cache.get(cacheName);
@@ -941,7 +934,7 @@ public class ImageProvider {
                         }
                     }
                     break;
-                case typeLocal:
+                case LOCAL:
                     ImageResource ir = cache.get(cacheName);
                     if (ir != null) return ir;
 
@@ -978,7 +971,7 @@ public class ImageProvider {
              InputStream is = cf.getInputStream()) {
             switch (type) {
             case SVG:
-                SVGDiagram svg = null;
+                SVGDiagram svg;
                 synchronized (getSvgUniverse()) {
                     URI uri = getSvgUniverse().loadSVG(is, Utils.fileToURL(cf.getFile()).toString());
                     svg = getSvgUniverse().getDiagram(uri);
@@ -992,13 +985,12 @@ public class ImageProvider {
                     Logging.log(Logging.LEVEL_WARN, "Exception while reading HTTP image:", e);
                 }
                 return img == null ? null : new ImageResource(img);
-            default:
-                throw new AssertionError("Unsupported type: " + type);
             }
         } catch (IOException e) {
             Logging.debug(e);
             return null;
         }
+        throw new AssertionError("Unsupported type: " + type);
     }
 
     /**
@@ -1104,6 +1096,7 @@ public class ImageProvider {
      * @return the requested image or null if the request failed
      */
     private static ImageResource getIfAvailableZip(String fullName, File archive, String inArchiveDir, ImageType type) {
+        Objects.requireNonNull(type, "ImageType must not be null");
         try (ZipFile zipFile = new ZipFile(archive, StandardCharsets.UTF_8)) {
             if (inArchiveDir == null || ".".equals(inArchiveDir)) {
                 inArchiveDir = "";
@@ -1119,9 +1112,9 @@ public class ImageProvider {
                 try (InputStream is = zipFile.getInputStream(entry)) {
                     switch (type) {
                     case SVG:
-                        SVGDiagram svg = null;
+                        SVGDiagram svg;
                         synchronized (getSvgUniverse()) {
-                            URI uri = getSvgUniverse().loadSVG(is, entryName);
+                            URI uri = getSvgUniverse().loadSVG(is, entryName, true);
                             svg = getSvgUniverse().getDiagram(uri);
                         }
                         return svg == null ? null : new ImageResource(svg);
@@ -1138,8 +1131,6 @@ public class ImageProvider {
                             Logging.warn(e);
                         }
                         return img == null ? null : new ImageResource(img);
-                    default:
-                        throw new AssertionError("Unknown ImageType: "+type);
                     }
                 }
             }
@@ -1157,6 +1148,7 @@ public class ImageProvider {
      * @return the requested image or null if the request failed
      */
     private static ImageResource getIfAvailableLocalURL(URL path, ImageType type) {
+        Objects.requireNonNull(type, "ImageType must not be null");
         switch (type) {
         case SVG:
             SVGDiagram svg = null;
@@ -1196,9 +1188,9 @@ public class ImageProvider {
                 Logging.debug(e);
             }
             return img == null ? null : new ImageResource(img);
-        default:
-            throw new AssertionError();
         }
+        // Default
+        throw new AssertionError();
     }
 
     private static URL getImageUrl(String path, String name) {
@@ -1401,8 +1393,8 @@ public class ImageProvider {
      * This method will use a multi-step scaling technique that provides higher quality than the usual
      * one-step technique (only useful in downscaling cases, where {@code targetWidth} or {@code targetHeight} is
      * smaller than the original dimensions, and generally only when the {@code BILINEAR} hint is specified).
-     *
-     * From https://community.oracle.com/docs/DOC-983611: "The Perils of Image.getScaledInstance()"
+     * <p>
+     * From <a href="https://community.oracle.com/docs/DOC-983611">"The Perils of Image.getScaledInstance()"</a>
      *
      * @param img the original image to be scaled
      * @param targetWidth the desired width of the scaled instance, in pixels
@@ -1602,7 +1594,7 @@ public class ImageProvider {
     public static BufferedImage read(InputStream input, boolean readMetadata, boolean enforceTransparency) throws IOException {
         CheckParameterUtil.ensureParameterNotNull(input, "input");
 
-        ImageInputStream stream = createImageInputStream(input); // NOPMD
+        ImageInputStream stream = createImageInputStream(input);
         BufferedImage bi = read(stream, readMetadata, enforceTransparency);
         if (bi == null) {
             stream.close();
@@ -1643,11 +1635,49 @@ public class ImageProvider {
      * @since 7132
      */
     public static BufferedImage read(URL input, boolean readMetadata, boolean enforceTransparency) throws IOException {
+        return read(input, readMetadata, enforceTransparency, ImageReader::getDefaultReadParam);
+    }
+
+    /**
+     * Returns a <code>BufferedImage</code> as the result of decoding
+     * a supplied <code>URL</code> with an <code>ImageReader</code>
+     * chosen automatically from among those currently registered.  An
+     * <code>InputStream</code> is obtained from the <code>URL</code>,
+     * which is wrapped in an <code>ImageInputStream</code>.  If no
+     * registered <code>ImageReader</code> claims to be able to read
+     * the resulting stream, <code>null</code> is returned.
+     *
+     * <p> The current cache settings from <code>getUseCache</code>and
+     * <code>getCacheDirectory</code> will be used to control caching in the
+     * <code>ImageInputStream</code> that is created.
+     *
+     * <p> This method does not attempt to locate
+     * <code>ImageReader</code>s that can read directly from a
+     * <code>URL</code>; that may be accomplished using
+     * <code>IIORegistry</code> and <code>ImageReaderSpi</code>.
+     *
+     * @param input a <code>URL</code> to read from.
+     * @param readMetadata if {@code true}, makes sure to read image metadata to detect transparency color for non translucent images, if any.
+     * In that case the color can be retrieved later through {@link #PROP_TRANSPARENCY_COLOR}.
+     * Always considered {@code true} if {@code enforceTransparency} is also {@code true}
+     * @param enforceTransparency if {@code true}, makes sure to read image metadata and, if the image does not
+     * provide an alpha channel but defines a {@code TransparentColor} metadata node, that the resulting image
+     * has a transparency set to {@code TRANSLUCENT} and uses the correct transparent color.
+     * @param readParamFunction a function to compute the read parameters from the image reader
+     *
+     * @return a <code>BufferedImage</code> containing the decoded contents of the input, or <code>null</code>.
+     *
+     * @throws IllegalArgumentException if <code>input</code> is <code>null</code>.
+     * @throws IOException if an error occurs during reading.
+     * @since 17880
+     */
+    public static BufferedImage read(URL input, boolean readMetadata, boolean enforceTransparency,
+                                     Function<ImageReader, ImageReadParam> readParamFunction) throws IOException {
         CheckParameterUtil.ensureParameterNotNull(input, "input");
 
         try (InputStream istream = Utils.openStream(input)) {
             ImageInputStream stream = createImageInputStream(istream); // NOPMD
-            BufferedImage bi = read(stream, readMetadata, enforceTransparency);
+            BufferedImage bi = read(stream, readMetadata, enforceTransparency, readParamFunction);
             if (bi == null) {
                 stream.close();
             }
@@ -1686,6 +1716,11 @@ public class ImageProvider {
      * @since 7132
      */
     public static BufferedImage read(ImageInputStream stream, boolean readMetadata, boolean enforceTransparency) throws IOException {
+        return read(stream, readMetadata, enforceTransparency, ImageReader::getDefaultReadParam);
+    }
+
+    private static BufferedImage read(ImageInputStream stream, boolean readMetadata, boolean enforceTransparency,
+                                      Function<ImageReader, ImageReadParam> readParamFunction) throws IOException {
         CheckParameterUtil.ensureParameterNotNull(stream, "stream");
 
         Iterator<ImageReader> iter = ImageIO.getImageReaders(stream);
@@ -1694,30 +1729,17 @@ public class ImageProvider {
         }
 
         ImageReader reader = iter.next();
-        ImageReadParam param = reader.getDefaultReadParam();
         reader.setInput(stream, true, !readMetadata && !enforceTransparency);
+        ImageReadParam param = readParamFunction.apply(reader);
         BufferedImage bi = null;
-        try { // NOPMD
+        try (stream) {
             bi = reader.read(0, param);
-            if (bi.getTransparency() != Transparency.TRANSLUCENT && (readMetadata || enforceTransparency) && Utils.getJavaVersion() < 11) {
-                Color color = getTransparentColor(bi.getColorModel(), reader);
-                if (color != null) {
-                    Hashtable<String, Object> properties = new Hashtable<>(1);
-                    properties.put(PROP_TRANSPARENCY_COLOR, color);
-                    bi = new BufferedImage(bi.getColorModel(), bi.getRaster(), bi.isAlphaPremultiplied(), properties);
-                    if (enforceTransparency) {
-                        Logging.trace("Enforcing image transparency of {0} for {1}", stream, color);
-                        bi = makeImageTransparent(bi, color);
-                    }
-                }
-            }
         } catch (LinkageError e) {
             // On Windows, ComponentColorModel.getRGBComponent can fail with "UnsatisfiedLinkError: no awt in java.library.path", see #13973
             // Then it can leads to "NoClassDefFoundError: Could not initialize class sun.awt.image.ShortInterleavedRaster", see #15079
             Logging.error(e);
         } finally {
             reader.dispose();
-            stream.close();
         }
         return bi;
     }
@@ -1935,9 +1957,9 @@ public class ImageProvider {
     @Override
     public String toString() {
         return ("ImageProvider ["
-                + (dirs != null && !dirs.isEmpty() ? "dirs=" + dirs + ", " : "") + (id != null ? "id=" + id + ", " : "")
-                + (subdir != null && !subdir.isEmpty() ? "subdir=" + subdir + ", " : "") + "name=" + name + ", "
+                + (!Utils.isEmpty(dirs) ? "dirs=" + dirs + ", " : "") + (id != null ? "id=" + id + ", " : "")
+                + (!Utils.isEmpty(subdir) ? "subdir=" + subdir + ", " : "") + "name=" + name + ", "
                 + (archive != null ? "archive=" + archive + ", " : "")
-                + (inArchiveDir != null && !inArchiveDir.isEmpty() ? "inArchiveDir=" + inArchiveDir : "") + ']').replaceAll(", \\]", "]");
+                + (!Utils.isEmpty(inArchiveDir) ? "inArchiveDir=" + inArchiveDir : "") + ']').replaceAll(", \\]", "]");
     }
 }

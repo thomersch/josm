@@ -3,8 +3,9 @@ package org.openstreetmap.josm.actions.downloadtasks;
 
 import static org.openstreetmap.josm.tools.I18n.tr;
 
+import java.io.IOException;
+import java.time.Instant;
 import java.util.Arrays;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -12,7 +13,9 @@ import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.function.Function;
 import java.util.regex.Matcher;
+import java.util.stream.Collectors;
 
 import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.data.osm.AbstractPrimitive;
@@ -23,7 +26,9 @@ import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.OsmPrimitiveType;
 import org.openstreetmap.josm.data.osm.PrimitiveData;
 import org.openstreetmap.josm.data.osm.PrimitiveId;
+import org.openstreetmap.josm.data.osm.Relation;
 import org.openstreetmap.josm.data.osm.RelationData;
+import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.data.osm.WayData;
 import org.openstreetmap.josm.data.osm.history.History;
 import org.openstreetmap.josm.data.osm.history.HistoryDataSet;
@@ -36,12 +41,14 @@ import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.history.HistoryLoadTask;
 import org.openstreetmap.josm.gui.progress.ProgressMonitor;
 import org.openstreetmap.josm.io.Compression;
+import org.openstreetmap.josm.io.MultiFetchServerObjectReader;
 import org.openstreetmap.josm.io.OsmApi;
 import org.openstreetmap.josm.io.OsmServerLocationReader;
 import org.openstreetmap.josm.io.OsmServerReader;
 import org.openstreetmap.josm.io.OsmTransferException;
 import org.openstreetmap.josm.io.UrlPatterns.OsmChangeUrlPattern;
 import org.openstreetmap.josm.tools.Logging;
+import org.xml.sax.SAXException;
 
 /**
  * Task allowing to download OsmChange data (http://wiki.openstreetmap.org/wiki/OsmChange).
@@ -79,6 +86,11 @@ public class DownloadOsmChangeTask extends DownloadOsmTask {
         return MainApplication.worker.submit(downloadTask);
     }
 
+    @Override
+    public boolean providesOldData() {
+        return true;
+    }
+
     /**
      * OsmChange download task.
      */
@@ -104,6 +116,77 @@ public class DownloadOsmChangeTask extends DownloadOsmTask {
         }
 
         @Override
+        public void realRun() throws IOException, SAXException, OsmTransferException {
+            super.realRun();
+            final Map<OsmPrimitive, Instant> toLoadNext = new HashMap<>();
+            final Map<OsmPrimitive, Instant> toLoad = getToLoad(dataSet);
+            while (!toLoad.isEmpty()) {
+                loadLastVersions(toLoad, toLoadNext);
+                toLoad.putAll(toLoadNext);
+                toLoadNext.clear();
+            }
+        }
+
+        /**
+         * This gets the last versions of references primitives. This may enough for many of the primitives.
+         * @param toLoad The primitives to load
+         * @param toLoadNext The primitives to load next (filled by this method)
+         */
+        private void loadLastVersions(Map<OsmPrimitive, Instant> toLoad, Map<OsmPrimitive, Instant> toLoadNext) throws OsmTransferException {
+            final Map<OsmPrimitiveType, Map<OsmPrimitive, Instant>> typeMap = toLoad.entrySet().stream()
+                    .collect(Collectors.groupingBy(entry -> entry.getKey().getType(), Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue)));
+            final Map<PrimitiveId, OsmPrimitive> idMap = toLoad.keySet().stream()
+                    .collect(Collectors.toMap(OsmPrimitive::getPrimitiveId, Function.identity()));
+            for (OsmPrimitiveType type : Arrays.asList(OsmPrimitiveType.NODE, OsmPrimitiveType.WAY, OsmPrimitiveType.RELATION)) {
+                if (!typeMap.containsKey(type)) {
+                    continue;
+                }
+                final MultiFetchServerObjectReader reader = MultiFetchServerObjectReader.create();
+                typeMap.get(type).forEach((primitive, instant) -> reader.append(primitive));
+                final DataSet ds = reader.parseOsm(this.progressMonitor.createSubTaskMonitor(1, false));
+                switch (type) {
+                    case NODE:
+                        for (Node node : ds.getNodes()) {
+                            Node original = (Node) idMap.get(node.getPrimitiveId());
+                            if (original != null && toLoad.get(original).isAfter(node.getInstant())) {
+                                original.load(node.save());
+                            }
+                            toLoad.remove(original);
+                        }
+                        break;
+                    case WAY:
+                        for (Way way : ds.getWays()) {
+                            Way original = (Way) idMap.get(way.getPrimitiveId());
+                            if (original != null && toLoad.get(original).isAfter(way.getInstant())) {
+                                Instant date = toLoad.get(original);
+                                original.load(way.save());
+                                for (Long nodeId : way.getNodeIds()) {
+                                    if (way.getDataSet().getPrimitiveById(nodeId, OsmPrimitiveType.NODE) == null) {
+                                        Node n = new Node(nodeId);
+                                        way.getDataSet().addPrimitive(n);
+                                        toLoadNext.put(n, date);
+                                    }
+                                }
+                            }
+                            toLoad.remove(original);
+                        }
+                        break;
+                    case RELATION:
+                        for (Relation relation : ds.getRelations()) {
+                            Relation original = (Relation) idMap.get(relation.getPrimitiveId());
+                            if (original != null && toLoad.get(original).isAfter(relation.getInstant())) {
+                                original.load(relation.save());
+                            }
+                            toLoad.remove(relation);
+                        }
+                        break;
+                    default:
+                        throw new IllegalStateException("Only Node, Ways, and Relations should be returned by the API");
+                }
+            }
+        }
+
+        @Override
         protected void finish() {
             super.finish();
             if (isFailed() || isCanceled() || downloadedData == null)
@@ -111,17 +194,7 @@ public class DownloadOsmChangeTask extends DownloadOsmTask {
             try {
                 // A changeset does not contain all referred primitives, this is the map of incomplete ones
                 // For each incomplete primitive, we'll have to get its state at date it was referred
-                Map<OsmPrimitive, Date> toLoad = new HashMap<>();
-                for (OsmPrimitive p : downloadedData.allNonDeletedPrimitives()) {
-                    if (p.isIncomplete()) {
-                        Date timestamp = p.getReferrers().stream()
-                                .filter(ref -> !ref.isTimestampEmpty())
-                                .findFirst()
-                                .map(AbstractPrimitive::getTimestamp)
-                                .orElse(null);
-                        toLoad.put(p, timestamp);
-                    }
-                }
+                Map<OsmPrimitive, Instant> toLoad = getToLoad(downloadedData);
                 if (isCanceled()) return;
                 // Let's load all required history
                 MainApplication.worker.submit(new HistoryLoaderAndListener(toLoad));
@@ -133,13 +206,33 @@ public class DownloadOsmChangeTask extends DownloadOsmTask {
     }
 
     /**
+     * Get the primitives to load more information
+     * @param ds The dataset to look for incomplete primitives from
+     * @return The objects that still need to be loaded
+     */
+    private static Map<OsmPrimitive, Instant> getToLoad(DataSet ds) {
+        Map<OsmPrimitive, Instant> toLoad = new HashMap<>();
+        for (OsmPrimitive p : ds.allNonDeletedPrimitives()) {
+            if (p.isIncomplete()) {
+                Instant timestamp = p.getReferrers().stream()
+                        .filter(ref -> !ref.isTimestampEmpty())
+                        .findFirst()
+                        .map(AbstractPrimitive::getInstant)
+                        .orElse(null);
+                toLoad.put(p, timestamp);
+            }
+        }
+        return toLoad;
+    }
+
+    /**
      * Loads history and updates incomplete primitives.
      */
     private static final class HistoryLoaderAndListener extends HistoryLoadTask implements HistoryDataSetListener {
 
-        private final Map<OsmPrimitive, Date> toLoad;
+        private final Map<OsmPrimitive, Instant> toLoad;
 
-        private HistoryLoaderAndListener(Map<OsmPrimitive, Date> toLoad) {
+        private HistoryLoaderAndListener(Map<OsmPrimitive, Instant> toLoad) {
             this.toLoad = toLoad;
             this.setChangesetDataNeeded(false);
             addOsmPrimitives(toLoad.keySet());
@@ -149,12 +242,12 @@ public class DownloadOsmChangeTask extends DownloadOsmTask {
 
         @Override
         public void historyUpdated(HistoryDataSet source, PrimitiveId id) {
-            Map<OsmPrimitive, Date> toLoadNext = new HashMap<>();
-            for (Iterator<Entry<OsmPrimitive, Date>> it = toLoad.entrySet().iterator(); it.hasNext();) {
-                Entry<OsmPrimitive, Date> entry = it.next();
+            Map<OsmPrimitive, Instant> toLoadNext = new HashMap<>();
+            for (Iterator<Entry<OsmPrimitive, Instant>> it = toLoad.entrySet().iterator(); it.hasNext();) {
+                Entry<OsmPrimitive, Instant> entry = it.next();
                 OsmPrimitive p = entry.getKey();
                 History history = source.getHistory(p.getPrimitiveId());
-                Date date = entry.getValue();
+                Instant date = entry.getValue();
                 // If the history has been loaded and a timestamp is known
                 if (history != null && date != null) {
                     // Lookup for the primitive version at the specified timestamp

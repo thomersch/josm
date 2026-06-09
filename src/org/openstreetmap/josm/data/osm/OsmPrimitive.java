@@ -4,16 +4,15 @@ package org.openstreetmap.josm.data.osm;
 import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.text.MessageFormat;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.HashMap;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -24,6 +23,7 @@ import org.openstreetmap.josm.data.osm.search.SearchCompiler.Match;
 import org.openstreetmap.josm.data.osm.search.SearchParseError;
 import org.openstreetmap.josm.data.osm.visitor.OsmPrimitiveVisitor;
 import org.openstreetmap.josm.data.osm.visitor.PrimitiveVisitor;
+import org.openstreetmap.josm.gui.mappaint.ElemStyles;
 import org.openstreetmap.josm.gui.mappaint.StyleCache;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.CheckParameterUtil;
@@ -33,12 +33,12 @@ import org.openstreetmap.josm.tools.template_engine.TemplateEngineDataProvider;
 
 /**
  * The base class for OSM objects ({@link Node}, {@link Way}, {@link Relation}).
- *
+ * <p>
  * It can be created, deleted and uploaded to the OSM-Server.
- *
+ * <p>
  * Although OsmPrimitive is designed as a base class, it is not to be meant to subclass
- * it by any other than from the package {@link org.openstreetmap.josm.data.osm}. The available primitives are a fixed set that are given
- * by the server environment and not an extendible data stuff.
+ * it by any other than from the package {@link org.openstreetmap.josm.data.osm}. The available primitives are a fixed
+ * set that are given by the server environment and not an extendable data stuff.
  *
  * @author imi
  */
@@ -96,7 +96,7 @@ public abstract class OsmPrimitive extends AbstractPrimitive implements Template
 
     /**
      * Creates a new primitive for the given id.
-     *
+     * <p>
      * If allowNegativeId is set, provided id can be &lt; 0 and will be set to primitive without any processing.
      * If allowNegativeId is not set, then id will have to be 0 (in that case new unique id will be generated) or
      * positive number.
@@ -124,11 +124,11 @@ public abstract class OsmPrimitive extends AbstractPrimitive implements Template
 
     /**
      * Creates a new primitive for the given id and version.
-     *
+     * <p>
      * If allowNegativeId is set, provided id can be &lt; 0 and will be set to primitive without any processing.
      * If allowNegativeId is not set, then id will have to be 0 (in that case new unique id will be generated) or
      * positive number.
-     *
+     * <p>
      * If id is not &gt; 0 version is ignored and set to 0.
      *
      * @param id the id
@@ -145,27 +145,31 @@ public abstract class OsmPrimitive extends AbstractPrimitive implements Template
     /*----------
      * MAPPAINT
      *--------*/
-    private StyleCache mappaintStyle;
-    private short mappaintCacheIdx;
+    private final Map<ElemStyles, StyleCache> mappaintStyle = new HashMap<>();
 
     @Override
-    public final StyleCache getCachedStyle() {
-        return mappaintStyle;
+    public final StyleCache getCachedStyle(ElemStyles elemStyles) {
+        return mappaintStyle.get(elemStyles);
     }
 
     @Override
-    public final void setCachedStyle(StyleCache mappaintStyle) {
-        this.mappaintStyle = mappaintStyle;
+    public final void setCachedStyle(ElemStyles elemStyles, StyleCache mappaintStyle) {
+        this.mappaintStyle.put(elemStyles, mappaintStyle);
     }
 
     @Override
-    public final boolean isCachedStyleUpToDate() {
-        return mappaintStyle != null && mappaintCacheIdx == dataSet.getMappaintCacheIndex();
+    public final boolean isCachedStyleUpToDate(ElemStyles elemStyles) {
+        return mappaintStyle.get(elemStyles) != null && mappaintCacheIdx == dataSet.getMappaintCacheIndex();
     }
 
     @Override
-    public final void declareCachedStyleUpToDate() {
+    public final void declareCachedStyleUpToDate(ElemStyles styles) {
         this.mappaintCacheIdx = dataSet.getMappaintCacheIndex();
+    }
+
+    @Override
+    public void clearCachedStyle() {
+        this.mappaintStyle.clear();
     }
 
     /* end of mappaint data */
@@ -226,7 +230,7 @@ public abstract class OsmPrimitive extends AbstractPrimitive implements Template
 
     /**
      * Sets the id and the version of this primitive if it is known to the OSM API.
-     *
+     * <p>
      * Since we know the id and its version it can't be incomplete anymore. incomplete
      * is set to false.
      *
@@ -262,7 +266,7 @@ public abstract class OsmPrimitive extends AbstractPrimitive implements Template
      * Clears the metadata, including id and version known to the OSM API.
      * The id is a new unique id. The version, changeset and timestamp are set to 0.
      * incomplete and deleted are set to false. It's preferred to use copy constructor with clearMetadata set to true instead
-     *
+     * <p>
      * <strong>Caution</strong>: Do not use this method on primitives which are already added to a {@link DataSet}.
      *
      * @throws DataIntegrityProblemException If primitive was already added to the dataset
@@ -301,17 +305,6 @@ public abstract class OsmPrimitive extends AbstractPrimitive implements Template
         }
     }
 
-    @Override
-    public void setTimestamp(Date timestamp) {
-        checkDatasetNotReadOnly();
-        boolean locked = writeLock();
-        try {
-            super.setTimestamp(timestamp);
-        } finally {
-            writeUnlock(locked);
-        }
-    }
-
     /* -------
     /* FLAGS
     /* ------*/
@@ -330,22 +323,11 @@ public abstract class OsmPrimitive extends AbstractPrimitive implements Template
         }
     }
 
-    /**
-     * Make the primitive disabled (e.g.&nbsp;if a filter applies).
-     *
-     * To enable the primitive again, use unsetDisabledState.
-     * @param hidden if the primitive should be completely hidden from view or
-     *             just shown in gray color.
-     * @return true, any flag has changed; false if you try to set the disabled
-     * state to the value that is already preset
-     */
+    @Override
     public boolean setDisabledState(boolean hidden) {
         boolean locked = writeLock();
         try {
-            int oldFlags = flags;
-            updateFlagsNoLock(FLAG_DISABLED, true);
-            updateFlagsNoLock(FLAG_HIDE_IF_DISABLED, hidden);
-            return oldFlags != flags;
+            return super.setDisabledState(hidden);
         } finally {
             writeUnlock(locked);
         }
@@ -356,32 +338,14 @@ public abstract class OsmPrimitive extends AbstractPrimitive implements Template
      * Afterwards, the primitive is displayed normally and can be selected again.
      * @return {@code true} if a change occurred
      */
+    @Override
     public boolean unsetDisabledState() {
         boolean locked = writeLock();
         try {
-            int oldFlags = flags;
-            updateFlagsNoLock(FLAG_DISABLED, false);
-            updateFlagsNoLock(FLAG_HIDE_IF_DISABLED, false);
-            return oldFlags != flags;
+            return super.unsetDisabledState();
         } finally {
             writeUnlock(locked);
         }
-    }
-
-    /**
-     * Set binary property used internally by the filter mechanism.
-     * @param isExplicit new "disabled type" flag value
-     */
-    public void setDisabledType(boolean isExplicit) {
-        updateFlags(FLAG_DISABLED_TYPE, isExplicit);
-    }
-
-    /**
-     * Set binary property used internally by the filter mechanism.
-     * @param isExplicit new "hidden type" flag value
-     */
-    public void setHiddenType(boolean isExplicit) {
-        updateFlags(FLAG_HIDDEN_TYPE, isExplicit);
     }
 
     /**
@@ -394,45 +358,9 @@ public abstract class OsmPrimitive extends AbstractPrimitive implements Template
     }
 
     @Override
-    public boolean isDisabled() {
-        return (flags & FLAG_DISABLED) != 0;
-    }
-
-    @Override
-    public boolean isDisabledAndHidden() {
-        return ((flags & FLAG_DISABLED) != 0) && ((flags & FLAG_HIDE_IF_DISABLED) != 0);
-    }
-
-    /**
-     * Get binary property used internally by the filter mechanism.
-     * @return {@code true} if this object has the "hidden type" flag enabled
-     */
-    public boolean getHiddenType() {
-        return (flags & FLAG_HIDDEN_TYPE) != 0;
-    }
-
-    /**
-     * Get binary property used internally by the filter mechanism.
-     * @return {@code true} if this object has the "disabled type" flag enabled
-     */
-    public boolean getDisabledType() {
-        return (flags & FLAG_DISABLED_TYPE) != 0;
-    }
-
-    @Override
-    public boolean isPreserved() {
-        return (flags & FLAG_PRESERVED) != 0;
-    }
-
-    @Override
     public boolean isSelectable() {
         // not synchronized -> check disabled twice just to be sure we did not have a race condition.
         return !isDisabled() && isDrawable() && !isDisabled();
-    }
-
-    @Override
-    public boolean isDrawable() {
-        return (flags & (FLAG_DELETED + FLAG_INCOMPLETE + FLAG_HIDE_IF_DISABLED)) == 0;
     }
 
     @Override
@@ -543,11 +471,6 @@ public abstract class OsmPrimitive extends AbstractPrimitive implements Template
         }
     }
 
-    @Override
-    public boolean isHighlighted() {
-        return (flags & FLAG_HIGHLIGHTED) != 0;
-    }
-
     /*---------------
      * DIRECTION KEYS
      *---------------*/
@@ -569,23 +492,12 @@ public abstract class OsmPrimitive extends AbstractPrimitive implements Template
     private void updateTagged() {
         // 'area' is not really uninteresting (putting it in that list may have unpredictable side effects)
         // but it's clearly not enough to consider an object as tagged (see #9261)
-        updateFlagsNoLock(FLAG_TAGGED, keySet().stream()
+        updateFlagsNoLock(FLAG_TAGGED, hasKeys() && keys()
                 .anyMatch(key -> !isUninterestingKey(key) && !"area".equals(key)));
     }
 
     private void updateAnnotated() {
-        updateFlagsNoLock(FLAG_ANNOTATED, keySet().stream()
-                .anyMatch(getWorkInProgressKeys()::contains));
-    }
-
-    @Override
-    public boolean isTagged() {
-        return (flags & FLAG_TAGGED) != 0;
-    }
-
-    @Override
-    public boolean isAnnotated() {
-        return (flags & FLAG_ANNOTATED) != 0;
+        updateFlagsNoLock(FLAG_ANNOTATED, hasKeys() && getWorkInProgressKeys().stream().anyMatch(this::hasKey));
     }
 
     protected void updateDirectionFlags() {
@@ -601,16 +513,6 @@ public abstract class OsmPrimitive extends AbstractPrimitive implements Template
 
         updateFlagsNoLock(FLAG_DIRECTION_REVERSED, directionReversed);
         updateFlagsNoLock(FLAG_HAS_DIRECTIONS, hasDirections);
-    }
-
-    @Override
-    public boolean hasDirectionKeys() {
-        return (flags & FLAG_HAS_DIRECTIONS) != 0;
-    }
-
-    @Override
-    public boolean reversedDirection() {
-        return (flags & FLAG_DIRECTION_REVERSED) != 0;
     }
 
     /*------------
@@ -755,7 +657,7 @@ public abstract class OsmPrimitive extends AbstractPrimitive implements Template
         if (referrers == null) {
             return Stream.empty();
         }
-        final Stream<OsmPrimitive> stream = referrers instanceof OsmPrimitive // NOPMD
+        final Stream<OsmPrimitive> stream = referrers instanceof OsmPrimitive
                 ? Stream.of((OsmPrimitive) referrers)
                 : Arrays.stream((OsmPrimitive[]) referrers);
         return stream
@@ -804,18 +706,18 @@ public abstract class OsmPrimitive extends AbstractPrimitive implements Template
     }
 
     private void doVisitReferrers(Consumer<OsmPrimitive> visitor) {
-        if (this.referrers == null)
-            return;
-        else if (this.referrers instanceof OsmPrimitive) {
-            OsmPrimitive ref = (OsmPrimitive) this.referrers;
-            if (ref.dataSet == dataSet) {
-                visitor.accept(ref);
-            }
-        } else if (this.referrers instanceof OsmPrimitive[]) {
-            OsmPrimitive[] refs = (OsmPrimitive[]) this.referrers;
-            for (OsmPrimitive ref: refs) {
+        if (this.referrers != null) {
+            if (this.referrers instanceof OsmPrimitive) {
+                OsmPrimitive ref = (OsmPrimitive) this.referrers;
                 if (ref.dataSet == dataSet) {
                     visitor.accept(ref);
+                }
+            } else if (this.referrers instanceof OsmPrimitive[]) {
+                OsmPrimitive[] refs = (OsmPrimitive[]) this.referrers;
+                for (OsmPrimitive ref : refs) {
+                    if (ref.dataSet == dataSet) {
+                        visitor.accept(ref);
+                    }
                 }
             }
         }
@@ -882,7 +784,7 @@ public abstract class OsmPrimitive extends AbstractPrimitive implements Template
 
     /**
      * Merges the technical and semantic attributes from <code>other</code> onto this.
-     *
+     * <p>
      * Both this and other must be new, or both must be assigned an OSM ID. If both this and <code>other</code>
      * have an assigned OSM id, the IDs have to be the same.
      *
@@ -903,12 +805,10 @@ public abstract class OsmPrimitive extends AbstractPrimitive implements Template
                 throw new DataIntegrityProblemException(
                         tr("Cannot merge primitives with different ids. This id is {0}, the other is {1}", id, other.getId()));
 
-            setKeys(other.hasKeys() ? other.getKeys() : null);
-            timestamp = other.timestamp;
-            version = other.version;
             setIncomplete(other.isIncomplete());
-            flags = other.flags;
-            user = other.user;
+            super.cloneFrom(other);
+            setKeys(other.hasKeys() ? other.getKeys() : null);
+            version = other.version;
             changesetId = other.changesetId;
         } finally {
             writeUnlock(locked);
@@ -926,7 +826,7 @@ public abstract class OsmPrimitive extends AbstractPrimitive implements Template
      * @return true if this primitive and other are equal with respect to their semantic attributes.
      */
     public final boolean hasEqualSemanticAttributes(OsmPrimitive other) {
-        return hasEqualSemanticAttributes(other, true);
+        return hasEqualSemanticAttributes(other, false);
     }
 
     boolean hasEqualSemanticFlags(final OsmPrimitive other) {
@@ -1043,9 +943,9 @@ public abstract class OsmPrimitive extends AbstractPrimitive implements Template
     }
 
     /**
-     * Equal, if the id (and class) is equal.
-     *
-     * An primitive is equal to its incomplete counter part.
+     * Equal if the id (and class) are equal.
+     * <p>
+     * A primitive is equal to its incomplete counterpart.
      */
     @Override
     public boolean equals(Object obj) {
@@ -1061,8 +961,8 @@ public abstract class OsmPrimitive extends AbstractPrimitive implements Template
 
     /**
      * Return the id plus the class type encoded as hashcode or super's hashcode if id is 0.
-     *
-     * An primitive has the same hashcode as its incomplete counterpart.
+     * <p>
+     * A primitive has the same hashcode as its incomplete counterpart.
      */
     @Override
     public int hashCode() {
@@ -1071,12 +971,8 @@ public abstract class OsmPrimitive extends AbstractPrimitive implements Template
 
     @Override
     public Collection<String> getTemplateKeys() {
-        Collection<String> keySet = keySet();
-        List<String> result = new ArrayList<>(keySet.size() + 2);
-        result.add(SPECIAL_VALUE_ID);
-        result.add(SPECIAL_VALUE_LOCAL_NAME);
-        result.addAll(keySet);
-        return result;
+        return Stream.concat(Stream.of(SPECIAL_VALUE_ID, SPECIAL_VALUE_LOCAL_NAME), keys())
+                .collect(Collectors.toList());
     }
 
     @Override
@@ -1117,13 +1013,16 @@ public abstract class OsmPrimitive extends AbstractPrimitive implements Template
      * @since 6491
      */
     public final boolean hasAreaTags() {
-        return hasKey("landuse", "amenity", "building", "building:part")
+        return hasKey("building", "landuse", "amenity", "shop", "building:part", "boundary", "historic", "place", "area:highway")
                 || hasTag("area", OsmUtils.TRUE_VALUE)
                 || hasTag("waterway", "riverbank")
+                || hasTag("highway", "rest_area", "services", "platform")
+                || hasTag("railway", "platform")
                 || hasTagDifferent("leisure", "picnic_table", "slipway", "firepit")
                 || hasTag("natural", "water", "wood", "scrub", "wetland", "grassland", "heath", "rock", "bare_rock",
                                      "sand", "beach", "scree", "bay", "glacier", "shingle", "fell", "reef", "stone",
-                                     "mud", "landslide", "sinkhole", "crevasse", "desert");
+                                     "mud", "landslide", "sinkhole", "crevasse", "desert")
+                || hasTag("aeroway", "aerodrome");
     }
 
     /**

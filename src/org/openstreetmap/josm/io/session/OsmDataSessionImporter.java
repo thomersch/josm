@@ -3,6 +3,7 @@ package org.openstreetmap.josm.io.session;
 
 import static org.openstreetmap.josm.tools.I18n.tr;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 
@@ -12,13 +13,18 @@ import javax.xml.xpath.XPathExpression;
 import javax.xml.xpath.XPathExpressionException;
 import javax.xml.xpath.XPathFactory;
 
+import org.openstreetmap.josm.actions.ExtensionFileFilter;
+import org.openstreetmap.josm.gui.io.importexport.FileImporter;
 import org.openstreetmap.josm.gui.io.importexport.OsmImporter;
 import org.openstreetmap.josm.gui.layer.Layer;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.progress.ProgressMonitor;
 import org.openstreetmap.josm.io.IllegalDataException;
 import org.openstreetmap.josm.io.session.SessionReader.ImportSupport;
+import org.openstreetmap.josm.tools.Utils;
 import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 
 /**
  * Session importer for {@link OsmDataLayer}.
@@ -29,7 +35,14 @@ public class OsmDataSessionImporter implements SessionLayerImporter {
     @Override
     public Layer load(Element elem, ImportSupport support, ProgressMonitor progressMonitor) throws IOException, IllegalDataException {
         checkMetaVersion(elem);
-        String fileStr = extractFileName(elem, support);
+        final String fileStr = extractFileName(elem, support);
+        final File file = new File(fileStr);
+        for (FileImporter importer : ExtensionFileFilter.getImporters()) {
+            if (importer instanceof OsmImporter && importer.acceptFile(file)) {
+                return importData((OsmImporter) importer, support, fileStr, progressMonitor);
+            }
+        }
+        // Fall back to the default OsmImporter, just in case. It will probably fail.
         return importData(new OsmImporter(), support, fileStr, progressMonitor);
     }
 
@@ -56,11 +69,18 @@ public class OsmDataSessionImporter implements SessionLayerImporter {
      */
     public static String extractFileName(Element elem, ImportSupport support) throws IllegalDataException {
         try {
+            // see #23427: try first to avoid possibly very slow XPath call
+            NodeList x = elem.getElementsByTagName("file");
+            if (x.getLength() > 0 && x.item(0).getNodeType() == Node.ELEMENT_NODE) {
+                String fileStr = x.item(0).getTextContent();
+                if (!Utils.isEmpty(fileStr))
+                    return fileStr;
+            }
             XPathFactory xPathFactory = XPathFactory.newInstance();
             XPath xpath = xPathFactory.newXPath();
             XPathExpression fileExp = xpath.compile("file/text()");
             String fileStr = (String) fileExp.evaluate(elem, XPathConstants.STRING);
-            if (fileStr == null || fileStr.isEmpty()) {
+            if (Utils.isEmpty(fileStr)) {
                 throw new IllegalDataException(tr("File name expected for layer no. {0}", support.getLayerIndex()));
             }
             return fileStr;

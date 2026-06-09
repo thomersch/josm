@@ -3,52 +3,41 @@ package org.openstreetmap.josm.gui.tagging.presets;
 
 import static org.CustomMatchers.hasSize;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import org.junit.Assert;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.gui.tagging.presets.items.Check;
 import org.openstreetmap.josm.gui.tagging.presets.items.Key;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.Territories;
 import org.xml.sax.SAXException;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
  * Unit tests of {@link TaggingPresetReader} class.
  */
-public class TaggingPresetReaderTest {
-
-    /**
-     * Setup rule
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+class TaggingPresetReaderTest {
     /**
      * #8954 - last checkbox in the preset is not added
      * @throws SAXException if any XML error occurs
      * @throws IOException if any I/O error occurs
      */
     @Test
-    public void testTicket8954() throws SAXException, IOException {
+    void testTicket8954() throws SAXException, IOException {
         String presetfile = TestUtils.getRegressionDataFile(8954, "preset.xml");
         final Collection<TaggingPreset> presets = TaggingPresetReader.readAll(presetfile, false);
-        Assert.assertEquals("Number of preset items", 1, presets.size());
+        assertEquals(1, presets.size(), "Number of preset items");
         final TaggingPreset preset = presets.iterator().next();
-        Assert.assertEquals("Number of entries", 1, preset.data.size());
+        assertEquals(1, preset.data.size(), "Number of entries");
         final TaggingPresetItem item = preset.data.get(0);
-        Assert.assertTrue("Entry is not checkbox", item instanceof Check);
+        assertInstanceOf(Check.class, item, "Entry is not checkbox");
     }
 
     /**
@@ -57,7 +46,7 @@ public class TaggingPresetReaderTest {
      * @throws IOException if any I/O error occurs
      */
     @Test
-    public void testNestedChunks() throws SAXException, IOException {
+    void testNestedChunks() throws SAXException, IOException {
         final Collection<TaggingPreset> presets = TaggingPresetReader.readAll(TestUtils.getTestDataRoot() + "preset_chunk.xml", true);
         assertThat(presets, hasSize(1));
         final TaggingPreset abc = presets.iterator().next();
@@ -69,9 +58,10 @@ public class TaggingPresetReaderTest {
     /**
      * Test external entity resolving.
      * See #19286
+     * @throws IOException in case of I/O error
      */
     @Test
-    public void testExternalEntityResolving() throws IOException {
+    void testExternalEntityResolving() throws IOException {
         try {
             TaggingPresetReader.readAll(TestUtils.getTestDataRoot() + "preset_external_entity.xml", true);
             fail("Reading a file with external entities should throw an SAXParseException!");
@@ -87,10 +77,11 @@ public class TaggingPresetReaderTest {
      * @throws SAXException if any XML error occurs
      * @throws IOException if any I/O error occurs
      */
+    @Territories
     @Test
-    public void testReadDefaulPresets() throws SAXException, IOException {
+    void testReadDefaultPresets() throws SAXException, IOException {
         String presetfile = "resource://data/defaultpresets.xml";
         final Collection<TaggingPreset> presets = TaggingPresetReader.readAll(presetfile, true);
-        Assert.assertTrue("Default presets are empty", presets.size() > 0);
+        assertTrue(presets.size() > 0, "Default presets are empty");
     }
 }

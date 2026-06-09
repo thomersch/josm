@@ -19,16 +19,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import javax.json.Json;
-import javax.json.JsonArray;
-import javax.json.JsonArrayBuilder;
-import javax.json.JsonObject;
-import javax.json.JsonObjectBuilder;
-import javax.json.JsonReader;
-import javax.json.JsonString;
-import javax.json.JsonValue;
-import javax.json.JsonWriter;
-
 import org.openstreetmap.josm.spi.preferences.IPreferences;
 import org.openstreetmap.josm.tools.JosmRuntimeException;
 import org.openstreetmap.josm.tools.Logging;
@@ -37,9 +27,19 @@ import org.openstreetmap.josm.tools.ReflectionUtils;
 import org.openstreetmap.josm.tools.StringParser;
 import org.openstreetmap.josm.tools.Utils;
 
+import jakarta.json.Json;
+import jakarta.json.JsonArray;
+import jakarta.json.JsonArrayBuilder;
+import jakarta.json.JsonObject;
+import jakarta.json.JsonObjectBuilder;
+import jakarta.json.JsonReader;
+import jakarta.json.JsonString;
+import jakarta.json.JsonValue;
+import jakarta.json.JsonWriter;
+
 /**
  * Utility methods to convert struct-like classes to a string map and back.
- *
+ * <p>
  * A "struct" is a class that has some fields annotated with {@link StructEntry}.
  * Those fields will be respected when converting an object to a {@link Map} and back.
  * @since 12851
@@ -106,10 +106,10 @@ public final class StructUtils {
 
     /**
      * Convenience method that saves a MapListSetting which is provided as a collection of objects.
-     *
+     * <p>
      * Each object is converted to a <code>Map&lt;String, String&gt;</code> using the fields with {@link StructEntry} annotation.
      * The field name is the key and the value will be converted to a string.
-     *
+     * <p>
      * Considers only fields that have the {@code @StructEntry} annotation.
      * In addition it does not write fields with null values. (Thus they are cleared)
      * Default values are given by the field values after default constructor has been called.
@@ -148,11 +148,11 @@ public final class StructUtils {
 
     /**
      * Convert an object to a String Map, by using field names and values as map key and value.
-     *
+     * <p>
      * The field value is converted to a String.
-     *
+     * <p>
      * Only fields with annotation {@link StructEntry} are taken into account.
-     *
+     * <p>
      * Fields will not be written to the map if the value is null or unchanged
      * (compared to an object created with the no-arg-constructor).
      * The {@link WriteExplicitly} annotation overrides this behavior, i.e. the default value will also be written.
@@ -163,7 +163,7 @@ public final class StructUtils {
      * @param options optional serialization options
      * @return the resulting map (same data content as <code>struct</code>)
      */
-    public static <T> HashMap<String, String> serializeStruct(T struct, Class<T> klass, SerializeOptions... options) {
+    public static <T> Map<String, String> serializeStruct(T struct, Class<T> klass, SerializeOptions... options) {
         List<SerializeOptions> optionsList = Arrays.asList(options);
         T structPrototype;
         try {
@@ -172,7 +172,7 @@ public final class StructUtils {
             throw new IllegalArgumentException(ex);
         }
 
-        HashMap<String, String> hash = new LinkedHashMap<>();
+        Map<String, String> hash = new LinkedHashMap<>();
         for (Field f : getDeclaredFieldsInClassOrSuperTypes(klass)) {
             if (f.getAnnotation(StructEntry.class) == null) {
                 continue;
@@ -207,10 +207,10 @@ public final class StructUtils {
     /**
      * Converts a String-Map to an object of a certain class, by comparing map keys to field names of the class and assigning
      * map values to the corresponding fields.
-     *
+     * <p>
      * The map value (a String) is converted to the field type. Supported types are: boolean, Boolean, int, Integer, double,
      * Double, String, Map&lt;String, String&gt; and Map&lt;String, List&lt;String&gt;&gt;.
-     *
+     * <p>
      * Only fields with annotation {@link StructEntry} are taken into account.
      * @param <T> the class
      * @param hash the string map with initial values
@@ -218,7 +218,7 @@ public final class StructUtils {
      * @return an object of class T, initialized as described above
      */
     public static <T> T deserializeStruct(Map<String, String> hash, Class<T> klass) {
-        T struct = null;
+        T struct;
         try {
             struct = klass.getConstructor().newInstance();
         } catch (ReflectiveOperationException ex) {
@@ -266,13 +266,11 @@ public final class StructUtils {
         return fields.toArray(new Field[] {});
     }
 
-    @SuppressWarnings("rawtypes")
-    private static String mapToJson(Map map) {
+    private static String mapToJson(Map<?, ?> map) {
         StringWriter stringWriter = new StringWriter();
         try (JsonWriter writer = Json.createWriter(stringWriter)) {
             JsonObjectBuilder object = Json.createObjectBuilder();
-            for (Object o: map.entrySet()) {
-                Map.Entry e = (Map.Entry) o;
+            for (Map.Entry<?, ?> e: map.entrySet()) {
                 Object evalue = e.getValue();
                 object.add(e.getKey().toString(), evalue.toString());
             }
@@ -281,12 +279,11 @@ public final class StructUtils {
         return stringWriter.toString();
     }
 
-    @SuppressWarnings({ "rawtypes", "unchecked" })
-    private static Map mapFromJson(String s) {
-        Map ret = null;
+    private static Map<String, String> mapFromJson(String s) {
+        Map<String, String> ret;
         try (JsonReader reader = Json.createReader(new StringReader(s))) {
             JsonObject object = reader.readObject();
-            ret = new HashMap(Utils.hashMapInitialCapacity(object.size()));
+            ret = new HashMap<>(Utils.hashMapInitialCapacity(object.size()));
             for (Map.Entry<String, JsonValue> e: object.entrySet()) {
                 JsonValue value = e.getValue();
                 if (value instanceof JsonString) {
@@ -300,14 +297,12 @@ public final class StructUtils {
         return ret;
     }
 
-    @SuppressWarnings("rawtypes")
-    private static String multiMapToJson(MultiMap map) {
+    private static String multiMapToJson(MultiMap<?, ?> map) {
         StringWriter stringWriter = new StringWriter();
         try (JsonWriter writer = Json.createWriter(stringWriter)) {
             JsonObjectBuilder object = Json.createObjectBuilder();
-            for (Object o: map.entrySet()) {
-                Map.Entry e = (Map.Entry) o;
-                Set evalue = (Set) e.getValue();
+            for (Map.Entry<?, ?> e : map.entrySet()) {
+                Set<?> evalue = (Set<?>) e.getValue();
                 JsonArrayBuilder a = Json.createArrayBuilder();
                 for (Object evo: evalue) {
                     a.add(evo.toString());
@@ -319,12 +314,11 @@ public final class StructUtils {
         return stringWriter.toString();
     }
 
-    @SuppressWarnings({ "rawtypes", "unchecked" })
-    private static MultiMap multiMapFromJson(String s) {
-        MultiMap ret = null;
+    private static MultiMap<String, String> multiMapFromJson(String s) {
+        MultiMap<String, String> ret;
         try (JsonReader reader = Json.createReader(new StringReader(s))) {
             JsonObject object = reader.readObject();
-            ret = new MultiMap(object.size());
+            ret = new MultiMap<>(object.size());
             for (Map.Entry<String, JsonValue> e: object.entrySet()) {
                 JsonValue value = e.getValue();
                 if (value instanceof JsonArray) {

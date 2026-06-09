@@ -1,10 +1,13 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm;
 
-import static org.junit.Assert.assertArrayEquals;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.awt.Component;
 import java.awt.Container;
@@ -21,6 +24,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.Temporal;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
@@ -29,12 +33,13 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
-import org.junit.Assert;
-import org.junit.Assume;
+import org.junit.jupiter.api.Assertions;
 import org.openstreetmap.josm.command.Command;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Node;
@@ -60,7 +65,6 @@ import org.openstreetmap.josm.tools.WikiReader;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
-
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.github.classgraph.ClassGraph;
 import io.github.classgraph.ClassInfoList;
@@ -71,6 +75,7 @@ import mockit.integration.TestRunnerDecorator;
  * Various utils, useful for unit tests.
  */
 public final class TestUtils {
+    private static Boolean workingJMockit;
 
     private TestUtils() {
         // Hide constructor for utility classes
@@ -82,7 +87,7 @@ public final class TestUtils {
      */
     public static String getTestDataRoot() {
         String testDataRoot = System.getProperty("josm.test.data");
-        if (testDataRoot == null || testDataRoot.isEmpty()) {
+        if (Utils.isEmpty(testDataRoot)) {
             testDataRoot = "test/data";
             System.out.println("System property josm.test.data is not set, using '" + testDataRoot + "'");
         }
@@ -166,6 +171,46 @@ public final class TestUtils {
         }
         // Sort relation array
         Arrays.sort(array, comparator);
+    }
+
+    /**
+     * Create a test matrix for parameterized tests.
+     * <br />
+     * <b>WARNING:</b> This can quickly become <i>very</i> large (this is combinatorial,
+     * so the returned {@link Stream} length is the size of the object collections multiplied by each other.
+     * So if you have three lists of size 3, 4, and 5, the stream size would be {@code 3 * 4 * 5} or 60 elements.
+     * <br />
+     * Generally speaking, you should avoid putting expected values into the test matrix.
+     *
+     * @param objectCollections The collections of objects. May include/provide {@code null}.
+     * @return The object arrays to be used as arguments. Note: The returned stream might not be thread-safe.
+     */
+    public static Stream<Object[]> createTestMatrix(List<?>... objectCollections) {
+        // Create the original object arrays
+        final AtomicInteger size = new AtomicInteger(1);
+        Stream.of(objectCollections).mapToInt(Collection::size).forEach(i -> size.set(size.get() * i));
+        final List<Object[]> testMatrix = new ArrayList<>(size.get());
+        final int[] indexes = IntStream.range(0, objectCollections.length).map(i -> 0).toArray();
+
+        // It is important to make a new object array each time (we modify them)
+        return IntStream.range(0, size.get()).mapToObj(index -> new Object[objectCollections.length]).peek(args -> {
+            // Just in case someone tries to make this parallel, synchronize on indexes to avoid most issues.
+            synchronized (indexes) {
+                // Set the args
+                for (int listIndex = 0; listIndex < objectCollections.length; listIndex++) {
+                    args[listIndex] = objectCollections[listIndex].get(indexes[listIndex]);
+                }
+                // Increment indexes
+                for (int listIndex = 0; listIndex < objectCollections.length; listIndex++) {
+                    indexes[listIndex] = indexes[listIndex] + 1;
+                    if (indexes[listIndex] >= objectCollections[listIndex].size()) {
+                        indexes[listIndex] = 0;
+                    } else {
+                        break;
+                    }
+                }
+            }
+        });
     }
 
     private static <T> String getFailMessage(T o1, T o2, int a, int b) {
@@ -446,38 +491,49 @@ public final class TestUtils {
     /**
      * Use to assume that EqualsVerifier is working with the current JVM.
      */
+    @SuppressWarnings("null")
     public static void assumeWorkingEqualsVerifier() {
-        if (Utils.getJavaVersion() >= 16) {
+        // See https://github.com/raphw/byte-buddy/blob/master/byte-buddy-dep/src/main/java/net/bytebuddy/ClassFileVersion.java
+        // for currently supported Java versions.
+        if (Utils.getJavaVersion() >= 22) {
             // Byte Buddy often supports new class file versions for current EA releases if its experimental flag is set to true
             System.setProperty("net.bytebuddy.experimental", "true");
+        } else {
+            return;
         }
         try {
             // Workaround to https://github.com/jqno/equalsverifier/issues/177
             // Inspired by https://issues.apache.org/jira/browse/SOLR-11606
-            nl.jqno.equalsverifier.internal.lib.bytebuddy.ClassFileVersion.ofThisVm();
+            // Note: if we change to the equalsverifier fat jar, use nl.jqno.equalsverifier.internal.lib instead of net
+            net.bytebuddy.ClassFileVersion.ofThisVm();
         } catch (IllegalArgumentException e) {
-            Assume.assumeNoException(e);
+            assumeFalse(e != null);
         }
     }
 
     /**
      * Use to assume that JMockit is working with the current JVM.
      */
+    @SuppressWarnings("null")
     public static void assumeWorkingJMockit() {
-        try {
-            // Workaround to https://github.com/jmockit/jmockit1/issues/534
-            // Inspired by https://issues.apache.org/jira/browse/SOLR-11606
-            new WindowMocker();
-            new JOptionPaneSimpleMocker();
-        } catch (UnsupportedOperationException e) {
-            Assume.assumeNoException(e);
-        } finally {
-            TestRunnerDecorator.cleanUpAllMocks();
+        if (workingJMockit == null) {
+            try {
+                // Workaround to https://github.com/jmockit/jmockit1/issues/534
+                // Inspired by https://issues.apache.org/jira/browse/SOLR-11606
+                new WindowMocker();
+                new JOptionPaneSimpleMocker();
+                workingJMockit = true;
+            } catch (UnsupportedOperationException e) {
+                workingJMockit = false;
+            } finally {
+                TestRunnerDecorator.cleanUpAllMocks();
+            }
         }
+        assumeTrue(workingJMockit);
     }
 
     /**
-     * Return WireMock server serving files under ticker directory
+     * Return WireMock server serving files under ticket directory
      * @param ticketId Ticket numeric identifier
      * @return WireMock HTTP server on dynamic port
      */
@@ -490,12 +546,13 @@ public final class TestUtils {
     }
 
     /**
-     * Return WireMock server serving files under ticker directory
+     * Return WireMock server
      * @return WireMock HTTP server on dynamic port
      */
     public static WireMockServer getWireMockServer() {
             return new WireMockServer(
                     WireMockConfiguration.options()
+                        .withRootDirectory("test/data")
                         .dynamicPort()
                     );
     }
@@ -534,8 +591,8 @@ public final class TestUtils {
                 FileInputStream streamB = new FileInputStream(fileB);
             ) {
                 assertArrayEquals(
-                    Utils.readBytesFromStream(streamA),
-                    Utils.readBytesFromStream(streamB)
+                    streamA.readAllBytes(),
+                    streamB.readAllBytes()
                 );
             }
         } catch (IOException e) {
@@ -545,12 +602,16 @@ public final class TestUtils {
 
     /**
      * Replaces {@linkplain System#lineSeparator() system dependent line separators} with {@code \n}
-     * and calls {@link Assert#assertEquals(java.lang.Object, java.lang.Object)}.
+     * and calls {@link Assertions#assertEquals(java.lang.Object, java.lang.Object)}.
      * @param expected expected value
      * @param actual the value to check against <code>expected</code>
      */
     public static void assertEqualsNewline(String expected, String actual) {
-        assertEquals(expected, actual.replace(System.lineSeparator(), "\n"));
+        String[] actualArray = actual.replace(System.lineSeparator(), "\n").split("\n", -1);
+        String[] expectedArray = expected.split("\n", -1);
+        assertAll(() -> assertEquals(expectedArray.length, actualArray.length, "Different number of newlines"),
+                () -> assertArrayEquals(expectedArray, actualArray),
+                () -> assertEquals(expected, actual.replace(System.lineSeparator(), "\n")));
     }
 
     /**
@@ -588,7 +649,7 @@ public final class TestUtils {
      * @return all JOSM subtypes of the given class
      */
     public static <T> Set<Class<? extends T>> getJosmSubtypes(Class<T> superClass) {
-        try (ScanResult scan = new ClassGraph().whitelistPackages("org.openstreetmap.josm").ignoreClassVisibility().scan()) {
+        try (ScanResult scan = new ClassGraph().acceptPackages("org.openstreetmap.josm").ignoreClassVisibility().scan()) {
             Function<String, ClassInfoList> lambda = superClass.isInterface() ? scan::getClassesImplementing : scan::getSubclasses;
             return lambda.apply(superClass.getName())
                     .asMap().values().stream().map(x -> x.loadClass(superClass)).collect(Collectors.toSet());
@@ -597,10 +658,10 @@ public final class TestUtils {
 
     /**
      * Determines if OSM DEV_API credential have been provided. Required for functional tests.
-     * @return {@code true} if {@code osm.username} and {@code osm.password} have been defined on the command line
+     * @return {@code true} if {@code osm.oauth2} have been defined on the command line
      */
     public static boolean areCredentialsProvided() {
-        return Utils.getSystemProperty("osm.username") != null && Utils.getSystemProperty("osm.password") != null;
+        return Utils.getSystemProperty("osm.oauth2") != null;
     }
 
     /**

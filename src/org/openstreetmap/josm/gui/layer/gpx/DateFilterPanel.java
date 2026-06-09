@@ -6,9 +6,9 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 import java.awt.Component;
 import java.awt.GridBagLayout;
 import java.awt.event.ActionListener;
+import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
-import java.util.Date;
 
 import javax.swing.JCheckBox;
 import javax.swing.JPanel;
@@ -19,6 +19,7 @@ import org.openstreetmap.josm.gui.layer.GpxLayer;
 import org.openstreetmap.josm.gui.widgets.DateEditorWithSlider;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.GBC;
+import org.openstreetmap.josm.tools.date.Interval;
 
 /**
  * A panel that allows the user to input a date range he wants to filter the GPX data for.
@@ -50,15 +51,12 @@ public class DateFilterPanel extends JPanel {
         prefDateMax = preferencePrefix+".maxtime";
         this.layer = layer;
 
-        final Date startTime, endTime;
-        Date[] bounds = layer.data.getMinMaxTimeForAllTracks();
-        startTime = (bounds.length == 0) ? Date.from(ZonedDateTime.of(2000, 1, 1, 0, 0, 0, 0, ZoneId.systemDefault()).toInstant()) : bounds[0];
-        endTime = (bounds.length == 0) ? new Date() : bounds[1];
-
-        dateFrom.setDate(startTime);
-        dateTo.setDate(endTime);
-        dateFrom.setRange(startTime, endTime);
-        dateTo.setRange(startTime, endTime);
+        Interval interval = layer.data.getMinMaxTimeForAllTracks()
+                .orElseGet(() -> new Interval(ZonedDateTime.of(2000, 1, 1, 0, 0, 0, 0, ZoneId.systemDefault()).toInstant(), Instant.now()));
+        dateFrom.setDate(interval.getStart());
+        dateTo.setDate(interval.getEnd());
+        dateFrom.setRange(interval.getStart(), interval.getEnd());
+        dateTo.setRange(interval.getStart(), interval.getEnd());
 
         add(noTimestampCb, GBC.std().grid(1, 1).insets(0, 0, 5, 0));
         add(dateFrom, GBC.std().grid(2, 1).fill(GBC.HORIZONTAL));
@@ -102,20 +100,20 @@ public class DateFilterPanel extends JPanel {
      * Called by other components when it is correct time to save date filtering parameters
      */
     public void saveInPrefs() {
-        Config.getPref().putLong(prefDateMin, dateFrom.getDate().getTime());
-        Config.getPref().putLong(prefDateMax, dateTo.getDate().getTime());
+        Config.getPref().putLong(prefDateMin, dateFrom.getDate().toEpochMilli());
+        Config.getPref().putLong(prefDateMax, dateTo.getDate().toEpochMilli());
         Config.getPref().putBoolean(prefDate0, noTimestampCb.isSelected());
     }
 
     /**
-     * If possible, load date ragne and "zero timestamp" option from preferences
+     * If possible, load date range and "zero timestamp" option from preferences
      * Called by other components when it is needed.
      */
     public void loadFromPrefs() {
         long t1 = Config.getPref().getLong(prefDateMin, 0);
-        if (t1 != 0) dateFrom.setDate(new Date(t1));
+        if (t1 != 0) dateFrom.setDate(Instant.ofEpochMilli(t1));
         long t2 = Config.getPref().getLong(prefDateMax, 0);
-        if (t2 != 0) dateTo.setDate(new Date(t2));
+        if (t2 != 0) dateTo.setDate(Instant.ofEpochMilli(t2));
         noTimestampCb.setSelected(Config.getPref().getBoolean(prefDate0, false));
     }
 
@@ -128,8 +126,8 @@ public class DateFilterPanel extends JPanel {
     }
 
     private void filterTracksByDate() {
-        Date from = dateFrom.getDate();
-        Date to = dateTo.getDate();
+        Instant from = dateFrom.getDate();
+        Instant to = dateTo.getDate();
         layer.filterTracksByDate(from, to, noTimestampCb.isSelected());
     }
 

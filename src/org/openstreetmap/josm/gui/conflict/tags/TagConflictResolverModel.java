@@ -9,6 +9,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BiConsumer;
 
 import javax.swing.table.DefaultTableModel;
 
@@ -174,7 +175,7 @@ public class TagConflictResolverModel extends DefaultTableModel {
             decision.keepOne((String) value);
         } else if (value instanceof MultiValueDecisionType) {
             MultiValueDecisionType type = (MultiValueDecisionType) value;
-            switch(type) {
+            switch (type) {
             case KEEP_NONE:
                 decision.keepNone();
                 break;
@@ -201,7 +202,7 @@ public class TagConflictResolverModel extends DefaultTableModel {
     }
 
     /**
-     * Gets the number of reamining conflicts.
+     * Gets the number of remaining conflicts.
      * @return The number
      */
     public int getNumConflicts() {
@@ -274,7 +275,7 @@ public class TagConflictResolverModel extends DefaultTableModel {
     /**
      * Prepare the default decisions for the current model
      * @param fireEvent {@code true} to call {@code fireTableDataChanged} (can be a slow operation)
-     * @since 11626
+     * @since 11627
      */
     void prepareDefaultTagDecisions(boolean fireEvent) {
         for (MultiValueResolutionDecision decision: decisions.values()) {
@@ -297,5 +298,14 @@ public class TagConflictResolverModel extends DefaultTableModel {
      */
     public final Set<String> getKeysWithConflicts() {
         return new HashSet<>(keysWithConflicts);
+    }
+
+    /**
+     * Perform an action on all decisions, useful to perform a global decision (keep all, keep none, etc.)
+     * @param action action to perform on decision
+     * @since 18007
+     */
+    public final void actOnDecisions(BiConsumer<String, MultiValueResolutionDecision> action) {
+        decisions.forEach(action);
     }
 }

@@ -6,6 +6,7 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 import java.awt.geom.Point2D;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -15,6 +16,9 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.openstreetmap.josm.data.coor.EastNorth;
+import org.openstreetmap.josm.data.coor.ILatLon;
+import org.openstreetmap.josm.data.osm.DataSet;
+import org.openstreetmap.josm.data.osm.OsmDataManager;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.OsmUtils;
 import org.openstreetmap.josm.data.osm.Relation;
@@ -26,6 +30,7 @@ import org.openstreetmap.josm.data.validation.Test;
 import org.openstreetmap.josm.data.validation.TestError;
 import org.openstreetmap.josm.data.validation.util.ValUtil;
 import org.openstreetmap.josm.gui.progress.ProgressMonitor;
+import org.openstreetmap.josm.tools.CheckParameterUtil;
 import org.openstreetmap.josm.tools.Logging;
 
 /**
@@ -79,6 +84,7 @@ public abstract class CrossingWays extends Test {
     private final Map<Point2D, List<WaySegment>> cellSegments = new HashMap<>(1000);
     /** The already detected ways in error */
     private final Map<List<Way>, List<WaySegment>> seenWays = new HashMap<>(50);
+    private final Set<Way> waysToTest = new HashSet<>();
 
     protected final int code;
 
@@ -112,29 +118,25 @@ public abstract class CrossingWays extends Test {
         @Override
         boolean ignoreWaySegmentCombination(Way w1, Way w2) {
             if (w1 == w2)
-                return false;
-            if (areLayerOrLevelDifferent(w1, w2)) {
                 return true;
-            }
+            if (areLayerOrLevelDifferent(w1, w2))
+                return true;
             if (isBuilding(w1) && isBuilding(w2))
+                return true; // handled by mapcss tests
+            if (((isResidentialArea(w1) || w1.hasKey(BARRIER, HIGHWAY, RAILWAY, WATERWAY) || isWaterArea(w1))
+                    && isResidentialArea(w2))
+                    || ((isResidentialArea(w2) || w2.hasKey(BARRIER, HIGHWAY, RAILWAY, WATERWAY) || isWaterArea(w2))
+                            && isResidentialArea(w1)))
                 return true;
-            if (w1.hasKey(HIGHWAY) && w2.hasKey(HIGHWAY) && !Objects.equals(w1.get("level"), w2.get("level"))) {
-                return true;
-            }
-            if (((isResidentialArea(w1) || w1.hasKey(BARRIER, HIGHWAY, RAILWAY, WATERWAY)) && isResidentialArea(w2))
-             || ((isResidentialArea(w2) || w2.hasKey(BARRIER, HIGHWAY, RAILWAY, WATERWAY)) && isResidentialArea(w1)))
-                return true;
-            if (isSubwayOrTramOrRazed(w2)) {
-                return true;
-            }
-            if (isCoastline(w1) != isCoastline(w2)) {
-                return true;
-            }
-            if ((w1.hasTag(WATERWAY, "river", "stream", "canal", "drain", "ditch") && w2.hasTag(WATERWAY, "riverbank"))
-             || (w2.hasTag(WATERWAY, "river", "stream", "canal", "drain", "ditch") && w1.hasTag(WATERWAY, "riverbank"))) {
-                return true;
-            }
-            return isProposedOrAbandoned(w2);
+            if (isWaterArea(w1) && isWaterArea(w2))
+                return true; // handled by mapcss tests
+            if (w1.hasKey(RAILWAY) && w2.hasKey(RAILWAY) && (w1.hasTag(RAILWAY, "yard") != w2.hasTag(RAILWAY, "yard")
+                    || w1.hasTag(RAILWAY, "halt") != w2.hasTag(RAILWAY, "halt")))
+                return true;  // see #20089, #21541
+            if (w1.hasTag(WATERWAY, "fairway") && w2.hasTag(WATERWAY, "fairway"))
+                return true; // see #24572
+            return (w1.hasTag(WATERWAY, "river", "stream", "canal", "drain", "ditch") && isWaterAreaOrFairway(w2))
+                    || (w2.hasTag(WATERWAY, "river", "stream", "canal", "drain", "ditch") && isWaterAreaOrFairway(w1));
         }
 
         @Override
@@ -269,14 +271,11 @@ public abstract class CrossingWays extends Test {
     }
 
     /**
-     * Self crossing ways test (for all the rest)
+     * Self crossing ways test (for all ways)
      */
     public static class SelfCrossing extends CrossingWays {
 
         protected static final int CROSSING_SELF = 604;
-
-        CrossingWays.Ways normalTest = new Ways();
-        CrossingWays.Boundaries boundariesTest = new Boundaries();
 
         /**
          * Constructs a new SelfIntersection test.
@@ -286,14 +285,8 @@ public abstract class CrossingWays extends Test {
         }
 
         @Override
-        public boolean isPrimitiveUsable(OsmPrimitive p) {
-            return super.isPrimitiveUsable(p) && !(normalTest.isPrimitiveUsable(p)
-                    || boundariesTest.isPrimitiveUsable(p));
-        }
-
-        @Override
         boolean ignoreWaySegmentCombination(Way w1, Way w2) {
-            return w1 != w2; // should not happen
+            return false; // we should not get here
         }
     }
 
@@ -318,13 +311,61 @@ public abstract class CrossingWays extends Test {
 
     @Override
     public void endTest() {
-        super.endTest();
+        runTest();
+        // free storage
         cellSegments.clear();
         seenWays.clear();
+        if (partialSelection)
+            removeIrrelevantErrors(waysToTest);
+        waysToTest.clear();
+        super.endTest();
+    }
+
+    protected void runTest() {
+        final Collection<Way> selection;
+        if (this instanceof SelfCrossing || !partialSelection) {
+            selection = waysToTest;
+        } else {
+            selection = addNearbyObjects();
+        }
+        for (Way w : selection) {
+            testWay(w);
+        }
+
+    }
+
+    private Collection<Way> addNearbyObjects() {
+        final Collection<Way> selection = new HashSet<>();
+        DataSet ds = OsmDataManager.getInstance().getActiveDataSet();
+        if (ds != null) {
+            for (Way wt : waysToTest) {
+                selection.addAll(ds.searchWays(wt.getBBox()).stream()
+                        .filter(w -> !w.isDeleted() && isPrimitiveUsable(w)).collect(Collectors.toList()));
+                if (this instanceof CrossingWays.Boundaries) {
+                    List<Relation> relations = ds.searchRelations(wt.getBBox()).stream()
+                            .filter(this::isPrimitiveUsable).collect(Collectors.toList());
+                    for (Relation r: relations) {
+                        for (Way w : r.getMemberPrimitives(Way.class)) {
+                            if (!w.isIncomplete())
+                                selection.add(w);
+                        }
+                    }
+                }
+            }
+        }
+        return selection;
     }
 
     static boolean isCoastline(OsmPrimitive w) {
         return w.hasTag("natural", "water", "coastline") || w.hasTag(LANDUSE, "reservoir");
+    }
+
+    static boolean isWaterArea(OsmPrimitive w) {
+        return w.hasTag("natural", "water") || w.hasTag(WATERWAY, "riverbank") || w.hasTag(LANDUSE, "reservoir");
+    }
+
+    static boolean isWaterAreaOrFairway(OsmPrimitive w) {
+        return isWaterArea(w) || w.hasTag(WATERWAY, "fairway");
     }
 
     static boolean isHighway(OsmPrimitive w) {
@@ -353,7 +394,12 @@ public abstract class CrossingWays extends Test {
 
     @Override
     public void visit(Way w) {
-        if (this instanceof SelfCrossing) {
+        waysToTest.add(w);
+    }
+
+    private void testWay(Way w) {
+        boolean findSelfCrossingOnly = this instanceof SelfCrossing;
+        if (findSelfCrossingOnly) {
             // free memory, we are not interested in previous ways
             cellSegments.clear();
             seenWays.clear();
@@ -362,31 +408,30 @@ public abstract class CrossingWays extends Test {
         int nodesSize = w.getNodesCount();
         for (int i = 0; i < nodesSize - 1; i++) {
             final WaySegment es1 = new WaySegment(w, i);
-            final EastNorth en1 = es1.getFirstNode().getEastNorth();
-            final EastNorth en2 = es1.getSecondNode().getEastNorth();
-            if (en1 == null || en2 == null) {
+            if (!es1.getFirstNode().isLatLonKnown() || !es1.getSecondNode().isLatLonKnown()) {
                 Logging.warn("Crossing ways test skipped " + es1);
                 continue;
             }
-            for (List<WaySegment> segments : getSegments(cellSegments, en1, en2)) {
+            for (List<WaySegment> segments : getSegments(cellSegments, es1.getFirstNode(), es1.getSecondNode())) {
                 for (WaySegment es2 : segments) {
                     List<Way> prims;
                     List<WaySegment> highlight;
 
-                    if (!es1.intersects(es2) || ignoreWaySegmentCombination(es1.way, es2.way)) {
+                    if (!es1.intersects(es2)
+                            || (!findSelfCrossingOnly && ignoreWaySegmentCombination(es1.getWay(), es2.getWay()))) {
                         continue;
                     }
 
                     prims = new ArrayList<>();
-                    prims.add(es1.way);
-                    if (es1.way != es2.way)
-                        prims.add(es2.way);
+                    prims.add(es1.getWay());
+                    if (es1.getWay() != es2.getWay())
+                        prims.add(es2.getWay());
                     if ((highlight = seenWays.get(prims)) == null) {
                         highlight = new ArrayList<>();
                         highlight.add(es1);
                         highlight.add(es2);
 
-                        final MessageHelper message = createMessage(es1.way, es2.way);
+                        final MessageHelper message = createMessage(es1.getWay(), es2.getWay());
                         errors.add(TestError.builder(this, Severity.WARNING, message.code)
                                 .message(message.message)
                                 .primitives(prims)
@@ -423,6 +468,21 @@ public abstract class CrossingWays extends Test {
     }
 
     /**
+     * Returns all the cells this segment crosses.  Each cell contains the list
+     * of segments already processed
+     * @param cellSegments map with already collected way segments
+     * @param n1 The first EastNorth
+     * @param n2 The second EastNorth
+     * @return A list with all the cells the segment crosses
+     * @since 18553
+     */
+    public static List<List<WaySegment>> getSegments(Map<Point2D, List<WaySegment>> cellSegments, ILatLon n1, ILatLon n2) {
+        return ValUtil.getSegmentCells(n1, n2, OsmValidator.getGridDetail()).stream()
+                .map(cell -> cellSegments.computeIfAbsent(cell, k -> new ArrayList<>()))
+                .collect(Collectors.toList());
+    }
+
+    /**
      * Find ways which are crossing without sharing a node.
      * @param w way that is to be checked
      * @param cellSegments map with already collected way segments
@@ -444,14 +504,14 @@ public abstract class CrossingWays extends Test {
                 for (WaySegment es2 : segments) {
 
                     List<WaySegment> highlight;
-                    if (es2.way == w // reported by CrossingWays.SelfIntersection
+                    if (es2.getWay() == w // reported by CrossingWays.SelfIntersection
                             || (findSharedWaySegments && !es1.isSimilar(es2))
                             || (!findSharedWaySegments && !es1.intersects(es2)))
                         continue;
 
-                    List<Way> prims = Arrays.asList(es1.way, es2.way);
+                    List<Way> prims = Arrays.asList(es1.getWay(), es2.getWay());
                     if ((highlight = crossingWays.get(prims)) == null) {
-                        highlight = new ArrayList<>();
+                        highlight = new ArrayList<>(2);
                         highlight.add(es1);
                         highlight.add(es2);
                         crossingWays.put(prims, highlight);
@@ -465,4 +525,18 @@ public abstract class CrossingWays extends Test {
         }
     }
 
+    /**
+     * Check if the given way is self crossing
+     * @param way the way to check
+     * @return {@code true} if one or more segments of the way are crossing
+     * @see SelfIntersectingWay
+     * @since 17393
+     */
+    public static boolean isSelfCrossing(Way way) {
+        CheckParameterUtil.ensureParameterNotNull(way, "way");
+        SelfCrossing test = new SelfCrossing();
+        test.visit(way);
+        test.runTest();
+        return !test.getErrors().isEmpty();
+    }
 }

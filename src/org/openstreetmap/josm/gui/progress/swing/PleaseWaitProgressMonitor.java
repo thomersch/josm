@@ -106,12 +106,12 @@ public class PleaseWaitProgressMonitor extends AbstractProgressMonitor {
     }
 
     private void doInEDT(Runnable runnable) {
-        // This must be invoke later even if current thread is EDT because inside there is dialog.setVisible
+        // This must be invoked later even if current thread is EDT because inside there is dialog.setVisible
         // which freeze current code flow until modal dialog is closed
         SwingUtilities.invokeLater(() -> {
             try {
                 runnable.run();
-            } catch (RuntimeException e) { // NOPMD
+            } catch (RuntimeException e) {
                 throw BugReport.intercept(e).put("monitor", this);
             }
         });
@@ -215,7 +215,7 @@ public class PleaseWaitProgressMonitor extends AbstractProgressMonitor {
     };
 
     /**
-     * See if this task is canceleable
+     * See if this task is cancelable
      * @return <code>true</code> if it can be canceled
      */
     public final boolean isCancelable() {

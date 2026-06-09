@@ -1,16 +1,17 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.layer.markerlayer;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.util.Arrays;
+import java.net.MalformedURLException;
+import java.net.URI;
+import java.util.Collections;
 
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.gpx.GpxConstants;
 import org.openstreetmap.josm.data.gpx.GpxData;
@@ -21,26 +22,23 @@ import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.MapFrame;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.spi.preferences.Config;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
+import org.openstreetmap.josm.testutils.annotations.I18n;
+import org.openstreetmap.josm.testutils.annotations.Main;
+import org.openstreetmap.josm.testutils.annotations.Projection;
 
 /**
  * Unit tests of {@link MarkerLayer} class.
  */
-public class MarkerLayerTest {
-
-    /**
-     * For creating layers
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().main().preferences().projection();
-
+@BasicPreferences
+@Main
+@Projection
+@I18n
+class MarkerLayerTest {
     /**
      * Setup tests
      */
-    @Before
+    @BeforeEach
     public void setUp() {
         Config.getPref().putBoolean("marker.traceaudio", true);
     }
@@ -49,7 +47,7 @@ public class MarkerLayerTest {
      * Unit test of {@link MarkerLayer#MarkerLayer}.
      */
     @Test
-    public void testMarkerLayer() {
+    void testMarkerLayer() {
         MarkerLayer layer = new MarkerLayer(new GpxData(), "foo", null, null);
         MainApplication.getLayerManager().addLayer(layer);
 
@@ -62,7 +60,7 @@ public class MarkerLayerTest {
 
         GpxData gpx = new GpxData();
         WayPoint wpt = new WayPoint(LatLon.ZERO);
-        wpt.attr.put(GpxConstants.META_LINKS, Arrays.asList(new GpxLink("https://josm.openstreetmap.de")));
+        wpt.attr.put(GpxConstants.META_LINKS, Collections.singletonList(new GpxLink("https://josm.openstreetmap.de")));
         wpt.getExtensions().add("josm", "offset", "1.0");
         gpx.waypoints.add(wpt);
         wpt = new WayPoint(LatLon.ZERO);
@@ -82,7 +80,7 @@ public class MarkerLayerTest {
      * Unit test of {@code Main.map.mapView.playHeadMarker}.
      */
     @Test
-    public void testPlayHeadMarker() {
+    void testPlayHeadMarker() {
         try {
             MainApplication.getLayerManager().addLayer(new OsmDataLayer(new DataSet(), "", null));
             MapFrame map = MainApplication.getMap();
@@ -96,5 +94,16 @@ public class MarkerLayerTest {
                 MainApplication.getMap().mapView.playHeadMarker = null;
             }
         }
+    }
+
+    /**
+     * Ensure that if a file is unable to be read, we return an empty list instead of a list with {@code null} in it.
+     */
+    @Test
+    void testNonRegression23316() throws MalformedURLException {
+        MarkerLayer layer = new MarkerLayer(new GpxData(), null, null, null);
+        layer.setCurrentMarker(new ImageMarker(LatLon.ZERO, URI.create("file:/not_a_real_file_123456789.jpg").toURL(),
+                layer, 0, 0));
+        assertEquals(Collections.emptyList(), layer.getSelection());
     }
 }

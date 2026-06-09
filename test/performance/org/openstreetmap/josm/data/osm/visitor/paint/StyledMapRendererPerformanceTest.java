@@ -6,25 +6,27 @@ import java.io.IOException;
 
 import javax.imageio.ImageIO;
 
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.openstreetmap.josm.gui.mappaint.MapPaintStyles;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.testutils.annotations.PerformanceTest;
 
 /**
  * Performance test of {@code StyledMapRenderer}.
  */
-public class StyledMapRendererPerformanceTest extends AbstractMapRendererPerformanceTestParent {
+@PerformanceTest
+class StyledMapRendererPerformanceTest extends AbstractMapRendererPerformanceTestParent {
 
-    @BeforeClass
+    @BeforeAll
     public static void load() throws Exception {
         AbstractMapRendererPerformanceTestParent.load();
         // TODO Test should have it's own copy of styles because change in style can influence performance
         MapPaintStyles.readFromPreferences();
     }
 
-    @AfterClass
+    @AfterAll
     public static void clean() throws Exception {
         AbstractMapRendererPerformanceTestParent.clean();
     }

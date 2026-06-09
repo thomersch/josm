@@ -14,7 +14,6 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.openstreetmap.josm.data.osm.DataSet;
@@ -41,7 +40,6 @@ import org.openstreetmap.josm.gui.layer.LayerManager.LayerRemoveEvent;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPreset;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPresets;
-import org.openstreetmap.josm.gui.tagging.presets.items.Roles.Role;
 import org.openstreetmap.josm.tools.CheckParameterUtil;
 import org.openstreetmap.josm.tools.MultiMap;
 import org.openstreetmap.josm.tools.Utils;
@@ -192,10 +190,7 @@ public class AutoCompletionManager implements DataSetListener {
      * @param primitive an OSM primitive
      */
     protected void cachePrimitiveTags(OsmPrimitive primitive) {
-        for (String key: primitive.keySet()) {
-            String value = primitive.get(key);
-            tagCache.put(key, value);
-        }
+        primitive.visitKeys((p, key, value) -> tagCache.put(key, value));
     }
 
     /**
@@ -292,11 +287,11 @@ public class AutoCompletionManager implements DataSetListener {
      */
     public void populateWithMemberRoles(AutoCompletionList list, Relation r) {
         CheckParameterUtil.ensureParameterNotNull(list, "list");
-        Collection<TaggingPreset> presets = r != null ? TaggingPresets.getMatchingPresets(null, r.getKeys(), false) : null;
-        if (r != null && presets != null && !presets.isEmpty()) {
+        Collection<TaggingPreset> presets = r != null ? TaggingPresets.getMatchingPresets(null, r.getKeys(), false) : Collections.emptyList();
+        if (r != null && !Utils.isEmpty(presets)) {
             for (TaggingPreset tp : presets) {
                 if (tp.roles != null) {
-                    list.add(Utils.transform(tp.roles.roles, (Function<Role, String>) x -> x.key), AutoCompletionPriority.IS_IN_STANDARD);
+                    list.add(Utils.transform(tp.roles.roles, x -> x.key), AutoCompletionPriority.IS_IN_STANDARD);
                 }
             }
             list.add(r.getMemberRoles(), AutoCompletionPriority.IS_IN_DATASET);
@@ -345,6 +340,30 @@ public class AutoCompletionManager implements DataSetListener {
         List<AutoCompletionItem> list = new ArrayList<>(set);
         list.sort(comparator);
         return list;
+    }
+
+    /**
+     * Returns all cached {@link AutoCompletionItem}s for given keys.
+     *
+     * @param keys retrieve the items for these keys
+     * @return the currently cached items, sorted by priority and alphabet
+     * @since 18221
+     */
+    public List<AutoCompletionItem> getAllForKeys(List<String> keys) {
+        Map<String, AutoCompletionPriority> map = new HashMap<>();
+
+        for (String key : keys) {
+            for (String value : TaggingPresets.getPresetValues(key)) {
+                map.merge(value, AutoCompletionPriority.IS_IN_STANDARD, AutoCompletionPriority::mergeWith);
+            }
+            for (String value : getDataValues(key)) {
+                map.merge(value, AutoCompletionPriority.IS_IN_DATASET, AutoCompletionPriority::mergeWith);
+            }
+            for (String value : getUserInputValues(key)) {
+                map.merge(value, AutoCompletionPriority.UNKNOWN, AutoCompletionPriority::mergeWith);
+            }
+        }
+        return map.entrySet().stream().map(e -> new AutoCompletionItem(e.getKey(), e.getValue())).sorted().collect(Collectors.toList());
     }
 
     /**
@@ -405,7 +424,7 @@ public class AutoCompletionManager implements DataSetListener {
      * Returns the currently cached tag values for a given list of tag keys.
      * @param keys the tag keys
      * @param comparator the custom comparator used to sort the list
-     * @return a set of tag values
+     * @return a list of tag values
      * @since 12859
      */
     public List<AutoCompletionItem> getTagValues(List<String> keys, Comparator<AutoCompletionItem> comparator) {
@@ -459,7 +478,7 @@ public class AutoCompletionManager implements DataSetListener {
 
     @Override
     public void relationMembersChanged(RelationMembersChangedEvent event) {
-        dirty = true; // TODO: not necessary to rebuid if a member is added
+        dirty = true; // TODO: not necessary to rebuild if a member is added
     }
 
     @Override
@@ -483,7 +502,7 @@ public class AutoCompletionManager implements DataSetListener {
                     dirty = true;
                     tagCache = null;
                     roleCache = null;
-                    ds = null;                    
+                    ds = null;
                 }
             }
 

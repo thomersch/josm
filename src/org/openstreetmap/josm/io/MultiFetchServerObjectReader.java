@@ -47,7 +47,7 @@ import org.openstreetmap.josm.tools.Utils;
 /**
  * Retrieves a set of {@link OsmPrimitive}s from an OSM server using the so called
  * Multi Fetch API.
- *
+ * <p>
  * Usage:
  * <pre>
  *    MultiFetchServerObjectReader reader = MultiFetchServerObjectReader()
@@ -79,6 +79,8 @@ public class MultiFetchServerObjectReader extends OsmServerReader {
 
     protected boolean recurseDownRelations;
     private boolean recurseDownAppended = true;
+
+    private ExecutorService exec;
 
     /**
      * Constructs a {@code MultiFetchServerObjectReader}.
@@ -125,14 +127,14 @@ public class MultiFetchServerObjectReader extends OsmServerReader {
     /**
      * Remembers an {@link OsmPrimitive}'s id. The id will
      * later be fetched as part of a Multi Get request.
-     *
+     * <p>
      * Ignore the id if it represents a new primitives.
      *
      * @param id  the id
      */
     public void append(PrimitiveId id) {
         if (id.isNew()) return;
-        switch(id.getType()) {
+        switch (id.getType()) {
         case NODE: nodes.add(id.getUniqueId()); break;
         case WAY: ways.add(id.getUniqueId()); break;
         case RELATION: relations.add(id.getUniqueId()); break;
@@ -319,12 +321,16 @@ public class MultiFetchServerObjectReader extends OsmServerReader {
         // we will run up to MAX_DOWNLOAD_THREADS concurrent fetchers.
         int threadsNumber = Config.getPref().getInt("osm.download.threads", OsmApi.MAX_DOWNLOAD_THREADS);
         threadsNumber = Utils.clamp(threadsNumber, 1, OsmApi.MAX_DOWNLOAD_THREADS);
-        final ExecutorService exec = Executors.newFixedThreadPool(
+        exec = Executors.newFixedThreadPool(
                 threadsNumber, Utils.newThreadFactory(getClass() + "-%d", Thread.NORM_PRIORITY));
         CompletionService<FetchResult> ecs = new ExecutorCompletionService<>(exec);
         List<Future<FetchResult>> jobs = new ArrayList<>();
-        while (!toFetch.isEmpty()) {
-            jobs.add(ecs.submit(new Fetcher(type, extractIdPackage(toFetch), progressMonitor)));
+        // There exists a race condition where this is cancelled after isCanceled is called, such that
+        // the exec ThreadPool has been shut down. This can cause a RejectedExecutionException.
+        synchronized (this) {
+            while (!toFetch.isEmpty() && !isCanceled()) {
+                jobs.add(ecs.submit(new Fetcher(type, extractIdPackage(toFetch), progressMonitor)));
+            }
         }
         // Run the fetchers
         for (int i = 0; i < jobs.size() && !isCanceled(); i++) {
@@ -345,7 +351,12 @@ public class MultiFetchServerObjectReader extends OsmServerReader {
                     merge(result.dataSet);
                 }
             } catch (InterruptedException | ExecutionException e) {
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
                 Logging.error(e);
+                if (e.getCause() instanceof OsmTransferException)
+                    throw (OsmTransferException) e.getCause(); // NOPMD
             }
         }
         exec.shutdown();
@@ -355,6 +366,7 @@ public class MultiFetchServerObjectReader extends OsmServerReader {
                 job.cancel(true);
             }
         }
+        exec = null;
     }
 
     /**
@@ -363,12 +375,12 @@ public class MultiFetchServerObjectReader extends OsmServerReader {
      * In contrast to a simple Get for a node, a way, or a relation, a Multi Get always replies
      * the latest version of the primitive (if any), even if the primitive is not visible (i.e. if
      * visible==false).
-     *
+     * <p>
      * Invoke {@link #getMissingPrimitives()} to get a list of primitives which have not been
      * found on  the server (the server response code was 404)
      *
-     * @return the parsed data
      * @param progressMonitor progress monitor
+     * @return the parsed data
      * @throws OsmTransferException if an error occurs while communicating with the API server
      * @see #getMissingPrimitives()
      *
@@ -406,7 +418,7 @@ public class MultiFetchServerObjectReader extends OsmServerReader {
     }
 
     /**
-     * Workaround for difference in Oerpass API.
+     * Workaround for difference in Overpass API.
      * As of now (version 7.55) Overpass api doesn't return invisible objects.
      * Check if we have objects which do not appear in the dataset and fetch them from OSM instead.
      * @param ds the dataset
@@ -440,6 +452,7 @@ public class MultiFetchServerObjectReader extends OsmServerReader {
      * @see #getMissingPrimitives()
      */
     private void downloadRelations(ProgressMonitor progressMonitor) throws OsmTransferException {
+        boolean removeIncomplete = outputDataSet.isEmpty();
         Set<Long> toDownload = new LinkedHashSet<>(relations);
         fetchPrimitives(toDownload, OsmPrimitiveType.RELATION, progressMonitor);
         if (!recurseDownRelations) {
@@ -447,9 +460,13 @@ public class MultiFetchServerObjectReader extends OsmServerReader {
         }
         // OSM multi-fetch api may return invisible objects, we don't try to get details for them
         for (Relation r : outputDataSet.getRelations()) {
-            if (!r.isVisible())
+            if (!r.isVisible()) {
                 toDownload.remove(r.getUniqueId());
+            } else if (removeIncomplete) {
+                outputDataSet.removePrimitive(r);
+            }
         }
+
         // fetch full info for all visible relations
         for (long id : toDownload) {
             if (isCanceled())
@@ -578,7 +595,7 @@ public class MultiFetchServerObjectReader extends OsmServerReader {
                         return res;
                     }
                     if (pkg.size() == 1) {
-                        FetchResult res = new FetchResult(new DataSet(), new HashSet<PrimitiveId>());
+                        FetchResult res = new FetchResult(new DataSet(), new HashSet<>());
                         res.missingPrimitives.add(new SimplePrimitiveId(pkg.iterator().next(), type));
                         return res;
                     } else {
@@ -657,7 +674,7 @@ public class MultiFetchServerObjectReader extends OsmServerReader {
         /**
          * invokes a sequence of Multi Gets for individual ids in a set of ids and a given {@link OsmPrimitiveType}.
          * The retrieved primitives are merged to {@link #outputDataSet}.
-         *
+         * <p>
          * This method is used if one of the ids in pkg doesn't exist (the server replies with return code 404).
          * If the set is fetched with this method it is possible to find out which of the ids doesn't exist.
          * Unfortunately, the server does not provide an error header or an error body for a 404 reply.
@@ -671,7 +688,7 @@ public class MultiFetchServerObjectReader extends OsmServerReader {
          */
         protected FetchResult singleGetIdPackage(OsmPrimitiveType type, Set<Long> pkg, ProgressMonitor progressMonitor)
                 throws OsmTransferException {
-            FetchResult result = new FetchResult(new DataSet(), new HashSet<PrimitiveId>());
+            FetchResult result = new FetchResult(new DataSet(), new HashSet<>());
             String baseUrl = OsmApi.getOsmApi().getBaseUrl();
             for (long id : pkg) {
                 try {
@@ -696,6 +713,18 @@ public class MultiFetchServerObjectReader extends OsmServerReader {
                 }
             }
             return result;
+        }
+    }
+
+    @Override
+    public void cancel() {
+        super.cancel();
+        // Synchronized to avoid a RejectedExecutionException in fetchPrimitives
+        // We don't want to synchronize on the super.cancel() call.
+        synchronized (this) {
+            if (exec != null) {
+                exec.shutdownNow();
+            }
         }
     }
 }

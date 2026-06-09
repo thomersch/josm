@@ -5,6 +5,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 import org.openstreetmap.josm.data.gpx.GpxData.XMLNamespace;
+import org.openstreetmap.josm.tools.Utils;
 import org.xml.sax.Attributes;
 
 /**
@@ -88,8 +89,9 @@ public class GpxExtension extends WithAttributes {
             return new XMLNamespace("gpxd", XML_URI_EXTENSIONS_DRAWING, XML_XSD_EXTENSIONS_DRAWING);
         case "josm":
             return new XMLNamespace("josm", XML_URI_EXTENSIONS_JOSM, XML_XSD_EXTENSIONS_JOSM);
+        default:
+            return null;
         }
-        return null;
     }
 
     /**
@@ -173,9 +175,9 @@ public class GpxExtension extends WithAttributes {
         parent.getExtensions().remove(this);
         if (parent instanceof GpxExtension) {
             GpxExtension gpx = ((GpxExtension) parent);
-            if ((gpx.getValue() == null || gpx.getValue().trim().isEmpty())
-                    && gpx.getAttributes().isEmpty()
-                    && gpx.getExtensions().isEmpty()) {
+            if (Utils.isStripEmpty(gpx.getValue())
+                    && Utils.isEmpty(gpx.getAttributes())
+                    && Utils.isEmpty(gpx.getExtensions())) {
                 gpx.remove();
             }
         }
@@ -189,7 +191,7 @@ public class GpxExtension extends WithAttributes {
         visible = false;
         if (parent != null && parent instanceof GpxExtension) {
             GpxExtension gpx = (GpxExtension) parent;
-            if ((gpx.getValue() == null || gpx.getValue().trim().isEmpty())
+            if (Utils.isStripEmpty(gpx.getValue())
                     && gpx.getAttributes().isEmpty()
                     && !gpx.getExtensions().isVisible()) {
                 gpx.hide();

@@ -58,11 +58,10 @@ import javax.swing.JTable;
 import javax.swing.JToolBar;
 import javax.swing.KeyStroke;
 import javax.swing.ListSelectionModel;
+import javax.swing.SwingConstants;
 import javax.swing.UIManager;
 import javax.swing.event.CellEditorListener;
 import javax.swing.event.ChangeEvent;
-import javax.swing.event.DocumentEvent;
-import javax.swing.event.DocumentListener;
 import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.ListSelectionListener;
 import javax.swing.event.TableModelEvent;
@@ -85,6 +84,7 @@ import org.openstreetmap.josm.gui.ExtendedDialog;
 import org.openstreetmap.josm.gui.HelpAwareOptionPane;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.PleaseWaitRunnable;
+import org.openstreetmap.josm.gui.util.DocumentAdapter;
 import org.openstreetmap.josm.gui.util.FileFilterAllFiles;
 import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.gui.util.ReorderableTableModel;
@@ -112,6 +112,8 @@ import org.xml.sax.SAXException;
  * @since 1743
  */
 public abstract class SourceEditor extends JPanel {
+    private static final String DELETE = "delete";
+    private static final String DIALOGS = "dialogs";
 
     /** the type of source entry **/
     protected final SourceType sourceType;
@@ -152,6 +154,12 @@ public abstract class SourceEditor extends JPanel {
         DefaultListSelectionModel selectionModel = new DefaultListSelectionModel();
         this.availableSourcesModel = new AvailableSourcesModel();
         this.tblAvailableSources = new ScrollHackTable(availableSourcesModel);
+        // This add/remove listener code is needed to fix #20849. Java fires table listeners in the reverse order
+        // in which they were added, and we need the model to have been updated before we call the adjustColumnWidth code.
+        // So we remove the JTable and re-add it as a listener after we add the column width adjustment
+        availableSourcesModel.addTableModelListener(e -> TableHelper.adjustColumnWidth(tblAvailableSources, 0, 800));
+        availableSourcesModel.removeTableModelListener(this.tblAvailableSources);
+        availableSourcesModel.addTableModelListener(this.tblAvailableSources);
         this.tblAvailableSources.setAutoCreateRowSorter(true);
         this.tblAvailableSources.setSelectionModel(selectionModel);
         final FancySourceEntryTableCellRenderer availableSourcesEntryRenderer = new FancySourceEntryTableCellRenderer();
@@ -191,7 +199,6 @@ public abstract class SourceEditor extends JPanel {
         });
         // Force Swing to show horizontal scrollbars for the JTable
         // Yes, this is a little ugly, but should work
-        availableSourcesModel.addTableModelListener(e -> TableHelper.adjustColumnWidth(tblAvailableSources, 0, 800));
         activeSourcesModel.addTableModelListener(e -> TableHelper.adjustColumnWidth(tblActiveSources, canEnable ? 1 : 0, 800));
         activeSourcesModel.setActiveSources(getInitialSourcesList());
 
@@ -214,8 +221,8 @@ public abstract class SourceEditor extends JPanel {
 
         RemoveActiveSourcesAction removeActiveSourcesAction = new RemoveActiveSourcesAction();
         tblActiveSources.getSelectionModel().addListSelectionListener(removeActiveSourcesAction);
-        tblActiveSources.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0), "delete");
-        tblActiveSources.getActionMap().put("delete", removeActiveSourcesAction);
+        tblActiveSources.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0), DELETE);
+        tblActiveSources.getActionMap().put(DELETE, removeActiveSourcesAction);
 
         MoveUpDownAction moveUp = null;
         MoveUpDownAction moveDown = null;
@@ -292,7 +299,7 @@ public abstract class SourceEditor extends JPanel {
         gbc.fill = GBC.VERTICAL;
         gbc.insets = new Insets(0, 0, 0, 6);
 
-        JToolBar sideButtonTB = new JToolBar(JToolBar.VERTICAL);
+        JToolBar sideButtonTB = new JToolBar(SwingConstants.VERTICAL);
         sideButtonTB.setFloatable(false);
         sideButtonTB.setBorderPainted(false);
         sideButtonTB.setOpaque(false);
@@ -358,8 +365,8 @@ public abstract class SourceEditor extends JPanel {
 
         RemoveIconPathAction removeIconPathAction = new RemoveIconPathAction();
         tblIconPaths.getSelectionModel().addListSelectionListener(removeIconPathAction);
-        tblIconPaths.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0), "delete");
-        tblIconPaths.getActionMap().put("delete", removeIconPathAction);
+        tblIconPaths.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0), DELETE);
+        tblIconPaths.getActionMap().put(DELETE, removeIconPathAction);
 
         gbc.gridx = 0;
         gbc.gridy++;
@@ -716,7 +723,7 @@ public abstract class SourceEditor extends JPanel {
         public void removeIdxs(Collection<Integer> idxs) {
             data = IntStream.range(0, data.size())
                     .filter(i -> !idxs.contains(i))
-                    .mapToObj(i -> data.get(i))
+                    .mapToObj(data::get)
                     .collect(Collectors.toList());
             fireTableDataChanged();
         }
@@ -759,8 +766,8 @@ public abstract class SourceEditor extends JPanel {
     }
 
     private static void prepareFileChooser(String url, AbstractFileChooser fc) {
-        if (url == null || url.trim().isEmpty()) return;
-        URL sourceUrl = null;
+        if (Utils.isStripEmpty(url)) return;
+        URL sourceUrl;
         try {
             sourceUrl = new URL(url);
         } catch (MalformedURLException e) {
@@ -811,7 +818,7 @@ public abstract class SourceEditor extends JPanel {
             tfURL = new JosmTextField(60);
             p.add(new JLabel(tr("URL / File:")), GBC.std().insets(15, 0, 5, 0));
             p.add(tfURL, GBC.std().insets(0, 0, 5, 5));
-            JButton fileChooser = new JButton(new LaunchFileChooserAction());
+            JButton fileChooser = new JButton(new LaunchFileChooserSourceTypeAction());
             fileChooser.setMargin(new Insets(0, 0, 0, 0));
             p.add(fileChooser, GBC.eol().insets(0, 0, 5, 5));
 
@@ -830,22 +837,7 @@ public abstract class SourceEditor extends JPanel {
             setContent(p);
 
             // Make OK button enabled only when a file/URL has been set
-            tfURL.getDocument().addDocumentListener(new DocumentListener() {
-                @Override
-                public void insertUpdate(DocumentEvent e) {
-                    updateOkButtonState();
-                }
-
-                @Override
-                public void removeUpdate(DocumentEvent e) {
-                    updateOkButtonState();
-                }
-
-                @Override
-                public void changedUpdate(DocumentEvent e) {
-                    updateOkButtonState();
-                }
-            });
+            tfURL.getDocument().addDocumentListener(DocumentAdapter.create(ignore -> updateOkButtonState()));
         }
 
         private void updateOkButtonState() {
@@ -858,8 +850,8 @@ public abstract class SourceEditor extends JPanel {
             updateOkButtonState();
         }
 
-        class LaunchFileChooserAction extends AbstractAction {
-            LaunchFileChooserAction() {
+        class LaunchFileChooserSourceTypeAction extends AbstractAction {
+            LaunchFileChooserSourceTypeAction() {
                 new ImageProvider("open").getResource().attachImageIcon(this);
                 putValue(SHORT_DESCRIPTION, tr("Launch a file chooser to select a file"));
             }
@@ -919,7 +911,7 @@ public abstract class SourceEditor extends JPanel {
         NewActiveSourceAction() {
             putValue(NAME, tr("New"));
             putValue(SHORT_DESCRIPTION, getStr(I18nString.NEW_SOURCE_ENTRY_TOOLTIP));
-            new ImageProvider("dialogs", "add").getResource().attachImageIcon(this);
+            new ImageProvider(DIALOGS, "add").getResource().attachImageIcon(this);
         }
 
         @Override
@@ -949,7 +941,7 @@ public abstract class SourceEditor extends JPanel {
         RemoveActiveSourcesAction() {
             putValue(NAME, tr("Remove"));
             putValue(SHORT_DESCRIPTION, getStr(I18nString.REMOVE_SOURCE_TOOLTIP));
-            new ImageProvider("dialogs", "delete").getResource().attachImageIcon(this);
+            new ImageProvider(DIALOGS, DELETE).getResource().attachImageIcon(this);
             updateEnabledState();
         }
 
@@ -972,7 +964,7 @@ public abstract class SourceEditor extends JPanel {
         EditActiveSourceAction() {
             putValue(NAME, tr("Edit"));
             putValue(SHORT_DESCRIPTION, getStr(I18nString.EDIT_SOURCE_TOOLTIP));
-            new ImageProvider("dialogs", "edit").getResource().attachImageIcon(this);
+            new ImageProvider(DIALOGS, "edit").getResource().attachImageIcon(this);
             updateEnabledState();
         }
 
@@ -1018,7 +1010,7 @@ public abstract class SourceEditor extends JPanel {
 
         MoveUpDownAction(boolean isDown) {
             increment = isDown ? 1 : -1;
-            new ImageProvider("dialogs", isDown ? "down" : "up").getResource().attachImageIcon(this, true);
+            new ImageProvider(DIALOGS, isDown ? "down" : "up").getResource().attachImageIcon(this, true);
             putValue(SHORT_DESCRIPTION, isDown ? tr("Move the selected entry one row down.") : tr("Move the selected entry one row up."));
             updateEnabledState();
         }
@@ -1120,7 +1112,7 @@ public abstract class SourceEditor extends JPanel {
         ReloadSourcesAction(String url, List<SourceProvider> sourceProviders) {
             putValue(NAME, tr("Reload"));
             putValue(SHORT_DESCRIPTION, tr(getStr(I18nString.RELOAD_ALL_AVAILABLE), url));
-            new ImageProvider("dialogs", "refresh").getResource().attachImageIcon(this);
+            new ImageProvider(DIALOGS, "refresh").getResource().attachImageIcon(this);
             this.url = url;
             this.sourceProviders = sourceProviders;
             setEnabled(!NetworkManager.isOffline(OnlineResource.JOSM_WEBSITE));
@@ -1262,7 +1254,7 @@ public abstract class SourceEditor extends JPanel {
         NewIconPathAction() {
             putValue(NAME, tr("New"));
             putValue(SHORT_DESCRIPTION, tr("Add a new icon path"));
-            new ImageProvider("dialogs", "add").getResource().attachImageIcon(this);
+            new ImageProvider(DIALOGS, "add").getResource().attachImageIcon(this);
         }
 
         @Override
@@ -1276,7 +1268,7 @@ public abstract class SourceEditor extends JPanel {
         RemoveIconPathAction() {
             putValue(NAME, tr("Remove"));
             putValue(SHORT_DESCRIPTION, tr("Remove the selected icon paths"));
-            new ImageProvider("dialogs", "delete").getResource().attachImageIcon(this);
+            new ImageProvider(DIALOGS, DELETE).getResource().attachImageIcon(this);
             updateEnabledState();
         }
 
@@ -1299,7 +1291,7 @@ public abstract class SourceEditor extends JPanel {
         EditIconPathAction() {
             putValue(NAME, tr("Edit"));
             putValue(SHORT_DESCRIPTION, tr("Edit the selected icon path"));
-            new ImageProvider("dialogs", "edit").getResource().attachImageIcon(this);
+            new ImageProvider(DIALOGS, "edit").getResource().attachImageIcon(this);
             updateEnabledState();
         }
 
@@ -1333,17 +1325,19 @@ public abstract class SourceEditor extends JPanel {
         @Override
         public Component getTableCellRendererComponent(JTable list, Object object, boolean isSelected, boolean hasFocus, int row, int column) {
             super.getTableCellRendererComponent(list, object, isSelected, hasFocus, row, column);
-            final ExtendedSourceEntry value = (ExtendedSourceEntry) object;
-            String s = value.toString();
-            setText(s);
-            setToolTipText(value.getTooltip());
-            if (!isSelected) {
-                final SourceEntry sourceEntry = entryByUrl.get(value.url);
-                GuiHelper.setBackgroundReadable(this, sourceEntry == null ? UIManager.getColor("Table.background") :
-                    sourceEntry.active ? SOURCE_ENTRY_ACTIVE_BACKGROUND_COLOR.get() : SOURCE_ENTRY_INACTIVE_BACKGROUND_COLOR.get());
+            if (object instanceof ExtendedSourceEntry) {
+                final ExtendedSourceEntry value = (ExtendedSourceEntry) object;
+                String s = value.toString();
+                setText(s);
+                setToolTipText(value.getTooltip());
+                if (!isSelected) {
+                    final SourceEntry sourceEntry = entryByUrl.get(value.url);
+                    GuiHelper.setBackgroundReadable(this, sourceEntry == null ? UIManager.getColor("Table.background") :
+                        sourceEntry.active ? SOURCE_ENTRY_ACTIVE_BACKGROUND_COLOR.get() : SOURCE_ENTRY_INACTIVE_BACKGROUND_COLOR.get());
+                }
+                final ImageSizes size = ImageSizes.TABLE;
+                setIcon(value.icon == null ? ImageProvider.getEmpty(size) : value.icon.getImageIconBounded(size.getImageDimension()));
             }
-            final ImageSizes size = ImageSizes.TABLE;
-            setIcon(value.icon == null ? ImageProvider.getEmpty(size) : value.icon.getImageIconBounded(size.getImageDimension()));
             return this;
         }
 
@@ -1543,7 +1537,7 @@ public abstract class SourceEditor extends JPanel {
             gc.fill = GridBagConstraints.BOTH;
             gc.weightx = 0.0;
             gc.weighty = 1.0;
-            add(new JButton(new LaunchFileChooserAction()));
+            add(new JButton(new LaunchFileChooserEditCellAction()));
 
             tfFileName.addFocusListener(
                     new FocusAdapter() {
@@ -1616,11 +1610,7 @@ public abstract class SourceEditor extends JPanel {
 
         public void setInitialValue(String initialValue) {
             this.value = initialValue;
-            if (initialValue == null) {
-                this.tfFileName.setText("");
-            } else {
-                this.tfFileName.setText(initialValue);
-            }
+            this.tfFileName.setText(Objects.requireNonNullElse(initialValue, ""));
         }
 
         @Override
@@ -1630,8 +1620,8 @@ public abstract class SourceEditor extends JPanel {
             return this;
         }
 
-        class LaunchFileChooserAction extends AbstractAction {
-            LaunchFileChooserAction() {
+        class LaunchFileChooserEditCellAction extends AbstractAction {
+            LaunchFileChooserEditCellAction() {
                 putValue(NAME, "...");
                 putValue(SHORT_DESCRIPTION, tr("Launch a file chooser to select a file"));
             }

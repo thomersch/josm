@@ -24,7 +24,10 @@ import org.openstreetmap.josm.actions.downloadtasks.DownloadParams;
 import org.openstreetmap.josm.data.osm.DownloadPolicy;
 import org.openstreetmap.josm.data.osm.UploadPolicy;
 import org.openstreetmap.josm.data.preferences.BooleanProperty;
+import org.openstreetmap.josm.data.preferences.IntegerProperty;
 import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.util.GuiHelper;
+import org.openstreetmap.josm.io.OsmApiException;
 import org.openstreetmap.josm.io.remotecontrol.PermissionPrefWithDefault;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.Logging;
@@ -42,6 +45,8 @@ public abstract class RequestHandler {
     public static final BooleanProperty GLOBAL_CONFIRMATION = new BooleanProperty("remotecontrol.always-confirm", false);
     /** preference to determine if remote control loads data in a new layer */
     public static final BooleanProperty LOAD_IN_NEW_LAYER = new BooleanProperty("remotecontrol.new-layer", false);
+    /** preference to define OSM download timeout in seconds */
+    public static final IntegerProperty OSM_DOWNLOAD_TIMEOUT = new IntegerProperty("remotecontrol.osm.download.timeout", 5*60);
 
     protected static final Pattern SPLITTER_COMMA = Pattern.compile(",\\s*");
     protected static final Pattern SPLITTER_SEMIC = Pattern.compile(";\\s*");
@@ -92,7 +97,8 @@ public abstract class RequestHandler {
 
     /**
      * Handle a specific command sent as remote control.
-     *
+     * Any time-consuming operation must be performed asynchronously to avoid delaying the HTTP response.
+     * <p>
      * This method of the subclass will do the real work.
      *
      * @throws RequestHandlerErrorException if an error occurs while processing request
@@ -103,7 +109,7 @@ public abstract class RequestHandler {
     /**
      * Get a specific message to ask the user for permission for the operation
      * requested via remote control.
-     *
+     * <p>
      * This message will be displayed to the user if the preference
      * remotecontrol.always-confirm is true.
      *
@@ -115,7 +121,7 @@ public abstract class RequestHandler {
      * Get a PermissionPref object containing the name of a special permission
      * preference to individually allow the requested operation and an error
      * message to be displayed when a disabled operation is requested.
-     *
+     * <p>
      * Default is not to check any special preference. Override this in a
      * subclass to define permission preference and error message.
      *
@@ -154,7 +160,7 @@ public abstract class RequestHandler {
     }
 
     /**
-     * Returns usage examples for the given command. To be overriden only my handlers that define several commands.
+     * Returns usage examples for the given command. To be overridden only my handlers that define several commands.
      * @param cmd The command asked
      * @return Usage examples for the given command
      * @since 6332
@@ -195,18 +201,26 @@ public abstract class RequestHandler {
         /* Does the user want to confirm everything?
          * If yes, display specific confirmation message.
          */
-        if (GLOBAL_CONFIRMATION.get()) {
+        if (Boolean.TRUE.equals(GLOBAL_CONFIRMATION.get())) {
             // Ensure dialog box does not exceed main window size
-            Integer maxWidth = (int) Math.max(200, MainApplication.getMainFrame().getWidth()*0.6);
-            String message = "<html><div>" + getPermissionMessage() +
+            final int maxWidth = (int) Math.max(200, MainApplication.getMainFrame().getWidth() * 0.6);
+            final String message = "<html><div>" + getPermissionMessage() +
                     "<br/>" + tr("Do you want to allow this?") + "</div></html>";
-            JLabel label = new JLabel(message);
-            if (label.getPreferredSize().width > maxWidth) {
-                label.setText(message.replaceFirst("<div>", "<div style=\"width:" + maxWidth + "px;\">"));
+            final Object[] choices = {tr("Yes, always"), tr("Yes, once"), tr("No")};
+            final int choice;
+            final Integer tChoice = GuiHelper.runInEDTAndWaitAndReturn(() -> {
+                final JLabel label = new JLabel(message);
+                if (label.getPreferredSize().width > maxWidth) {
+                    label.setText(message.replaceFirst("<div>", "<div style=\"width:" + maxWidth + "px;\">"));
+                }
+                return JOptionPane.showOptionDialog(MainApplication.getMainFrame(), label, tr("Confirm Remote Control action"),
+                        JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE, null, choices, choices[1]);
+            });
+            if (tChoice == null) {
+                // I have no clue how this would ever happen, but just in case.
+                throw new RequestHandlerForbiddenException(MessageFormat.format("RemoteControl: ''{0}'' forbidden due to NPE", myCommand));
             }
-            Object[] choices = {tr("Yes, always"), tr("Yes, once"), tr("No")};
-            int choice = JOptionPane.showOptionDialog(MainApplication.getMainFrame(), label, tr("Confirm Remote Control action"),
-                    JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE, null, choices, choices[1]);
+            choice = tChoice;
             if (choice != JOptionPane.YES_OPTION && choice != JOptionPane.NO_OPTION) { // Yes/no refer to always/once
                 String err = MessageFormat.format("RemoteControl: ''{0}'' forbidden by user''s choice", myCommand);
                 throw new RequestHandlerForbiddenException(err);
@@ -234,7 +248,7 @@ public abstract class RequestHandler {
     /**
      * Parse the request parameters as key=value pairs.
      * The result will be stored in {@code this.args}.
-     *
+     * <p>
      * Can be overridden by subclass.
      * @throws URISyntaxException if request URL is invalid
      */
@@ -273,7 +287,7 @@ public abstract class RequestHandler {
         if (mandatory != null && args != null) {
             for (String key : mandatory) {
                 String value = args.get(key);
-                if (value == null || value.isEmpty()) {
+                if (Utils.isEmpty(value)) {
                     error = true;
                     Logging.warn('\'' + myCommand + "' remote control request must have '" + key + "' parameter");
                     missingKeys.add(key);
@@ -337,7 +351,7 @@ public abstract class RequestHandler {
 
     private <T> T get(String key, Function<String, T> parser, Supplier<T> defaultSupplier) {
         String val = args.get(key);
-        return val != null && !val.isEmpty() ? parser.apply(val) : defaultSupplier.get();
+        return !Utils.isEmpty(val) ? parser.apply(val) : defaultSupplier.get();
     }
 
     private boolean get(String key) {
@@ -351,12 +365,11 @@ public abstract class RequestHandler {
     protected DownloadParams getDownloadParams() {
         DownloadParams result = new DownloadParams();
         if (args != null) {
-            result = result
-                .withNewLayer(isLoadInNewLayer())
-                .withLayerName(args.get("layer_name"))
-                .withLocked(get("layer_locked"))
-                .withDownloadPolicy(get("download_policy", DownloadPolicy::of, () -> DownloadPolicy.NORMAL))
-                .withUploadPolicy(get("upload_policy", UploadPolicy::of, () -> UploadPolicy.NORMAL));
+            result.withNewLayer(isLoadInNewLayer())
+                    .withLayerName(args.get("layer_name"))
+                    .withLocked(get("layer_locked"))
+                    .withDownloadPolicy(get("download_policy", DownloadPolicy::of, () -> DownloadPolicy.NORMAL))
+                    .withUploadPolicy(get("upload_policy", UploadPolicy::of, () -> UploadPolicy.NORMAL));
         }
         return result;
     }
@@ -415,9 +428,33 @@ public abstract class RequestHandler {
 
         /**
          * Constructs a new {@code RequestHandlerErrorException}.
+         * @param message the detail message. The detail message is saved for later retrieval by the {@link #getMessage()} method.
+         * @since 17330
+         */
+        public RequestHandlerErrorException(String message) {
+            super(message);
+        }
+
+        /**
+         * Constructs a new {@code RequestHandlerErrorException}.
          * @param cause the cause (which is saved for later retrieval by the {@link #getCause()} method).
          */
         public RequestHandlerErrorException(Throwable cause) {
+            super(cause);
+        }
+    }
+
+    /**
+     * Error raised for OSM API errors.
+     * @since 17330
+     */
+    public static class RequestHandlerOsmApiException extends RequestHandlerErrorException {
+
+        /**
+         * Constructs a new {@code RequestHandlerOsmApiException}.
+         * @param cause the cause (which is saved for later retrieval by the {@link #getCause()} method).
+         */
+        public RequestHandlerOsmApiException(OsmApiException cause) {
             super(cause);
         }
     }
@@ -468,7 +505,7 @@ public abstract class RequestHandler {
     }
 
     /**
-     * Handler that takes an URL as parameter.
+     * Handler that takes a URL as a parameter.
      */
     public abstract static class RawURLParseRequestHandler extends RequestHandler {
         @Override

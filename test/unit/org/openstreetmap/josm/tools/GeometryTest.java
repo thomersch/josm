@@ -1,52 +1,60 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.tools;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
-import org.junit.Assert;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.coor.EastNorth;
+import org.openstreetmap.josm.data.coor.ILatLon;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.DataSet;
+import org.openstreetmap.josm.data.osm.IPrimitive;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Relation;
 import org.openstreetmap.josm.data.osm.RelationMember;
 import org.openstreetmap.josm.data.osm.Way;
+import org.openstreetmap.josm.data.osm.WaySegment;
 import org.openstreetmap.josm.data.osm.search.SearchCompiler;
+import org.openstreetmap.josm.data.projection.Projection;
+import org.openstreetmap.josm.data.projection.ProjectionRegistry;
+import org.openstreetmap.josm.data.projection.Projections;
 import org.openstreetmap.josm.io.OsmReader;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
 /**
  * Unit tests of {@link Geometry} class.
  */
-public class GeometryTest {
-    /**
-     * Primitives need preferences and projection.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences().projection();
-
+@BasicPreferences
+@org.openstreetmap.josm.testutils.annotations.Projection
+class GeometryTest {
     /**
      * Test of {@link Geometry#getLineLineIntersection} method.
      */
     @Test
-    public void testLineLineIntersection() {
+    void testLineLineIntersection() {
         EastNorth p1 = new EastNorth(-9477809.106349014, 1.5392960539974203E7);
         EastNorth p2 = new EastNorth(-9477813.789091509, 1.5392954297092048E7);
         EastNorth p3 = new EastNorth(-9477804.974058038, 1.539295490030348E7);
@@ -54,6 +62,7 @@ public class GeometryTest {
 
         EastNorth intersectionPoint = Geometry.getLineLineIntersection(p1, p2, p3, p4);
 
+        assertNotNull(intersectionPoint);
         EastNorth d1 = p3.subtract(intersectionPoint);
         EastNorth d2 = p1.subtract(p2);
         Double crossProduct = d1.east()*d2.north() - d1.north()*d2.east();
@@ -61,17 +70,13 @@ public class GeometryTest {
         Double len1 = d1.length();
         Double len2 = d2.length();
 
-        Double angle1 = Geometry.getCornerAngle(p1, p2, intersectionPoint);
-        Double angle2 = Geometry.getCornerAngle(p3, p4, intersectionPoint);
-        Assert.assertTrue("intersection point not on line, angle: " + angle1,
-                Math.abs(angle1) < 1e-10);
-        Assert.assertTrue("intersection point not on line, angle: " + angle2,
-                Math.abs(angle1) < 1e-10);
+        double angle1 = Geometry.getCornerAngle(p1, p2, intersectionPoint);
+        double angle2 = Geometry.getCornerAngle(p3, p4, intersectionPoint);
+        assertTrue(Math.abs(angle1) < 1e-10, "intersection point not on line, angle: " + angle1);
+        assertTrue(Math.abs(angle1) < 1e-10, "intersection point not on line, angle: " + angle2);
 
-        Assert.assertTrue("cross product != 1 : " + Math.abs(crossProduct/len1/len2),
-                Math.abs(Math.abs(crossProduct/len1/len2) - 1) < 1e-10);
-        Assert.assertTrue("scalar product != 0 : " + scalarProduct/len1/len2,
-                Math.abs(scalarProduct/len1/len2) < 1e-10);
+        assertTrue(Math.abs(Math.abs(crossProduct/len1/len2) - 1) < 1e-10, "cross product != 1 : " + Math.abs(crossProduct/len1/len2));
+        assertTrue(Math.abs(scalarProduct/len1/len2) < 1e-10, "scalar product != 0 : " + scalarProduct/len1/len2);
     }
 
     /**
@@ -80,13 +85,13 @@ public class GeometryTest {
      * @throws Exception if an error occurs
      */
     @Test
-    public void testClosedWayArea() throws Exception {
+    void testClosedWayArea() throws Exception {
         try (InputStream in = Files.newInputStream(Paths.get(TestUtils.getTestDataRoot(), "create_multipolygon.osm"))) {
             DataSet ds = OsmReader.parseDataSet(in, null);
             Way closedWay = (Way) SubclassFilteredCollection.filter(ds.allPrimitives(),
                     SearchCompiler.compile("landuse=forest")).iterator().next();
-            Assert.assertEquals(5760015.7353515625, Geometry.closedWayArea(closedWay), 1e-3);
-            Assert.assertEquals(5760015.7353515625, Geometry.computeArea(closedWay), 1e-3);
+            assertEquals(5760015.7353515625, Geometry.closedWayArea(closedWay), 1e-3);
+            assertEquals(5760015.7353515625, Geometry.computeArea(closedWay), 1e-3);
         }
     }
 
@@ -96,12 +101,12 @@ public class GeometryTest {
      * @throws Exception if an error occurs
      */
     @Test
-    public void testMultipolygonArea() throws Exception {
+    void testMultipolygonArea() throws Exception {
         try (InputStream in = Files.newInputStream(Paths.get(TestUtils.getTestDataRoot(), "multipolygon.osm"))) {
             DataSet ds = OsmReader.parseDataSet(in, null);
             final Relation r = ds.getRelations().iterator().next();
-            Assert.assertEquals(4401735.20703125, Geometry.multipolygonArea(r), 1e-3);
-            Assert.assertEquals(4401735.20703125, Geometry.computeArea(r), 1e-3);
+            assertEquals(4401735.20703125, Geometry.multipolygonArea(r), 1e-3);
+            assertEquals(4401735.20703125, Geometry.computeArea(r), 1e-3);
         }
     }
 
@@ -111,14 +116,14 @@ public class GeometryTest {
      * @throws Exception if an error occurs
      */
     @Test
-    public void testAreaAndPerimeter() throws Exception {
+    void testAreaAndPerimeter() throws Exception {
         try (InputStream in = Files.newInputStream(Paths.get(TestUtils.getTestDataRoot(), "create_multipolygon.osm"))) {
             DataSet ds = OsmReader.parseDataSet(in, null);
             Way closedWay = (Way) SubclassFilteredCollection.filter(ds.allPrimitives(),
                     SearchCompiler.compile("landuse=forest")).iterator().next();
             Geometry.AreaAndPerimeter areaAndPerimeter = Geometry.getAreaAndPerimeter(closedWay.getNodes());
-            Assert.assertEquals(12495000., areaAndPerimeter.getArea(), 1e-3);
-            Assert.assertEquals(15093.201209424187, areaAndPerimeter.getPerimeter(), 1e-3);
+            assertEquals(12495000., areaAndPerimeter.getArea(), 1e-3);
+            assertEquals(15093.201209424187, areaAndPerimeter.getPerimeter(), 1e-3);
         }
     }
 
@@ -126,7 +131,7 @@ public class GeometryTest {
      * Test of {@link Geometry#getNormalizedAngleInDegrees(double)} method.
      */
     @Test
-    public void testRightAngle() {
+    void testRightAngle() {
         Node n1 = new Node(1);
         Node n2 = new Node(2);
         Node n3 = new Node(3);
@@ -154,15 +159,84 @@ public class GeometryTest {
         assertEquals(162.66381817961337, angle, 1e-5);
     }
 
+    static Stream<Arguments> testCentroid() {
+        // The expected values use the BigDecimal calculations
+        return Stream.of(
+            Arguments.of(new LatLon(54.10310051693397, 12.094459783282147),
+                new LatLon[]{
+                    new LatLon(54.1031207, 12.094513),
+                    new LatLon(54.1030973, 12.0945423),
+                    new LatLon(54.1031188, 12.0944413),
+                    new LatLon(54.1030578, 12.0945178),
+                    new LatLon(54.1030658, 12.0944275),
+                    new LatLon(54.1030826, 12.0945434),
+                    new LatLon(54.1031079, 12.0944243),
+                    new LatLon(54.1030515, 12.094495),
+                    new LatLon(54.103094, 12.0944157),
+                    new LatLon(54.1031257, 12.0944893),
+                    new LatLon(54.1030687, 12.0945348),
+                    new LatLon(54.1031251, 12.0944641),
+                    new LatLon(54.1030792, 12.0944168),
+                    new LatLon(54.1030508, 12.0944698),
+                    new LatLon(54.1030559, 12.0944461),
+                    new LatLon(54.1031107, 12.0945316)
+                }),
+            Arguments.of(new LatLon(54.10309639216633, 12.09463150330365),
+                new LatLon[]{new LatLon(54.1031205, 12.094653),
+                    new LatLon(54.1030621, 12.0946675),
+                    new LatLon(54.1030866, 12.0946874),
+                    new LatLon(54.1030732, 12.0946816),
+                    new LatLon(54.1030766, 12.0945701),
+                    new LatLon(54.1031148, 12.0945865),
+                    new LatLon(54.1031122, 12.0946719),
+                    new LatLon(54.1030551, 12.0946473),
+                    new LatLon(54.1031037, 12.0945724),
+                    new LatLon(54.1031003, 12.094684),
+                    new LatLon(54.1030647, 12.0945821),
+                    new LatLon(54.1031219, 12.0946068),
+                    new LatLon(54.1031239, 12.0946301),
+                    new LatLon(54.1030903, 12.0945667),
+                    new LatLon(54.1030564, 12.0946011),
+                    new LatLon(54.1030531, 12.0946239)
+                }),
+                Arguments.of(new LatLon(54.103185854296896, 12.09457804609505),
+                    new LatLon[] {
+                        new LatLon(54.1031981, 12.0945501),
+                        new LatLon(54.1031782, 12.0945501),
+                        new LatLon(54.1031726, 12.0946082),
+                        new LatLon(54.1031955, 12.0946015)
+                    }),
+                Arguments.of(new LatLon(54.103180913681705, 12.094425831813119),
+                    new LatLon[] {
+                        new LatLon(54.1032057, 12.0943903),
+                        new LatLon(54.1031517, 12.0944053),
+                        new LatLon(54.1031877, 12.0943743),
+                        new LatLon(54.1031697, 12.0943743),
+                        new LatLon(54.1031517, 12.0944353),
+                        new LatLon(54.1031697, 12.0944663),
+                        new LatLon(54.1031877, 12.0944663),
+                        new LatLon(54.1032057, 12.0944363)
+                    })
+        );
+    }
+
+    @ParameterizedTest
+    @MethodSource
+    void testCentroid(LatLon expected, LatLon... coordinates) {
+        LatLon actual = ProjectionRegistry.getProjection()
+                .eastNorth2latlon(Geometry.getCentroid(Stream.of(coordinates).map(Node::new).collect(Collectors.toList())));
+        assertTrue(expected.equalsEpsilon((ILatLon) actual), "Expected " + expected + " but got " + actual);
+    }
+
     /**
      * Test of {@link Geometry#getCentroidEN} method.
      */
     @Test
-    public void testCentroidEN() {
+    void testCentroidEN() {
         EastNorth en1 = new EastNorth(100, 200);
         EastNorth en2 = new EastNorth(150, 400);
         EastNorth en3 = new EastNorth(200, 200);
-        assertEquals(en1, Geometry.getCentroidEN(Arrays.asList(en1)));
+        assertEquals(en1, Geometry.getCentroidEN(Collections.singletonList(en1)));
         assertEquals(new EastNorth(125, 300), Geometry.getCentroidEN(Arrays.asList(en1, en2)));
         assertEquals(new EastNorth(150, 266d + 2d/3d), Geometry.getCentroidEN(Arrays.asList(en1, en2, en3)));
     }
@@ -172,7 +246,7 @@ public class GeometryTest {
      * Test of {@link Geometry#polygonIntersection} method with two triangles.
      */
     @Test
-    public void testPolygonIntersectionTriangles() {
+    void testPolygonIntersectionTriangles() {
         Node node1 = new Node(new LatLon(0.0, 1.0));
         Node node2 = new Node(new LatLon(0.0, 2.0));
         Node node3 = new Node(new LatLon(5.0, 1.5));
@@ -203,7 +277,7 @@ public class GeometryTest {
      * Test of {@link Geometry#polygonIntersection} method with two V-shapes
      */
     @Test
-    public void testPolygonIntersectionVShapes() {
+    void testPolygonIntersectionVShapes() {
         Node node1 = new Node(new LatLon(1.0, 1.0));
         Node node2 = new Node(new LatLon(2.0, 2.0));
         Node node3 = new Node(new LatLon(0.9, 1.0));
@@ -233,7 +307,7 @@ public class GeometryTest {
      * See #17652. Triangle crosses outer way of multipolygon.
      */
     @Test
-    public void testIsPolygonInsideMultiPolygon() {
+    void testIsPolygonInsideMultiPolygon() {
         Node node1 = new Node(new LatLon(1.01, 1.0));
         Node node2 = new Node(new LatLon(1.01, 1.1));
         Node node3 = new Node(new LatLon(1.02, 1.05));
@@ -267,7 +341,7 @@ public class GeometryTest {
      * Test of {@link Geometry#filterInsideMultipolygon}
      */
     @Test
-    public void testFilterInsideMultiPolygon() {
+    void testFilterInsideMultiPolygon() {
         Node node1 = new Node(new LatLon(1.01, 1.0));
         Node node2 = new Node(new LatLon(1.01, 1.1));
         Node node3 = new Node(new LatLon(1.02, 1.05));
@@ -294,22 +368,22 @@ public class GeometryTest {
         mp2.addMember(new RelationMember("inner", inner));
         mp2.put("type", "multipolygon");
         assertFalse(Geometry.isPolygonInsideMultiPolygon(w1.getNodes(), mp2, null));
-        assertFalse(Geometry.filterInsideMultipolygon(Arrays.asList(w1), mp2).contains(w1));
+        assertFalse(Geometry.filterInsideMultipolygon(Collections.singletonList(w1), mp2, null).contains(w1));
 
         node4.setCoor(new LatLon(1.006, 0.99));
         // now w1 is inside
         assertTrue(Geometry.isPolygonInsideMultiPolygon(w1.getNodes(), mp2, null));
-        assertTrue(Geometry.filterInsideMultipolygon(Arrays.asList(w1), mp2).contains(w1));
-        assertTrue(Geometry.filterInsideMultipolygon(Arrays.asList(mp1), mp2).contains(mp1));
-        assertTrue(Geometry.filterInsideMultipolygon(Arrays.asList(w1, mp1), mp2).contains(w1));
-        assertTrue(Geometry.filterInsideMultipolygon(Arrays.asList(w1, mp1), mp2).contains(mp1));
+        assertTrue(Geometry.filterInsideMultipolygon(Collections.singletonList(w1), mp2, null).contains(w1));
+        assertTrue(Geometry.filterInsideMultipolygon(Collections.singletonList(mp1), mp2, null).contains(mp1));
+        assertTrue(Geometry.filterInsideMultipolygon(Arrays.asList(w1, mp1), mp2, null).contains(w1));
+        assertTrue(Geometry.filterInsideMultipolygon(Arrays.asList(w1, mp1), mp2, null).contains(mp1));
     }
 
     /**
      * Test of {@link Geometry#getDistance} method.
      */
     @Test
-    public void testGetDistance() {
+    void testGetDistance() {
         Node node1 = new Node(new LatLon(0, 0));
         Node node2 = new Node(new LatLon(0.1, 1));
         Node node3 = new Node(new LatLon(1.1, 0.1));
@@ -360,7 +434,7 @@ public class GeometryTest {
      * Test of {@link Geometry#getClosestPrimitive} method
      */
     @Test
-    public void testGetClosestPrimitive() {
+    void testGetClosestPrimitive() {
         Node node1 = new Node(new LatLon(0, 0));
         Node node2 = new Node(new LatLon(0.1, 1));
         Node node3 = new Node(new LatLon(1.1, 0.1));
@@ -379,7 +453,7 @@ public class GeometryTest {
      * Test of {@link Geometry#getFurthestPrimitive} method
      */
     @Test
-    public void testGetFurthestPrimitive() {
+    void testGetFurthestPrimitive() {
         Node node1 = new Node(new LatLon(0, 0));
         Node node2 = new Node(new LatLon(0, 1.1));
         Node node3 = new Node(new LatLon(1, 0.1));
@@ -406,7 +480,7 @@ public class GeometryTest {
      * Test of {@link Geometry#getClosestWaySegment} method
      */
     @Test
-    public void testGetClosestWaySegment() {
+    void testGetClosestWaySegment() {
         Node node1 = new Node(new LatLon(0, 0));
         Node node2 = new Node(new LatLon(0, 1));
         Node node3 = new Node(new LatLon(0.3, 0.5));
@@ -414,15 +488,15 @@ public class GeometryTest {
         Way way1 = TestUtils.newWay("", node1, node2, node3, node4);
 
         Way closestSegment = Geometry.getClosestWaySegment(way1, new Node(new LatLon(0, 0.5))).toWay();
-        Assert.assertTrue(closestSegment.containsNode(node1));
-        Assert.assertTrue(closestSegment.containsNode(node2));
+        assertTrue(closestSegment.containsNode(node1));
+        assertTrue(closestSegment.containsNode(node2));
     }
 
     /**
      * Test of {@link Geometry#getDistanceSegmentSegment} method
      */
     @Test
-    public void testGetDistanceSegmentSegment() {
+    void testGetDistanceSegmentSegment() {
         Node node1 = new Node(new LatLon(2.0, 2.0));
         Node node2 = new Node(new LatLon(2.0, 3.0));
         Node node3 = new Node(new LatLon(2.3, 2.5));
@@ -467,6 +541,123 @@ public class GeometryTest {
         node3.setCoor(new LatLon(2.09999999, 2.1));
         assertEquals(expected, Geometry.getDistanceSegmentSegment(node1, node2, node3, node4), 0.01);
         assertTrue(expected > Geometry.getDistanceSegmentSegment(node1, node2, node3, node4));
+    }
+
+    static Stream<Arguments> testGetLatLonFrom() {
+        // The projection can quickly explode the test matrix, so only test WGS84 (EPSG:3857). If other projections have
+        // issues, add them to the first list.
+        return TestUtils.createTestMatrix(
+                // Check specific projections
+                Collections.singletonList(Projections.getProjectionByCode("EPSG:3857")),
+                // Check extreme latitudes (degrees)
+                Arrays.asList(0, 89, -89),
+                // Test extreme longitudes (degrees)
+                Arrays.asList(0, -179, 179),
+                // Test various angles (degrees)
+                // This tests cardinal directions, and then some varying angles.
+                // TBH, the cardinal directions should find any issues uncovered by the varying angles,
+                // but it may not.
+                Arrays.asList(0, 90, 180, 270, 45),
+                // Test various distances (meters)
+                Arrays.asList(1, 10_000)
+                ).map(Arguments::of);
+    }
+
+    @ParameterizedTest(name = "[{index}] {3}Â° {4}m @ lat = {1} lon = {2} - {0}")
+    @MethodSource
+    void testGetLatLonFrom(final Projection projection, final double lat, final double lon, final double angle, final double offsetInMeters) {
+        ProjectionRegistry.setProjection(projection);
+        final double offset = offsetInMeters / projection.getMetersPerUnit();
+        final ILatLon original = new LatLon(lat, lon);
+
+        final ILatLon actual = Geometry.getLatLonFrom(original, Math.toRadians(angle), offset);
+        // Due to degree -> radian -> degree conversion, there is a limit to how precise it can be
+        assertEquals(offsetInMeters, original.greatCircleDistance(actual), 0.000_000_1);
+        // The docs indicate that this should not be highly precise.
+        assertEquals(angle, Math.toDegrees(original.bearing(actual)), 0.000_001);
+    }
+
+    @Test
+    void testFilterInsidePolygon() {
+        final Way polygon = TestUtils.newWay("", new Node(new LatLon(39.0673254, -108.5610777)),
+                new Node(new LatLon(39.0672673, -108.561012)),
+                new Node(new LatLon(39.0673414, -108.5609747)));
+        polygon.addNode(polygon.firstNode());
+        final Node out1 = new Node(new LatLon(39.0673259, -108.5610835));
+        final Node out2 = new Node(new LatLon(39.067263, -108.5610113));
+        final Node out3 = new Node(new LatLon(39.0673434, -108.5609708));
+        final Node out4 = new Node(new LatLon(39.067336, -108.5610312));
+        final Node out5 = new Node(new LatLon(39.0672963, -108.5610448));
+        final Node in1 = new Node(new LatLon(39.0672965, -108.5610446));
+        final Node in2 = new Node(new LatLon(39.0673009, -108.5609964));
+        final Node in3 = new Node(new LatLon(39.0673315, -108.5610294));
+        int i = 1;
+        for (final Node node : Arrays.asList(out1, out2, out3, out4, out5)) {
+            node.put("name", "out" + i++);
+        }
+        i = 1;
+        for (final Node node : Arrays.asList(in1, in2, in3)) {
+            node.put("name", "in" + i++);
+        }
+        // Not closed, ignored
+        final Way win1 = TestUtils.newWay("name=win1", in1, in2, in3);
+        final Way win2 = TestUtils.newWay("name=win2", in1, in2, in3, in1);
+        final Way wout1 = TestUtils.newWay("name=wout1", out1, out2, out3, out1);
+        final Relation rin1 = TestUtils.newRelation("type=multipolygon name=rin1", new RelationMember("outer", win2));
+        // Ignored, not multipolygon
+        final Relation rin2 = TestUtils.newRelation("name=rin2", new RelationMember("outer", win2));
+        // Ignored, sole outer is not closed
+        final Relation rin3 = TestUtils.newRelation("type=multipolygon name=rin3", new RelationMember("outer", win1));
+        final Relation rout1 = TestUtils.newRelation("type=multipolygon name=rout1", new RelationMember("outer", wout1));
+        final Collection<IPrimitive> result = Geometry.filterInsidePolygon(Arrays.asList(out1, out2, out3, out4, out5, in1, in2, in3,
+                win1, win2, wout1, rin1, rin2, rin3, rout1), polygon);
+        assertAll(() -> assertTrue(result.contains(in1)),
+                () -> assertTrue(result.contains(in2)),
+                () -> assertTrue(result.contains(in3)),
+                () -> assertTrue(result.contains(win2)),
+                () -> assertTrue(result.contains(rin1)));
+        assertEquals(5, result.size(), () -> {
+            final List<IPrimitive> notExpected = new ArrayList<>(result);
+            notExpected.removeAll(Arrays.asList(in1, in2, in3, win2, rin1));
+            return notExpected.stream().map(p -> p.get("name")).collect(Collectors.joining("\n"));
+        });
+    }
+
+    /**
+     * A non-regression test for an issue found during the investigation of #22684 (see comment:3 by GerdP)
+     */
+    @Test
+    void testNonRegression22684() {
+        final EastNorth centroid1 = assertDoesNotThrow(() -> Geometry.getCentroid(Collections.singletonList(new Node())));
+        assertNull(centroid1);
+        final EastNorth centroid2 = assertDoesNotThrow(() -> Geometry.getCentroid(Arrays.asList(new Node(LatLon.ZERO), new Node())));
+        assertTrue(new EastNorth(0, 0).equalsEpsilon(centroid2, 1e-9));
+        final EastNorth centroid3 = assertDoesNotThrow(
+                () -> Geometry.getCentroid(Arrays.asList(new Node(LatLon.ZERO), new Node(), new Node(LatLon.ZERO))));
+        assertTrue(new EastNorth(0, 0).equalsEpsilon(centroid3, 1e-9));
+    }
+
+    /**
+     * A non-regression test for an issue found in #24485
+     * Test of {@link Geometry#getClosestWaySegment} method when DataSet is read-only.
+     */
+    @Test
+    void testNonRegression24485() {
+        Node node1 = new Node(new LatLon(0, 0));
+        Node node2 = new Node(new LatLon(0, 1));
+        Node node3 = new Node(new LatLon(0.3, 0.5));
+        Node node4 = new Node(new LatLon(0.1, 0));
+        Way way1 = TestUtils.newWay("", node1, node2, node3, node4);
+
+        DataSet ds = new DataSet();
+        way1.getNodes().forEach(n -> ds.addPrimitive(n));
+        ds.addPrimitive(way1);
+        ds.lock();
+        WaySegment closestSegment = Geometry.getClosestWaySegment(way1, new Node(new LatLon(0, 0.5)));
+        ds.unlock();
+        Way closestSegmentWay = closestSegment.toWay();
+        assertTrue(closestSegmentWay.containsNode(node1));
+        assertTrue(closestSegmentWay.containsNode(node2));
     }
 
 }

@@ -1,49 +1,55 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.osm;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNotSame;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
+import java.io.File;
+import java.io.IOException;
 import java.io.StringWriter;
 import java.time.Instant;
 import java.util.Arrays;
-import java.util.Date;
+import java.util.List;
+import java.util.function.BiConsumer;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.openstreetmap.josm.TestUtils;
+import org.openstreetmap.josm.data.conflict.Conflict;
+import org.openstreetmap.josm.data.conflict.ConflictCollection;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.projection.ProjectionRegistry;
 import org.openstreetmap.josm.data.projection.Projections;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-import org.openstreetmap.josm.tools.date.DateUtils;
+import org.openstreetmap.josm.gui.layer.OsmDataLayer;
+import org.openstreetmap.josm.gui.progress.NullProgressMonitor;
+import org.openstreetmap.josm.io.IllegalDataException;
+import org.openstreetmap.josm.io.session.SessionReader;
+import org.openstreetmap.josm.tools.Logging;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 /**
  * Unit tests for class {@link DataSetMerger}.
  */
-public class DataSetMergerTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+class DataSetMergerTest {
     private DataSet my;
     private DataSet their;
 
     /**
      * Setup test.
      */
-    @Before
+    @BeforeEach
     public void setUp() {
         my = new DataSet();
         my.setVersion("0.6");
@@ -66,7 +72,7 @@ public class DataSetMergerTest {
             fail(result);
     }
 
-    @After
+    @AfterEach
     public void checkDatasets() {
         runConsistencyTests(my);
         runConsistencyTests(their);
@@ -74,12 +80,12 @@ public class DataSetMergerTest {
 
     /**
      * two identical nodes, even in id and version. No conflict expected.
-     *
+     * <p>
      * Can happen if data is loaded in two layers and then merged from one layer
      * on the other.
      */
     @Test
-    public void testNodeSimpleIdenticalNoConflict() {
+    void testNodeSimpleIdenticalNoConflict() {
         Node n = new Node(LatLon.ZERO);
         n.setOsmId(1, 1);
         n.setModified(false);
@@ -113,7 +119,7 @@ public class DataSetMergerTest {
      * => their version is going to be the merged version
      */
     @Test
-    public void testNodeSimpleLocallyUnmodifiedNoConflict() {
+    void testNodeSimpleLocallyUnmodifiedNoConflict() {
         Node n = new Node(LatLon.ZERO);
         n.setOsmId(1, 1);
         n.setModified(false);
@@ -148,12 +154,12 @@ public class DataSetMergerTest {
     /**
      * Node with same id, my is modified, their has a higher version
      * => results in a conflict
-     *
+     * <p>
      * Use case: node which is modified locally and updated by another mapper on
      * the server
      */
     @Test
-    public void testNodeSimpleTagConflict() {
+    void testNodeSimpleTagConflict() {
         Node n = new Node(LatLon.ZERO);
         n.setOsmId(1, 1);
         n.setModified(true);
@@ -182,12 +188,12 @@ public class DataSetMergerTest {
     /**
      * node with same id, my is deleted, their has a higher version
      * => results in a conflict
-     *
+     * <p>
      * Use case: node which is deleted locally and updated by another mapper on
      * the server
      */
     @Test
-    public void testNodeSimpleDeleteConflict() {
+    void testNodeSimpleDeleteConflict() {
         Node n = new Node(1, 1);
         n.setCoor(LatLon.ZERO);
         n.setDeleted(true);
@@ -217,7 +223,7 @@ public class DataSetMergerTest {
      * => mine has precedence
      */
     @Test
-    public void testNodeSimpleDeleteConflict2() {
+    void testNodeSimpleDeleteConflict2() {
         Node n = new Node(LatLon.ZERO);
         n.setOsmId(1, 1);
         n.setDeleted(true);
@@ -241,11 +247,11 @@ public class DataSetMergerTest {
 
     /**
      * My and their node are new but semantically equal. My node is deleted.
-     *
+     * <p>
      * => Ignore my node, no conflict
      */
     @Test
-    public void testNodeSimpleDeleteConflict3() {
+    void testNodeSimpleDeleteConflict3() {
         Node n = new Node(new LatLon(1, 1));
         n.setDeleted(true);
         my.addPrimitive(n);
@@ -264,11 +270,11 @@ public class DataSetMergerTest {
 
     /**
      * My and their node are new but semantically equal. Both are deleted.
-     *
+     * <p>
      * => take mine
      */
     @Test
-    public void testNodeSimpleDeleteConflict4() {
+    void testNodeSimpleDeleteConflict4() {
         Node n = new Node(new LatLon(1, 1));
         n.setDeleted(true);
         my.addPrimitive(n);
@@ -289,11 +295,11 @@ public class DataSetMergerTest {
     /**
      * their node has no assigned id (id == 0) and is semantically equal to one of my
      * nodes with id == 0
-     *
+     * <p>
      * => merge it onto my node.
      */
     @Test
-    public void testNodeSimpleNoIdSemanticallyEqual() {
+    void testNodeSimpleNoIdSemanticallyEqual() {
 
         User myUser = User.createOsmUser(1111, "my");
 
@@ -303,14 +309,14 @@ public class DataSetMergerTest {
         n.setCoor(LatLon.ZERO);
         n.put("key1", "value1");
         n.setUser(myUser);
-        n.setTimestamp(new Date());
+        n.setInstant(Instant.now());
 
         my.addPrimitive(n);
 
         Node n1 = new Node();
         n1.setCoor(LatLon.ZERO);
         n1.put("key1", "value1");
-        n1.setTimestamp(Date.from(Instant.now().plusSeconds(3600)));
+        n1.setInstant(Instant.now().plusSeconds(3600));
         n1.setUser(theirUser);
         their.addPrimitive(n1);
 
@@ -329,11 +335,11 @@ public class DataSetMergerTest {
 
     /**
      * my node is incomplete, their node is complete
-     *
+     * <p>
      * => merge it onto my node. My node becomes complete
      */
     @Test
-    public void testNodeSimpleIncompleteNode() {
+    void testNodeSimpleIncompleteNode() {
 
         Node n = new Node(1);
         my.addPrimitive(n);
@@ -342,7 +348,7 @@ public class DataSetMergerTest {
         n1.setCoor(LatLon.ZERO);
         n1.setOsmId(1, 1);
         n1.put("key1", "value1");
-        n1.setTimestamp(new Date());
+        n1.setInstant(Instant.now());
         their.addPrimitive(n1);
 
         DataSetMerger visitor = new DataSetMerger(my, their);
@@ -359,11 +365,11 @@ public class DataSetMergerTest {
     /**
      * their way has a higher version and different tags. the nodes are the same. My
      * way is not modified. Merge is possible. No conflict.
-     *
+     * <p>
      * => merge it onto my way.
      */
     @Test
-    public void testWaySimpleIdenticalNodesDifferentTags() {
+    void testWaySimpleIdenticalNodesDifferentTags() {
 
         // -- the target dataset
 
@@ -431,11 +437,11 @@ public class DataSetMergerTest {
     /**
      * their way has a higher version and different tags. And it has more nodes. Two
      * of the existing nodes are modified.
-     *
+     * <p>
      * => merge it onto my way, no conflict
      */
     @Test
-    public void testWaySimpleAdditionalNodesAndChangedNodes() {
+    void testWaySimpleAdditionalNodesAndChangedNodes() {
 
         // -- my data set
 
@@ -492,7 +498,7 @@ public class DataSetMergerTest {
         assertEquals("value1", merged.getNode(2).get("key1"));
 
         assertSame(merged.getNode(0), n1);
-        assertNotSame(merged.getNode(1), n5); // must be clone of the original node in their
+        assertNotSame(merged.getNode(1), n5); // must be a clone of the original node in their
         assertSame(merged.getNode(2), n2);
 
         assertFalse(merged.isModified());  // the target wasn't modified before merging, it mustn't be after merging
@@ -500,11 +506,11 @@ public class DataSetMergerTest {
 
     /**
      * their way has a higher version and different nodes. My way is modified.
-     *
+     * <p>
      * => merge onto my way not possible, create a conflict
      */
     @Test
-    public void testWaySimpleDifferentNodesAndMyIsModified() {
+    void testWaySimpleDifferentNodesAndMyIsModified() {
 
         // -- the target dataset
 
@@ -564,11 +570,11 @@ public class DataSetMergerTest {
 
     /**
      * their way is not visible anymore.
-     *
+     * <p>
      * => conflict
      */
     @Test
-    public void testWaySimpleTheirVersionNotVisibleMyIsModified() {
+    void testWaySimpleTheirVersionNotVisibleMyIsModified() {
 
         Node mn1 = new Node(LatLon.ZERO);
         mn1.setOsmId(1, 1);
@@ -610,7 +616,7 @@ public class DataSetMergerTest {
      * their way can be merged on my way. No conflict.
      */
     @Test
-    public void testWaySimpleTwoWaysWithNoIdNodesWithId() {
+    void testWaySimpleTwoWaysWithNoIdNodesWithId() {
 
         // -- my data set
 
@@ -642,7 +648,7 @@ public class DataSetMergerTest {
         theirWay.addNode(n4);
         User user = User.createOsmUser(1111, "their");
         theirWay.setUser(user);
-        theirWay.setTimestamp(new Date());
+        theirWay.setInstant(Instant.now());
         their.addPrimitive(theirWay);
 
         DataSetMerger visitor = new DataSetMerger(my, their);
@@ -667,7 +673,7 @@ public class DataSetMergerTest {
      * their way can be merged on my way. No conflict.
      */
     @Test
-    public void testWaySimpleTwoWaysWithNoIdNodesWithoutId() {
+    void testWaySimpleTwoWaysWithNoIdNodesWithoutId() {
 
         // -- my data set
 
@@ -695,7 +701,7 @@ public class DataSetMergerTest {
         theirWay.addNode(n4);
         User user = User.createOsmUser(1111, "their");
         theirWay.setUser(user);
-        theirWay.setTimestamp(new Date());
+        theirWay.setInstant(Instant.now());
         their.addPrimitive(theirWay);
 
         DataSetMerger visitor = new DataSetMerger(my, their);
@@ -717,12 +723,12 @@ public class DataSetMergerTest {
     /**
      * My dataset includes a deleted node.
      * Their dataset includes a way with three nodes, the first one being my node.
-     *
+     * <p>
      * => the merged way should include all three nodes. Deleted node should have deleted=false and
      * special conflict with isDeleted should exist
      */
     @Test
-    public void testWayComplexMergingADeletedNode() {
+    void testWayComplexMergingADeletedNode() {
 
         // -- my dataset
 
@@ -750,7 +756,7 @@ public class DataSetMergerTest {
         theirWay.addNode(tn2);
         theirWay.addNode(tn3);
         theirWay.setUser(User.createOsmUser(1111, "their"));
-        theirWay.setTimestamp(new Date());
+        theirWay.setInstant(Instant.now());
         their.addPrimitive(theirWay);
 
         DataSetMerger visitor = new DataSetMerger(my, their);
@@ -771,12 +777,12 @@ public class DataSetMergerTest {
     /**
      * My dataset includes a deleted node.
      * Their dataset includes a relation with three nodes, the first one being my node.
-     *
+     * <p>
      * => the merged relation should include all three nodes. There should be conflict for deleted
      * node with isMyDeleted set
      */
     @Test
-    public void testRelationComplexMergingADeletedNode() {
+    void testRelationComplexMergingADeletedNode() {
 
         Node mn1 = new Node(LatLon.ZERO);
         mn1.setOsmId(1, 1);
@@ -821,11 +827,11 @@ public class DataSetMergerTest {
 
     /**
      * Merge an incomplete way with two incomplete nodes into an empty dataset.
-     *
+     * <p>
      * Use case: a way loaded with a multiget, i.e. GET /api/0.6/ways?ids=123456
      */
     @Test
-    public void testNewIncompleteWay() {
+    void testNewIncompleteWay() {
 
         Node n1 = new Node(1);
         their.addPrimitive(n1);
@@ -863,11 +869,11 @@ public class DataSetMergerTest {
 
     /**
      * Merge an incomplete way with two incomplete nodes into a dataset where the way already exists as complete way.
-     *
-     * Use case: a way loaded with a multiget, i.e. GET /api/0.6/ways?ids=123456 after a "Update selection " of this way
+     * <p>
+     * Use case: a way loaded with a multiget, i.e. GET /api/0.6/ways?ids=123456 after an "Update selection " of this way
      */
     @Test
-    public void testIncompleteWayOntoCompleteWay() {
+    void testIncompleteWayOntoCompleteWay() {
 
         // an incomplete node
         Node n1 = new Node(1);
@@ -922,11 +928,11 @@ public class DataSetMergerTest {
      * => both the nodes and the way should be complete in the target dataset after merging
      */
     @Test
-    public void testTwoCompleteNodesOntoAnIncompleteWay() {
+    void testTwoCompleteNodesOntoAnIncompleteWay() {
 
         // -- source dataset
 
-        // an complete node
+        // a complete node
         Node n1 = new Node(1, 1);
         n1.setCoor(new LatLon(1, 1));
         their.addPrimitive(n1);
@@ -973,11 +979,212 @@ public class DataSetMergerTest {
         assertEquals(2, w.getNode(1).getId());
     }
 
+    /**
+     * merge two equal objects with different visibility,
+     * => make sure that DataIntegrityProblemException is thrown.
+     */
+    @Test
+    void testSameVersionAndDifferentVisibility() {
+
+        // -- source dataset
+
+        // a complete node
+        Node n1 = new Node(1, 2);
+        n1.setCoor(new LatLon(1, 1));
+        n1.setVisible(true);
+        assertFalse(n1.isModified());
+        their.addPrimitive(n1);
+
+        // --- target dataset
+        // a complete node
+        Node n1b = new Node(1, 2);
+        n1b.setCoor(new LatLon(1, 1));
+        n1b.setVisible(false);
+        assertFalse(n1b.isModified());
+        my.addPrimitive(n1b);
+
+        //-- merge it
+        DataSetMerger visitor = new DataSetMerger(my, their);
+        assertThrows(DataIntegrityProblemException.class, visitor::merge);
+    }
+
+    /**
+     * node without referrers deleted in source
+     */
+    @Test
+    void testDeletedSingleNode() {
+
+        // -- source dataset
+
+        // a complete node
+        Node n1 = new Node(1, 1);
+        n1.setCoor(new LatLon(1, 1));
+        n1.setVisible(true);
+        assertFalse(n1.isModified());
+        their.addPrimitive(n1);
+
+        //-- merge it to create identical copies
+        DataSetMerger visitor = new DataSetMerger(my, their);
+        visitor.merge();
+
+        n1.setDeleted(true);
+
+        visitor = new DataSetMerger(my, their);
+        visitor.merge();
+        OsmPrimitive n1b = my.getPrimitiveById(n1);
+        assertTrue(n1b.isDeleted());
+    }
+
+    /**
+     * node without referrers deleted in source
+     */
+    @Test
+    void testDeletedSingleNodeWithMonitor() {
+
+        // -- source dataset
+
+        // a complete node
+        Node n1 = new Node(1, 1);
+        n1.setCoor(new LatLon(1, 1));
+        n1.setVisible(true);
+        assertFalse(n1.isModified());
+        their.addPrimitive(n1);
+
+        //-- merge it to create identical copies
+        DataSetMerger visitor = new DataSetMerger(my, their);
+        visitor.merge(NullProgressMonitor.INSTANCE);
+
+        n1.setDeleted(true);
+
+        visitor = new DataSetMerger(my, their);
+        visitor.merge(NullProgressMonitor.INSTANCE);
+        OsmPrimitive n1b = my.getPrimitiveById(n1);
+        assertTrue(n1b.isDeleted());
+    }
+
+    /**
+     * Way without referrers deleted in source
+     */
+    @Test
+    void testDeletedWayNoReferrers() {
+
+        // -- source dataset
+
+        // a complete way with two nodes
+        Node n1 = new Node(1, 1);
+        n1.setCoor(new LatLon(1, 1));
+        Node n2 = new Node(2, 1);
+        n2.setCoor(new LatLon(1, 1));
+        n1.setVisible(true);
+        n2.setVisible(true);
+        their.addPrimitive(n1);
+        their.addPrimitive(n2);
+        Way w1 = new Way(1, 1);
+        their.addPrimitive(w1);
+        w1.addNode(n1);
+        w1.addNode(n2);
+        w1.setVisible(true);
+        w1.setModified(false);
+        assertFalse(n1.isModified());
+        assertFalse(n2.isModified());
+        assertFalse(w1.isModified());
+
+        //-- merge it to create identical copies
+        DataSetMerger visitor = new DataSetMerger(my, their);
+        visitor.merge();
+
+        w1.setDeleted(true);
+
+        visitor = new DataSetMerger(my, their);
+        visitor.merge();
+        OsmPrimitive w1b = my.getPrimitiveById(w1);
+        assertTrue(w1b.isDeleted());
+    }
+
+    /**
+     * Dependency loop in relations, both deleted in source
+     * => make sure that DataIntegrityProblemException is thrown.
+     */
+    @Test
+    void testDeletedRelationLoop() {
+
+        // -- source dataset
+        Relation r1 = new Relation(1, 1);
+        Relation r2 = new Relation(2, 1);
+        their.addPrimitive(r1);
+        their.addPrimitive(r2);
+        // create dependency loop
+        r1.addMember(new RelationMember("", r2));
+        r2.addMember(new RelationMember("", r1));
+
+        //-- merge it to create identical copies
+        DataSetMerger visitor = new DataSetMerger(my, their);
+        visitor.merge();
+
+        r1.setMembers(null);
+        r2.setMembers(null);
+        r1.setDeleted(true);
+        r2.setDeleted(true);
+        visitor = new DataSetMerger(my, their);
+        visitor.merge();
+
+        OsmPrimitive r1b = my.getPrimitiveById(r1);
+        OsmPrimitive r2b = my.getPrimitiveById(r2);
+        assertTrue(r1b.isDeleted());
+        assertTrue(r2b.isDeleted());
+    }
+
+    /**
+     * Way is deleted in my but member of relation in their
+     */
+    @Test
+    void testDeletedWayStillMemberOfRelation() {
+
+        // -- source dataset
+        Node n1 = new Node(1, 1);
+        n1.setCoor(new LatLon(1, 1));
+        Node n2 = new Node(2, 1);
+        n2.setCoor(new LatLon(1, 1));
+        n1.setVisible(true);
+        n2.setVisible(true);
+        their.addPrimitive(n1);
+        their.addPrimitive(n2);
+        Way w1 = new Way(1, 1);
+        their.addPrimitive(w1);
+        w1.addNode(n1);
+        w1.addNode(n2);
+        w1.setVisible(true);
+        w1.setModified(false);
+        assertFalse(n1.isModified());
+        assertFalse(n2.isModified());
+        assertFalse(w1.isModified());
+
+        //-- merge it to create identical copies
+        DataSetMerger visitor = new DataSetMerger(my, their);
+        visitor.merge();
+
+        // let relation use the way that is in my dataset
+        Relation r1 = new Relation(1, 1);
+        their.addPrimitive(r1);
+        r1.addMember(new RelationMember("", w1));
+
+        Way myWay = (Way) my.getPrimitiveById(w1);
+        myWay.setNodes(null);
+        myWay.setDeleted(true);
+
+        visitor = new DataSetMerger(my, their);
+        visitor.merge();
+        assertFalse(visitor.getConflicts().isEmpty());
+        assertFalse(myWay.isDeleted());
+        assertTrue(myWay.isEmpty());
+        my.clear(); // prevent error from consistency test
+    }
+
     private void doTestTicket7481(DataSet source, DataSet target) {
         // Local node A
         Node nA = new Node(2848219691L, 1);
         nA.setCoor(LatLon.ZERO);
-        nA.setTimestamp(DateUtils.fromString("2014-05-10T14:25:40Z"));
+        nA.setInstant(Instant.parse("2014-05-10T14:25:40Z"));
         nA.setChangesetId(22251108);
         nA.setUser(User.createOsmUser(385987, "yaho"));
         nA.put("name", "Mionga");
@@ -1008,7 +1215,7 @@ public class DataSetMergerTest {
      * Non-regression test 1 for <a href="https://josm.openstreetmap.de/ticket/7481">Bug #7481</a>.
      */
     @Test
-    public void testTicket07481ab() {
+    void testTicket07481ab() {
         doTestTicket7481(my, their);
     }
 
@@ -1016,7 +1223,7 @@ public class DataSetMergerTest {
      * Non-regression test 2 for <a href="https://josm.openstreetmap.de/ticket/7481">Bug #7481</a>.
      */
     @Test
-    public void testTicket07481ba() {
+    void testTicket07481ba() {
         doTestTicket7481(their, my);
     }
 
@@ -1024,7 +1231,7 @@ public class DataSetMergerTest {
      * Non-regression test for <a href="https://josm.openstreetmap.de/ticket/12599">Bug #12599</a>.
      */
     @Test
-    public void testTicket12599() {
+    void testTicket12599() {
         // Server node: no modifications
         Node n1 = new Node(1, 1);
         n1.setCoor(LatLon.ZERO);
@@ -1064,7 +1271,7 @@ public class DataSetMergerTest {
      * Non-regression test for <a href="https://josm.openstreetmap.de/ticket/12616">Bug #12616</a>.
      */
     @Test
-    public void testTicket12616() {
+    void testTicket12616() {
         // Server node: no modifications
         Node n1 = new Node(1, 1);
         n1.setCoor(LatLon.ZERO);
@@ -1098,5 +1305,131 @@ public class DataSetMergerTest {
         assertNotNull(n);
         assertEquals(new LatLon(1, 1), n.getCoor());
         assertTrue(n.isModified());
+    }
+
+    /**
+     * Non-regression test for <a href="https://josm.openstreetmap.de/ticket/19783">Bug #19783</a>.
+     */
+    @Test
+    void testTicket19783() {
+        // Server node: deleted
+        Node n1 = new Node(1, 2);
+        n1.setDeleted(true);
+        n1.setVisible(false);
+        n1.setModified(false);
+        assertFalse(n1.isModified());
+        their.addPrimitive(n1);
+
+        // Local node: one modification: move
+        Node n1b = new Node(1, 1);
+        n1b.setCoor(new LatLon(1, 1));
+        n1.setIncomplete(false);
+        assertFalse(n1b.isModified());
+        my.addPrimitive(n1b);
+        n1b.setDeleted(true);
+        assertTrue(n1b.isModified());
+
+        // Merge
+        DataSetMerger visitor = new DataSetMerger(my, their);
+        visitor.merge();
+
+        // Check that modification is gone and version was merged
+        Node n = (Node) my.getPrimitiveById(1, OsmPrimitiveType.NODE);
+        assertNotNull(n);
+        assertFalse(n.isModified());
+        assertFalse(n.isVisible());
+        assertTrue(n.isDeleted());
+        assertEquals(2, n.getVersion());
+    }
+
+    /**
+     * Non-regression test for <a href="https://josm.openstreetmap.de/ticket/20091">Bug #20091</a>.
+     * Relation refers to incomplete way that ways deleted on server.
+     */
+    @Test
+    void testTicket20091() {
+        // Server way: deleted
+        Way w1 = new Way(1, 2);
+        w1.setDeleted(true);
+        w1.setVisible(false);
+        w1.setModified(false);
+        assertFalse(w1.isModified());
+        their.addPrimitive(w1);
+
+        Way w1b = new Way(1);
+        w1b.setIncomplete(true);
+        my.addPrimitive(w1b);
+        Relation r1 = new Relation(1, 1);
+        r1.addMember(new RelationMember("outer", w1b));
+        r1.setModified(true);
+        my.addPrimitive(r1);
+
+        // Merge
+        DataSetMerger visitor = new DataSetMerger(my, their);
+        visitor.merge();
+
+        assertEquals(1, visitor.getConflicts().size());
+        assertTrue(r1.isModified());
+        assertEquals(w1b, visitor.getConflicts().iterator().next().getMy());
+    }
+
+    static Stream<BiConsumer<Node, Node>> testTicket23846() {
+        return Stream.of(
+                (firstNode, secondNode) -> firstNode.setModified(true),
+                (firstNode, secondNode) -> { /* No modifications */ }
+        );
+    }
+
+    @ParameterizedTest
+    @MethodSource
+    void testTicket23846(BiConsumer<Node, Node> nodeSetup) {
+        final Node firstNode = new Node(1234, 1);
+        final Node secondNode = new Node(1234, 1);
+        final DataSetMerger merge = new DataSetMerger(my, their);
+        firstNode.setCoor(LatLon.ZERO);
+        secondNode.setCoor(LatLon.ZERO);
+        nodeSetup.accept(firstNode, secondNode);
+        my.addPrimitive(firstNode);
+        their.addPrimitive(secondNode);
+        secondNode.setReferrersDownloaded(true);
+        assertFalse(firstNode.isReferrersDownloaded());
+        assertTrue(secondNode.isReferrersDownloaded());
+        merge.merge();
+        assertTrue(firstNode.isReferrersDownloaded());
+        assertTrue(secondNode.isReferrersDownloaded());
+    }
+
+    /**
+     * Non-regression test for <a href="https://josm.openstreetmap.de/ticket/23930">#23930</a>
+     */
+    @Test
+    void testTicket23930() throws IOException, IllegalDataException {
+        final File file = new File(TestUtils.getRegressionDataFile(23930, "JOSM_conflict.joz"));
+        final SessionReader reader = new SessionReader();
+        reader.loadSession(file, true, NullProgressMonitor.INSTANCE);
+        final List<OsmDataLayer> layers = reader.getLayers().stream()
+                .filter(OsmDataLayer.class::isInstance).map(OsmDataLayer.class::cast).collect(Collectors.toList());
+        final DataSet newWay = layers.stream().filter(layer -> layer.getName().equals("new_way.osm"))
+                .map(OsmDataLayer::getDataSet).findFirst().orElseThrow();
+        final DataSet nodeDeleted = layers.stream().filter(layer -> layer.getName().equals("node_deleted.osm"))
+                .map(OsmDataLayer::getDataSet).findFirst().orElseThrow();
+        final DataSetMerger merge = new DataSetMerger(nodeDeleted, newWay);
+        Logging.clearLastErrorAndWarnings();
+        assertDoesNotThrow(() -> merge.merge(NullProgressMonitor.INSTANCE));
+        assertTrue(Logging.getLastErrorAndWarnings().isEmpty(), String.join("\n", Logging.getLastErrorAndWarnings()));
+        final ConflictCollection conflicts = merge.getConflicts();
+        // There are a few differences in the files
+        // 1. New node in layer 2: No need for conflict
+        // 2. node 2427358529: layer 1 deletes it, layer 2 modifies it (conflict required)
+        // 3. new way in layer 2 with new node and node 2427358529 (conflict required)
+        // 4. Modification of way 32277602 in layer 1 removing node 2427358529 (conflict required)
+        // Therefore, conflicts are as follows:
+        // 1. A deleted node (n2427358529) with referrers (w32277602 and new way) and new tags ("fix tag=recheck position")
+        assertEquals(1, conflicts.size());
+        final Conflict<?> conflict = conflicts.iterator().next();
+        final Node myNode = assertInstanceOf(Node.class, conflict.getMy());
+        final Node theirNode = assertInstanceOf(Node.class, conflict.getTheir());
+        assertFalse(theirNode.isDeleted());
+        assertFalse(myNode.isDeleted());
     }
 }

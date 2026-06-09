@@ -6,6 +6,7 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 import javax.swing.text.JTextComponent;
 
 import org.openstreetmap.josm.tools.Logging;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * A text field designed to enter a single OSM changeset ID.
@@ -73,11 +74,11 @@ public class ChangesetIdTextField extends AbstractIdTextField<ChangesetIdTextFie
          */
         public boolean readChangesetId() {
             String value = getComponent().getText();
-            if (value != null && !value.trim().isEmpty()) {
+            if (!Utils.isStripEmpty(value)) {
                 value = value.trim();
                 id = 0;
                 try {
-                    if (value.matches("http.*/changeset/[0-9]+")) {
+                    if (value.matches("http.*/changeset/\\d+")) {
                         // full URL given, extract id
                         value = value.substring(value.lastIndexOf('/') + 1);
                     }

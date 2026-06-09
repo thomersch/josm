@@ -10,11 +10,13 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
+import org.openstreetmap.josm.data.Preferences;
 import org.openstreetmap.josm.gui.PleaseWaitRunnable;
 import org.openstreetmap.josm.gui.progress.NullProgressMonitor;
 import org.openstreetmap.josm.gui.progress.ProgressMonitor;
@@ -82,7 +84,8 @@ public class ReadLocalPluginInformationTask extends PleaseWaitRunnable {
     }
 
     private static File[] listFiles(File pluginsDirectory, final String regex) {
-        return pluginsDirectory.listFiles((FilenameFilter) (dir, name) -> name.matches(regex));
+        final Matcher matcher = Pattern.compile(regex).matcher("");
+        return pluginsDirectory.listFiles((dir, name) -> matcher.reset(name).matches());
     }
 
     protected void scanSiteCacheFiles(ProgressMonitor monitor, File pluginsDirectory) {
@@ -193,17 +196,14 @@ public class ReadLocalPluginInformationTask extends PleaseWaitRunnable {
 
     @Override
     protected void realRun() throws SAXException, IOException, OsmTransferException {
-        Collection<String> pluginLocations = PluginInformation.getPluginLocations();
-        getProgressMonitor().setTicksCount(pluginLocations.size() + 2);
+        getProgressMonitor().setTicksCount(3);
         if (canceled) return;
-        for (String location : pluginLocations) {
-            scanLocalPluginRepository(
-                    getProgressMonitor().createSubTaskMonitor(1, false),
-                    new File(location)
-            );
-            getProgressMonitor().worked(1);
-            if (canceled) return;
-        }
+        scanLocalPluginRepository(
+                getProgressMonitor().createSubTaskMonitor(1, false),
+                Preferences.main().getPluginsDirectory()
+        );
+        getProgressMonitor().worked(1);
+        if (canceled) return;
         analyseInProcessPlugins();
         getProgressMonitor().worked(1);
         if (canceled) return;

@@ -7,6 +7,8 @@ import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Container;
 import java.awt.Font;
+import java.awt.FontMetrics;
+import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.event.MouseWheelEvent;
 import java.awt.event.MouseWheelListener;
@@ -32,6 +34,8 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTabbedPane;
+import javax.swing.SwingConstants;
+import javax.swing.UIManager;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 
@@ -52,7 +56,6 @@ import org.openstreetmap.josm.gui.preferences.display.LanguagePreference;
 import org.openstreetmap.josm.gui.preferences.imagery.ImageryPreference;
 import org.openstreetmap.josm.gui.preferences.map.BackupPreference;
 import org.openstreetmap.josm.gui.preferences.map.MapPaintPreference;
-import org.openstreetmap.josm.gui.preferences.map.MapPreference;
 import org.openstreetmap.josm.gui.preferences.map.TaggingPresetPreference;
 import org.openstreetmap.josm.gui.preferences.plugin.PluginPreference;
 import org.openstreetmap.josm.gui.preferences.projection.ProjectionPreference;
@@ -67,7 +70,6 @@ import org.openstreetmap.josm.gui.util.GuiHelper;
 import org.openstreetmap.josm.plugins.PluginDownloadTask;
 import org.openstreetmap.josm.plugins.PluginHandler;
 import org.openstreetmap.josm.plugins.PluginInformation;
-import org.openstreetmap.josm.tools.CheckParameterUtil;
 import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.Logging;
@@ -114,9 +116,9 @@ public final class PreferenceTabbedPane extends JTabbedPane implements ExpertMod
                 sb.append(PluginPreference.buildDownloadSummary(task));
             }
             if (requiresRestart) {
-                sb.append(tr("You have to restart JOSM for some settings to take effect."));
-                sb.append("<br/><br/>");
-                sb.append(tr("Would you like to restart now?"));
+                sb.append(tr("You have to restart JOSM for some settings to take effect."))
+                    .append("<br/><br/>")
+                    .append(tr("Would you like to restart now?"));
             }
             sb.append("</html>");
 
@@ -137,11 +139,12 @@ public final class PreferenceTabbedPane extends JTabbedPane implements ExpertMod
                     MainApplication.getMenu().restart.actionPerformed(null);
                 }
             } else if (task != null && !task.isCanceled()) {
+                Collection<PluginInformation> failed = task.getFailedPlugins();
                 JOptionPane.showMessageDialog(
                         MainApplication.getMainFrame(),
                         sb.toString(),
-                        tr("Warning"),
-                        JOptionPane.WARNING_MESSAGE
+                        !failed.isEmpty() ? tr("Warning") : tr("Information"),
+                        !failed.isEmpty() ? JOptionPane.WARNING_MESSAGE : JOptionPane.INFORMATION_MESSAGE
                         );
             }
 
@@ -207,20 +210,23 @@ public final class PreferenceTabbedPane extends JTabbedPane implements ExpertMod
         Component getComponent();
     }
 
+    /**
+     * Panel used for preference settings.
+     * @since 4968
+     */
     public static final class PreferencePanel extends JPanel implements PreferenceTab {
         private final transient TabPreferenceSetting preferenceSetting;
 
         private PreferencePanel(TabPreferenceSetting preferenceSetting) {
             super(new GridBagLayout());
-            CheckParameterUtil.ensureParameterNotNull(preferenceSetting);
-            this.preferenceSetting = preferenceSetting;
+            this.preferenceSetting = Objects.requireNonNull(preferenceSetting, "preferenceSetting");
             buildPanel();
         }
 
         private void buildPanel() {
             setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
             JPanel headerPanel = new JPanel(new BorderLayout());
-            add(headerPanel, GBC.eop().fill(GBC.HORIZONTAL));
+            add(headerPanel, GBC.eop().fill(GridBagConstraints.HORIZONTAL));
 
             JLabel label = new JLabel("<html>" +
                     "<b>" + preferenceSetting.getTitle() + "</b><br>" +
@@ -243,17 +249,18 @@ public final class PreferenceTabbedPane extends JTabbedPane implements ExpertMod
         }
     }
 
+    /**
+     * Scroll pane used for large {@link PreferencePanel}s.
+     * @since 4968
+     */
     public static final class PreferenceScrollPane extends JScrollPane implements PreferenceTab {
         private final transient TabPreferenceSetting preferenceSetting;
 
-        private PreferenceScrollPane(Component view, TabPreferenceSetting preferenceSetting) {
-            super(view);
-            this.preferenceSetting = preferenceSetting;
-        }
-
         private PreferenceScrollPane(PreferencePanel preferencePanel) {
-            this(preferencePanel.getComponent(), preferencePanel.getTabPreferenceSetting());
+            super(preferencePanel.getComponent());
+            this.preferenceSetting = preferencePanel.getTabPreferenceSetting();
             GuiHelper.setDefaultIncrement(this);
+            setBorder(BorderFactory.createEmptyBorder());
         }
 
         @Override
@@ -306,15 +313,8 @@ public final class PreferenceTabbedPane extends JTabbedPane implements ExpertMod
      * @return The created panel ready to add other controls.
      */
     public PreferencePanel createPreferenceTab(TabPreferenceSetting caller, boolean inScrollPane) {
-        CheckParameterUtil.ensureParameterNotNull(caller, "caller");
-        PreferencePanel p = new PreferencePanel(caller);
-
-        PreferenceTab tab = p;
-        if (inScrollPane) {
-            PreferenceScrollPane sp = new PreferenceScrollPane(p);
-            tab = sp;
-        }
-        tabs.add(tab);
+        PreferencePanel p = new PreferencePanel(Objects.requireNonNull(caller, "caller"));
+        tabs.add(inScrollPane ? new PreferenceScrollPane(p) : p);
         return p;
     }
 
@@ -326,7 +326,7 @@ public final class PreferenceTabbedPane extends JTabbedPane implements ExpertMod
     }
 
     private void selectTabBy(Predicate<TabPreferenceSetting> predicate) {
-        indexOfTab(predicate).ifPresent(this::setSelectedIndex);
+        setSelectedIndex(indexOfTab(predicate).orElse(0));
     }
 
     /**
@@ -357,8 +357,8 @@ public final class PreferenceTabbedPane extends JTabbedPane implements ExpertMod
             final TabPreferenceSetting tab = sub.getTabPreferenceSetting(this);
             selectTabBy(tps -> tps.equals(tab));
             return tab.selectSubTab(sub);
-        } catch (NoSuchElementException ignore) {
-            Logging.trace(ignore);
+        } catch (NoSuchElementException e) {
+            Logging.trace(e);
             return false;
         }
     }
@@ -383,14 +383,6 @@ public final class PreferenceTabbedPane extends JTabbedPane implements ExpertMod
      */
     public DisplayPreference getDisplayPreference() {
         return getSetting(DisplayPreference.class);
-    }
-
-    /**
-     * Returns the {@code MapPreference} object.
-     * @return the {@code MapPreference} object.
-     */
-    public MapPreference getMapPreference() {
-        return getSetting(MapPreference.class);
     }
 
     /**
@@ -444,7 +436,7 @@ public final class PreferenceTabbedPane extends JTabbedPane implements ExpertMod
         if (preference != null) {
             final Set<PluginInformation> toDownload = preference.getPluginsScheduledForUpdateOrDownload();
             final PluginDownloadTask task;
-            if (toDownload != null && !toDownload.isEmpty()) {
+            if (!Utils.isEmpty(toDownload)) {
                 task = new PluginDownloadTask(this, toDownload, tr("Download plugins"));
             } else {
                 task = null;
@@ -471,11 +463,14 @@ public final class PreferenceTabbedPane extends JTabbedPane implements ExpertMod
      * file, otherwise no change of the file happens.
      */
     public PreferenceTabbedPane() {
-        super(JTabbedPane.LEFT, JTabbedPane.SCROLL_TAB_LAYOUT);
+        super(SwingConstants.LEFT, JTabbedPane.SCROLL_TAB_LAYOUT);
         super.addMouseWheelListener(new WheelListener(this));
         ExpertToggleAction.addExpertModeChangeListener(this);
     }
 
+    /**
+     * Constructs GUI.
+     */
     public void buildGui() {
         Collection<PreferenceSettingFactory> factories = new ArrayList<>(SETTINGS_FACTORIES);
         factories.addAll(PluginHandler.getPreferenceSetting());
@@ -484,6 +479,10 @@ public final class PreferenceTabbedPane extends JTabbedPane implements ExpertMod
         for (PreferenceSettingFactory factory : factories) {
             if (factory != null) {
                 PreferenceSetting setting = factory.createPreferenceSetting();
+                if (setting instanceof TabPreferenceSetting && ((TabPreferenceSetting) setting).getIconName() == null) {
+                    Logging.error("Invalid setting (Icon missing): " + setting.getClass().getName());
+                    setting = null;
+                }
                 if (setting != null) {
                     settings.add(setting);
                 }
@@ -491,39 +490,45 @@ public final class PreferenceTabbedPane extends JTabbedPane implements ExpertMod
         }
         addGUITabs(false);
         super.getModel().addChangeListener(this);
-        setSelectedIndex(-1);
     }
 
-    private void addGUITabsForSetting(Icon icon, TabPreferenceSetting tps) {
+    private void addGUITabsForSetting(Icon icon, TabPreferenceSetting tps, int maxWidth) {
         for (PreferenceTab tab : tabs) {
             if (tab.getTabPreferenceSetting().equals(tps)) {
-                insertGUITabsForSetting(icon, tps, tab.getComponent(), getTabCount());
+                insertGUITabsForSetting(icon, tps, tab.getComponent(), getTabCount(), maxWidth);
             }
         }
     }
 
-    private int insertGUITabsForSetting(Icon icon, TabPreferenceSetting tps, int index) {
+    private int insertGUITabsForSetting(Icon icon, TabPreferenceSetting tps, int index, int maxWidth) {
         int position = index;
         for (PreferenceTab tab : tabs) {
             if (tab.getTabPreferenceSetting().equals(tps)) {
-                insertGUITabsForSetting(icon, tps, tab.getComponent(), position);
+                insertGUITabsForSetting(icon, tps, tab.getComponent(), position, maxWidth);
                 position++;
             }
         }
         return position - 1;
     }
 
-    private void insertGUITabsForSetting(Icon icon, TabPreferenceSetting tps, final Component component, int position) {
-        String title = "<html><div style='width:150px'>" + tps.getTitle();
+    private void insertGUITabsForSetting(Icon icon, TabPreferenceSetting tps, final Component component, int position, int maxWidth) {
+        // macOS / AquaLookAndFeel does not support horizontal tabs, see https://josm.openstreetmap.de/ticket/7548#comment:80
+        String title = "Aqua".equals(UIManager.getLookAndFeel().getID()) ? null : htmlTabTitle(tps.getTitle(), maxWidth);
         insertTab(title, icon, component, tps.getTooltip(), position);
+    }
+
+    private static String htmlTabTitle(String title, int maxWidth) {
+        // Width is set to force left alignment, see https://stackoverflow.com/a/33781096/2257172
+        return "<html><div style='padding-left:5px; width:" + maxWidth + "px'>" + title + "</div></html>";
     }
 
     private void addGUITabs(boolean clear) {
         boolean expert = ExpertToggleAction.isExpert();
-        Component sel = getSelectedComponent();
         if (clear) {
             removeAll();
         }
+        // Compute max tab length in pixels
+        int maxWidth = computeMaxTabWidth();
         // Inspect each tab setting
         for (PreferenceSetting setting : settings) {
             if (setting instanceof TabPreferenceSetting) {
@@ -532,10 +537,10 @@ public final class PreferenceTabbedPane extends JTabbedPane implements ExpertMod
                     ImageIcon icon = tps.getIcon(ImageProvider.ImageSizes.LARGEICON);
                     if (settingsInitialized.contains(tps)) {
                         // If it has been initialized, add corresponding tab(s)
-                        addGUITabsForSetting(icon, tps);
+                        addGUITabsForSetting(icon, tps, maxWidth);
                     } else {
                         // If it has not been initialized, create an empty tab with only icon and tooltip
-                        insertGUITabsForSetting(icon, tps, new PreferencePanel(tps), getTabCount());
+                        insertGUITabsForSetting(icon, tps, new PreferencePanel(tps), getTabCount(), maxWidth);
                     }
                 }
             } else if (!(setting instanceof SubPreferenceSetting)) {
@@ -553,17 +558,25 @@ public final class PreferenceTabbedPane extends JTabbedPane implements ExpertMod
                 Logging.debug("{0}: hiding empty {1}", getClass().getSimpleName(), tps);
             });
         }
-        if (sel != null) {
-            int index = indexOfComponent(sel);
-            if (index > -1) {
-                setSelectedIndex(index);
-            }
-        }
+        setSelectedIndex(-1);
+    }
+
+    private int computeMaxTabWidth() {
+        FontMetrics fm = getFontMetrics(getFont());
+        return settings.stream().filter(TabPreferenceSetting.class::isInstance)
+                .map(TabPreferenceSetting.class::cast).map(TabPreferenceSetting::getTitle)
+                .filter(Objects::nonNull).mapToInt(fm::stringWidth).max().orElse(120);
     }
 
     @Override
     public void expertChanged(boolean isExpert) {
+        Component sel = getSelectedComponent();
         addGUITabs(true);
+        int index = -1;
+        if (sel != null) {
+            index = indexOfComponent(sel);
+        }
+        setSelectedIndex(Math.max(index, 0));
     }
 
     /**
@@ -596,7 +609,6 @@ public final class PreferenceTabbedPane extends JTabbedPane implements ExpertMod
 
         SETTINGS_FACTORIES.add(new ServerAccessPreference.Factory());
         SETTINGS_FACTORIES.add(new ProxyPreference.Factory());
-        SETTINGS_FACTORIES.add(new MapPreference.Factory());
         SETTINGS_FACTORIES.add(new ProjectionPreference.Factory());
         SETTINGS_FACTORIES.add(new MapPaintPreference.Factory());
         SETTINGS_FACTORIES.add(new TaggingPresetPreference.Factory());
@@ -657,12 +669,12 @@ public final class PreferenceTabbedPane extends JTabbedPane implements ExpertMod
                     }
                     Icon icon = getIconAt(index);
                     remove(index);
-                    if (index <= insertGUITabsForSetting(icon, preferenceSettings, index)) {
+                    if (index <= insertGUITabsForSetting(icon, preferenceSettings, index, computeMaxTabWidth())) {
                         setSelectedIndex(index);
                     }
                 } catch (SecurityException ex) {
                     Logging.error(ex);
-                } catch (RuntimeException ex) { // NOPMD
+                } catch (RuntimeException ex) {
                     // allow to change most settings even if e.g. a plugin fails
                     BugReportExceptionHandler.handleException(ex);
                 } finally {
@@ -683,7 +695,7 @@ public final class PreferenceTabbedPane extends JTabbedPane implements ExpertMod
                 sps.addGui(this);
             } catch (SecurityException ex) {
                 Logging.error(ex);
-            } catch (RuntimeException ex) { // NOPMD
+            } catch (RuntimeException ex) {
                 BugReportExceptionHandler.handleException(ex);
             } finally {
                 settingsInitialized.add(sps);

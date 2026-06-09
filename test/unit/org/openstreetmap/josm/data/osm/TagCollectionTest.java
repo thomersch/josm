@@ -1,9 +1,10 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.osm;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Arrays;
 import java.util.Collection;
@@ -16,17 +17,16 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
 /**
  * Tests of {@link TagCollection}.
  * @author Michael Zangl
  */
-public class TagCollectionTest {
+// We need prefs for using primitives
+@BasicPreferences
+class TagCollectionTest {
     private final Tag tagA = new Tag("k", "v");
     private final Tag tagB = new Tag("k", "b");
     private final Tag tagC = new Tag("k2", "b");
@@ -34,13 +34,6 @@ public class TagCollectionTest {
     private final Tag tagEmpty = new Tag("k", "");
     private final Tag tagNullKey = new Tag(null, "b");
     private final Tag tagNullValue = new Tag("k2", null);
-
-    /**
-     * We need prefs for using primitives
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences();
 
     private void assertTagCounts(TagCollection collection, int a, int b, int c, int d) {
         assertEquals(a, collection.getTagOccurrence(tagA));
@@ -53,7 +46,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#from(org.openstreetmap.josm.data.osm.Tagged)}.
      */
     @Test
-    public void testFromTagged() {
+    void testFromTagged() {
         TagCollection c = TagCollection.from(tagA);
         assertTagCounts(c, 1, 0, 0, 0);
 
@@ -71,7 +64,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#from(Map)}.
      */
     @Test
-    public void testFromMapOfStringString() {
+    void testFromMapOfStringString() {
         TagCollection c = TagCollection.from(tagA.getKeys());
         assertTagCounts(c, 1, 0, 0, 0);
 
@@ -89,8 +82,8 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#unionOfAllPrimitives(Collection)}.
      */
     @Test
-    public void testUnionOfAllPrimitivesCollectionOfQextendsTagged() {
-        TagCollection c = TagCollection.unionOfAllPrimitives(Arrays.asList(tagA));
+    void testUnionOfAllPrimitivesCollectionOfQextendsTagged() {
+        TagCollection c = TagCollection.unionOfAllPrimitives(Collections.singletonList(tagA));
         assertEquals(1, c.getTagOccurrence(tagA));
 
         TagCollection d = TagCollection.unionOfAllPrimitives(Arrays.asList(tagA, tagC));
@@ -99,7 +92,7 @@ public class TagCollectionTest {
         TagCollection e = TagCollection.unionOfAllPrimitives((Collection<? extends Tagged>) null);
         assertTagCounts(e, 0, 0, 0, 0);
 
-        TagCollection f = TagCollection.unionOfAllPrimitives(Arrays.<Tagged>asList());
+        TagCollection f = TagCollection.unionOfAllPrimitives(Collections.emptyList());
         assertTagCounts(f, 0, 0, 0, 0);
 
         TagCollection g = TagCollection.unionOfAllPrimitives(Arrays.asList(tagA, tagC, tagC, null));
@@ -110,7 +103,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#TagCollection()}.
      */
     @Test
-    public void testTagCollection() {
+    void testTagCollection() {
         TagCollection c = new TagCollection();
         assertTagCounts(c, 0, 0, 0, 0);
     }
@@ -119,7 +112,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#TagCollection(TagCollection)}.
      */
     @Test
-    public void testTagCollectionTagCollection() {
+    void testTagCollectionTagCollection() {
         TagCollection blueprint = TagCollection.unionOfAllPrimitives(Arrays.asList(tagA, tagC, tagC));
         TagCollection c = new TagCollection(blueprint);
         assertTagCounts(c, 1, 0, 2, 0);
@@ -132,7 +125,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#TagCollection(Collection)}.
      */
     @Test
-    public void testTagCollectionCollectionOfTag() {
+    void testTagCollectionCollectionOfTag() {
         TagCollection c = new TagCollection(Arrays.asList(tagA, tagC, tagC));
         assertTagCounts(c, 1, 0, 2, 0);
 
@@ -144,7 +137,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#size()}.
      */
     @Test
-    public void testSize() {
+    void testSize() {
         TagCollection c = new TagCollection(Arrays.asList(tagA, tagC, tagC));
         assertEquals(2, c.size());
 
@@ -156,7 +149,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#isEmpty()}.
      */
     @Test
-    public void testIsEmpty() {
+    void testIsEmpty() {
         TagCollection c = new TagCollection(Arrays.asList(tagA, tagC, tagC));
         assertFalse(c.isEmpty());
 
@@ -168,7 +161,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#add(Tag)}.
      */
     @Test
-    public void testAddTag() {
+    void testAddTag() {
         TagCollection c = new TagCollection();
         assertTagCounts(c, 0, 0, 0, 0);
         c.add(tagC);
@@ -181,10 +174,10 @@ public class TagCollectionTest {
     }
 
     /**
-     * Test method for {@link TagCollection#getTagOccurence(Tag)}.
+     * Test method for {@link TagCollection#getTagOccurrence}.
      */
     @Test
-    public void testGetTagCount() {
+    void testGetTagCount() {
         TagCollection c = new TagCollection(Arrays.asList(tagA, tagC, tagC));
         assertEquals(2, c.getTagOccurrence(tagC));
         assertEquals(0, c.getTagOccurrence(tagB));
@@ -196,10 +189,10 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#add(Collection)}.
      */
     @Test
-    public void testAddCollectionOfTag() {
+    void testAddCollectionOfTag() {
         TagCollection c = new TagCollection();
         assertTagCounts(c, 0, 0, 0, 0);
-        c.add(Arrays.asList(tagC));
+        c.add(Collections.singletonList(tagC));
         assertTagCounts(c, 0, 0, 1, 0);
         c.add(Arrays.asList(tagA, tagC));
         assertTagCounts(c, 1, 0, 2, 0);
@@ -213,10 +206,10 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#add(TagCollection)}.
      */
     @Test
-    public void testAddTagCollection() {
+    void testAddTagCollection() {
         TagCollection c = new TagCollection();
         assertTagCounts(c, 0, 0, 0, 0);
-        c.add(new TagCollection(Arrays.asList(tagC)));
+        c.add(new TagCollection(Collections.singletonList(tagC)));
         assertTagCounts(c, 0, 0, 1, 0);
         c.add(new TagCollection(Arrays.asList(tagA, tagC)));
         assertTagCounts(c, 1, 0, 2, 0);
@@ -230,7 +223,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#remove(Tag)}.
      */
     @Test
-    public void testRemoveTag() {
+    void testRemoveTag() {
         TagCollection c = new TagCollection(Arrays.asList(tagA, tagC, tagC));
         assertTagCounts(c, 1, 0, 2, 0);
         c.remove(tagC);
@@ -245,7 +238,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#remove(Collection)}.
      */
     @Test
-    public void testRemoveCollectionOfTag() {
+    void testRemoveCollectionOfTag() {
         TagCollection c = new TagCollection(Arrays.asList(tagA, tagC, tagC));
         assertTagCounts(c, 1, 0, 2, 0);
         c.remove(Arrays.asList(tagC, tagB));
@@ -258,7 +251,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#remove(TagCollection)}.
      */
     @Test
-    public void testRemoveTagCollection() {
+    void testRemoveTagCollection() {
         TagCollection c = new TagCollection(Arrays.asList(tagA, tagC, tagC));
         assertTagCounts(c, 1, 0, 2, 0);
         c.remove(new TagCollection(Arrays.asList(tagC, tagB)));
@@ -273,7 +266,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#removeByKey(String)}.
      */
     @Test
-    public void testRemoveByKeyString() {
+    void testRemoveByKeyString() {
         TagCollection c = new TagCollection(Arrays.asList(tagA, tagB, tagB, tagC));
         assertTagCounts(c, 1, 2, 1, 0);
         c.removeByKey("k");
@@ -286,7 +279,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#removeByKey(Collection)}.
      */
     @Test
-    public void testRemoveByKeyCollectionOfString() {
+    void testRemoveByKeyCollectionOfString() {
         TagCollection c = new TagCollection(Arrays.asList(tagA, tagB, tagB, tagC, tagD));
         assertTagCounts(c, 1, 2, 1, 1);
         c.removeByKey(Arrays.asList("k", "k2", null));
@@ -299,7 +292,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#contains(Tag)}.
      */
     @Test
-    public void testContains() {
+    void testContains() {
         TagCollection c = new TagCollection(Arrays.asList(tagA, tagB, tagB));
         assertTrue(c.contains(tagA));
         assertTrue(c.contains(tagB));
@@ -310,11 +303,11 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#containsAll(Collection)}.
      */
     @Test
-    public void testContainsAll() {
+    void testContainsAll() {
         TagCollection c = new TagCollection(Arrays.asList(tagA, tagB, tagB));
         assertTrue(c.containsAll(Arrays.asList(tagA, tagB)));
         assertFalse(c.containsAll(Arrays.asList(tagA, tagC)));
-        assertTrue(c.containsAll(Arrays.asList()));
+        assertTrue(c.containsAll(Collections.emptyList()));
         assertFalse(c.containsAll(null));
     }
 
@@ -322,11 +315,11 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#containsAllKeys(Collection)}.
      */
     @Test
-    public void testContainsAllKeys() {
+    void testContainsAllKeys() {
         TagCollection c = new TagCollection(Arrays.asList(tagA, tagB, tagC));
         assertTrue(c.containsAllKeys(Arrays.asList("k", "k2")));
         assertFalse(c.containsAllKeys(Arrays.asList("k", "k3")));
-        assertTrue(c.containsAllKeys(Arrays.asList()));
+        assertTrue(c.containsAllKeys(Collections.emptyList()));
         assertFalse(c.containsAllKeys(null));
     }
 
@@ -334,7 +327,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#getNumTagsFor(String)}.
      */
     @Test
-    public void testGetNumTagsFor() {
+    void testGetNumTagsFor() {
         TagCollection c = new TagCollection(Arrays.asList(tagA, tagB, tagC));
         assertEquals(2, c.getNumTagsFor("k"));
         assertEquals(1, c.getNumTagsFor("k2"));
@@ -345,7 +338,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#hasTagsFor(String)}.
      */
     @Test
-    public void testHasTagsFor() {
+    void testHasTagsFor() {
         TagCollection c = new TagCollection(Arrays.asList(tagA, tagB, tagC));
         assertTrue(c.hasTagsFor("k"));
         assertTrue(c.hasTagsFor("k2"));
@@ -356,7 +349,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#hasValuesFor(String)}.
      */
     @Test
-    public void testHasValuesFor() {
+    void testHasValuesFor() {
         TagCollection c = new TagCollection(Arrays.asList(tagC, tagEmpty));
         assertFalse(c.hasValuesFor("k"));
         assertTrue(c.hasValuesFor("k2"));
@@ -367,7 +360,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#hasUniqueNonEmptyValue(String)}.
      */
     @Test
-    public void testHasUniqueNonEmptyValue() {
+    void testHasUniqueNonEmptyValue() {
         TagCollection c = new TagCollection(Arrays.asList(tagA, tagC, tagEmpty));
         assertTrue(c.hasUniqueNonEmptyValue("k"));
         assertTrue(c.hasUniqueNonEmptyValue("k2"));
@@ -383,7 +376,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#hasEmptyValue(String)}.
      */
     @Test
-    public void testHasEmptyValue() {
+    void testHasEmptyValue() {
         TagCollection c = new TagCollection(Arrays.asList(tagA, tagC, tagEmpty));
         assertTrue(c.hasEmptyValue("k"));
         assertFalse(c.hasEmptyValue("k2"));
@@ -394,13 +387,13 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#hasUniqueEmptyValue(String)}.
      */
     @Test
-    public void testHasUniqueEmptyValue() {
+    void testHasUniqueEmptyValue() {
         TagCollection c = new TagCollection(Arrays.asList(tagC, tagEmpty));
         assertTrue(c.hasUniqueEmptyValue("k"));
         assertFalse(c.hasUniqueEmptyValue("k2"));
         assertFalse(c.hasUniqueEmptyValue("k3"));
 
-        TagCollection d = new TagCollection(Arrays.asList());
+        TagCollection d = new TagCollection(Collections.emptyList());
         assertFalse(d.hasUniqueEmptyValue("k"));
         assertFalse(d.hasUniqueEmptyValue("k2"));
         assertFalse(d.hasUniqueEmptyValue("k3"));
@@ -410,7 +403,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#getTagsFor(String)}.
      */
     @Test
-    public void testGetTagsForString() {
+    void testGetTagsForString() {
         TagCollection d = new TagCollection(Arrays.asList(tagA, tagB, tagC, tagEmpty));
         TagCollection collection = d.getTagsFor("k");
         assertTagCounts(collection, 1, 1, 0, 0);
@@ -421,7 +414,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#getTagsFor(Collection)}.
      */
     @Test
-    public void testGetTagsForCollectionOfString() {
+    void testGetTagsForCollectionOfString() {
         TagCollection d = new TagCollection(Arrays.asList(tagA, tagB, tagC, tagEmpty));
         TagCollection collection = d.getTagsFor(Arrays.asList("k", "k2"));
         assertTagCounts(collection, 1, 1, 1, 0);
@@ -432,7 +425,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#asSet()}.
      */
     @Test
-    public void testAsSet() {
+    void testAsSet() {
         TagCollection d = new TagCollection(Arrays.asList(tagA, tagB, tagC, tagC));
         Set<Tag> set = d.asSet();
         assertEquals(3, set.size());
@@ -445,7 +438,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#asList()}.
      */
     @Test
-    public void testAsList() {
+    void testAsList() {
         TagCollection d = new TagCollection(Arrays.asList(tagA, tagB, tagC, tagC));
         List<Tag> set = d.asList();
         assertEquals(3, set.size());
@@ -458,8 +451,8 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#iterator()}.
      */
     @Test
-    public void testIterator() {
-        TagCollection d = new TagCollection(Arrays.asList(tagA));
+    void testIterator() {
+        TagCollection d = new TagCollection(Collections.singletonList(tagA));
         Iterator<Tag> it = d.iterator();
         assertTrue(it.hasNext());
         assertEquals(tagA, it.next());
@@ -470,7 +463,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#getKeys()}.
      */
     @Test
-    public void testGetKeys() {
+    void testGetKeys() {
         TagCollection d = new TagCollection(Arrays.asList(tagA, tagB, tagC, tagC));
         Set<String> set = d.getKeys();
         assertEquals(2, set.size());
@@ -482,7 +475,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#getKeysWithMultipleValues()}.
      */
     @Test
-    public void testGetKeysWithMultipleValues() {
+    void testGetKeysWithMultipleValues() {
         TagCollection d = new TagCollection(Arrays.asList(tagA, tagB, tagC, tagC));
         Set<String> set = d.getKeysWithMultipleValues();
         assertEquals(1, set.size());
@@ -493,7 +486,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#setUniqueForKey(Tag)}.
      */
     @Test
-    public void testSetUniqueForKeyTag() {
+    void testSetUniqueForKeyTag() {
         TagCollection d = new TagCollection(Arrays.asList(tagA, tagA, tagB, tagC, tagC));
         assertTagCounts(d, 2, 1, 2, 0);
         d.setUniqueForKey(tagA);
@@ -504,7 +497,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#setUniqueForKey(String, String)}.
      */
     @Test
-    public void testSetUniqueForKeyStringString() {
+    void testSetUniqueForKeyStringString() {
         TagCollection d = new TagCollection(Arrays.asList(tagA, tagA, tagB, tagC, tagC));
         assertTagCounts(d, 2, 1, 2, 0);
         d.setUniqueForKey(tagA.getKey(), tagA.getValue());
@@ -515,7 +508,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#getValues()}.
      */
     @Test
-    public void testGetValues() {
+    void testGetValues() {
         TagCollection d = new TagCollection(Arrays.asList(tagA, tagA, tagB, tagC, tagEmpty));
         Set<String> set = d.getValues();
         assertEquals(3, set.size());
@@ -528,7 +521,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#getValues(String)}.
      */
     @Test
-    public void testGetValuesString() {
+    void testGetValuesString() {
         TagCollection d = new TagCollection(Arrays.asList(tagA, tagA, tagC, tagEmpty));
         Set<String> set = d.getValues("k");
         assertEquals(2, set.size());
@@ -540,7 +533,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#isApplicableToPrimitive()}.
      */
     @Test
-    public void testIsApplicableToPrimitive() {
+    void testIsApplicableToPrimitive() {
         TagCollection c = new TagCollection();
         assertTrue(c.isApplicableToPrimitive());
         TagCollection d = new TagCollection(Arrays.asList(tagA, tagA, tagC, tagEmpty));
@@ -553,7 +546,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#applyTo(Tagged)}.
      */
     @Test
-    public void testApplyToTagged() {
+    void testApplyToTagged() {
         TagCollection c = new TagCollection(Arrays.asList(tagA, tagC));
         NodeData tagged = new NodeData();
         tagged.put("k", "x");
@@ -562,16 +555,16 @@ public class TagCollectionTest {
         assertEquals("v", tagged.get("k"));
         assertEquals("b", tagged.get("k2"));
         assertEquals("x", tagged.get("k3"));
-        TagCollection d = new TagCollection(Arrays.asList(tagEmpty));
+        TagCollection d = new TagCollection(Collections.singletonList(tagEmpty));
         d.applyTo(tagged);
-        assertEquals(null, tagged.get("k"));
+        assertNull(tagged.get("k"));
     }
 
     /**
      * Test method for {@link TagCollection#applyTo(Collection)}.
      */
     @Test
-    public void testApplyToCollectionOfQextendsTagged() {
+    void testApplyToCollectionOfQextendsTagged() {
         TagCollection c = new TagCollection(Arrays.asList(tagA, tagC));
         NodeData tagged = new NodeData();
         NodeData tagged2 = new NodeData();
@@ -589,7 +582,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#replaceTagsOf(Tagged)}.
      */
     @Test
-    public void testReplaceTagsOfTagged() {
+    void testReplaceTagsOfTagged() {
         TagCollection c = new TagCollection(Arrays.asList(tagA, tagC));
         NodeData tagged = new NodeData();
         tagged.put("k", "x");
@@ -597,14 +590,14 @@ public class TagCollectionTest {
         c.replaceTagsOf(tagged);
         assertEquals("v", tagged.get("k"));
         assertEquals("b", tagged.get("k2"));
-        assertEquals(null, tagged.get("k3"));
+        assertNull(tagged.get("k3"));
     }
 
     /**
      * Test method for {@link TagCollection#replaceTagsOf(Collection)}.
      */
     @Test
-    public void testReplaceTagsOfCollectionOfQextendsTagged() {
+    void testReplaceTagsOfCollectionOfQextendsTagged() {
         TagCollection c = new TagCollection(Arrays.asList(tagA, tagC));
         NodeData tagged = new NodeData();
         NodeData tagged2 = new NodeData();
@@ -615,14 +608,14 @@ public class TagCollectionTest {
         assertEquals("b", tagged.get("k2"));
         assertEquals("v", tagged2.get("k"));
         assertEquals("b", tagged2.get("k2"));
-        assertEquals(null, tagged2.get("k3"));
+        assertNull(tagged2.get("k3"));
     }
 
     /**
      * Test method for {@link TagCollection#intersect(TagCollection)}.
      */
     @Test
-    public void testIntersect() {
+    void testIntersect() {
         TagCollection c1 = new TagCollection(Arrays.asList(tagA, tagC, tagD, tagEmpty));
         TagCollection c2 = new TagCollection(Arrays.asList(tagA, tagB, tagD));
         TagCollection c = c1.intersect(c2);
@@ -635,7 +628,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#minus(TagCollection)}.
      */
     @Test
-    public void testMinus() {
+    void testMinus() {
         TagCollection c1 = new TagCollection(Arrays.asList(tagA, tagC, tagD, tagEmpty));
         TagCollection c2 = new TagCollection(Arrays.asList(tagA, tagB, tagD));
         TagCollection c = c1.minus(c2);
@@ -648,7 +641,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#union(TagCollection)}.
      */
     @Test
-    public void testUnion() {
+    void testUnion() {
         TagCollection c1 = new TagCollection(Arrays.asList(tagA, tagC, tagD, tagEmpty));
         TagCollection c2 = new TagCollection(Arrays.asList(tagA, tagB, tagD));
         TagCollection c = c1.union(c2);
@@ -663,7 +656,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#emptyTagsForKeysMissingIn(TagCollection)}.
      */
     @Test
-    public void testEmptyTagsForKeysMissingIn() {
+    void testEmptyTagsForKeysMissingIn() {
         TagCollection c1 = new TagCollection(Arrays.asList(tagA, tagC, tagD, tagEmpty));
         TagCollection c2 = new TagCollection(Arrays.asList(tagA, tagB, tagD));
         TagCollection c = c1.emptyTagsForKeysMissingIn(c2);
@@ -676,8 +669,8 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#getJoinedValues(String)}.
      */
     @Test
-    public void testGetJoinedValues() {
-        TagCollection c = new TagCollection(Arrays.asList(new Tag("k", "a")));
+    void testGetJoinedValues() {
+        TagCollection c = new TagCollection(Collections.singletonList(new Tag("k", "a")));
         assertEquals("a", c.getJoinedValues("k"));
         TagCollection d = new TagCollection(Arrays.asList(new Tag("k", "a"), new Tag("k", "b")));
         assertEquals("a;b", d.getJoinedValues("k"));
@@ -695,7 +688,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#getSummedValues(String)}.
      */
     @Test
-    public void testGetSummedValues() {
+    void testGetSummedValues() {
         TagCollection c = new TagCollection(Arrays.asList(new Tag("k", "10"), new Tag("k", "20")));
         assertEquals("30", c.getSummedValues("k"));
         TagCollection d = new TagCollection(Arrays.asList(new Tag("k", "10"), new Tag("k", "10")));
@@ -710,7 +703,7 @@ public class TagCollectionTest {
      * Test method for {@link TagCollection#commonToAllPrimitives(Collection)}.
      */
     @Test
-    public void testCommonToAllPrimitives() {
+    void testCommonToAllPrimitives() {
         Tagged t1 = new Node();
         t1.put("k1", "10");
         t1.put("k2", "20");

@@ -292,9 +292,10 @@ public final class Node extends OsmPrimitive implements INode {
     }
 
     private boolean hasEqualCoordinates(Node other) {
-        final LatLon c1 = getCoor();
-        final LatLon c2 = other.getCoor();
-        return (c1 == null && c2 == null) || (c1 != null && c2 != null && c1.equalsEpsilon(c2));
+        if (this.isLatLonKnown() && other.isLatLonKnown()) {
+            return this.equalsEpsilon(other);
+        }
+        return false;
     }
 
     @Override
@@ -357,8 +358,8 @@ public final class Node extends OsmPrimitive implements INode {
     }
 
     /**
-     * Replies the set of referring ways.
-     * @return the set of referring ways
+     * Replies the list of referring ways.
+     * @return the list of referring ways
      * @since 12031
      */
     public List<Way> getParentWays() {
@@ -371,13 +372,12 @@ public final class Node extends OsmPrimitive implements INode {
      * @since 14960
      */
     public boolean isOutSideWorld() {
-        LatLon ll = getCoor();
-        if (ll != null) {
+        if (this.isLatLonKnown()) {
             Bounds b = ProjectionRegistry.getProjection().getWorldBoundsLatLon();
             if (lat() < b.getMinLat() || lat() > b.getMaxLat() || lon() < b.getMinLon() || lon() > b.getMaxLon()) {
                 return true;
             }
-            if (!ProjectionRegistry.getProjection().latlon2eastNorth(ll).equalsEpsilon(getEastNorth(), 1.0)) {
+            if (!ProjectionRegistry.getProjection().latlon2eastNorth(this).equalsEpsilon(getEastNorth(), 1.0)) {
                 // we get here if a node was moved or created left from -180 or right from +180
                 return true;
             }

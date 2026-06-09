@@ -1,31 +1,19 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.io;
 
-import static org.junit.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests of {@link UploadedObjectsSummaryPanel} class.
  */
-public class UploadedObjectsSummaryPanelTest {
-
-    /**
-     * Setup tests
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+class UploadedObjectsSummaryPanelTest {
     /**
      * Test of {@link UploadedObjectsSummaryPanel#UploadedObjectsSummaryPanel}.
      */
     @Test
-    public void testUploadedObjectsSummaryPanel() {
-        assertNotNull(new UploadedObjectsSummaryPanel());
+    void testUploadedObjectsSummaryPanel() {
+        assertDoesNotThrow(UploadedObjectsSummaryPanel::new);
     }
 }

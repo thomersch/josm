@@ -1,32 +1,25 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.preferences.server;
 
-import static org.junit.Assert.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-import org.junit.Rule;
-import org.junit.Test;
+
 import org.openstreetmap.josm.gui.preferences.PreferencesTestUtils;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests of {@link ServerAccessPreference} class.
  */
-public class ServerAccessPreferenceTest {
-
-    /**
-     * Setup tests
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences();
-
+@BasicPreferences
+class ServerAccessPreferenceTest {
     /**
      * Unit test of {@link ServerAccessPreference#ServerAccessPreference}.
      */
     @Test
-    public void testServerAccessPreference() {
+    void testServerAccessPreference() {
         assertNotNull(new ServerAccessPreference.Factory().createPreferenceSetting());
     }
 
@@ -34,7 +27,7 @@ public class ServerAccessPreferenceTest {
      * Unit test of {@link ServerAccessPreference#addGui}.
      */
     @Test
-    public void testAddGui() {
-        PreferencesTestUtils.doTestPreferenceSettingAddGui(new ServerAccessPreference.Factory(), null);
+    void testAddGui() {
+        assertDoesNotThrow(() -> PreferencesTestUtils.doTestPreferenceSettingAddGui(new ServerAccessPreference.Factory(), null));
     }
 }

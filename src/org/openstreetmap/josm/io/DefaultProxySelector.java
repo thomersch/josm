@@ -43,6 +43,11 @@ public class DefaultProxySelector extends ProxySelector {
     public static final String PROXY_PASS = "proxy.pass";
     /** Property key for proxy exceptions list */
     public static final String PROXY_EXCEPTIONS = "proxy.exceptions";
+    /**
+     * Property key for hosts that should be proxied (if this is set, only specified hosts should be proxied)
+     * @since 18663
+     */
+    public static final String PROXY_INCLUDES = "proxy.includes.hosts";
 
     private static final List<Proxy> NO_PROXY_LIST = Collections.singletonList(Proxy.NO_PROXY);
 
@@ -54,8 +59,8 @@ public class DefaultProxySelector extends ProxySelector {
      * from the system settings, if the system property <code>java.net.useSystemProxies</code>
      * is defined <strong>at startup</strong>. It has no effect if the property is set
      * later by the application.
-     *
-     * We therefore read the property at class loading time and remember it's value.
+     * <p>
+     * We therefore read the property at class loading time and remember its value.
      */
     private static boolean jvmWillUseSystemProxies;
     static {
@@ -86,6 +91,7 @@ public class DefaultProxySelector extends ProxySelector {
     private final Set<String> errorResources = new HashSet<>();
     private final Set<String> errorMessages = new HashSet<>();
     private Set<String> proxyExceptions;
+    private Set<String> proxyIncludes;
 
     /**
      * A typical example is:
@@ -141,7 +147,7 @@ public class DefaultProxySelector extends ProxySelector {
         int port = parseProxyPortValue(PROXY_HTTP_PORT, Config.getPref().get(PROXY_HTTP_PORT, null));
         httpProxySocketAddress = null;
         if (proxyPolicy == ProxyPolicy.USE_HTTP_PROXY) {
-            if (host != null && !host.trim().isEmpty() && port > 0) {
+            if (!Utils.isStripEmpty(host) && port > 0) {
                 httpProxySocketAddress = new InetSocketAddress(host, port);
             } else {
                 Logging.warn(tr("Unexpected parameters for HTTP proxy. Got host ''{0}'' and port ''{1}''.", host, port));
@@ -153,7 +159,7 @@ public class DefaultProxySelector extends ProxySelector {
         port = parseProxyPortValue(PROXY_SOCKS_PORT, Config.getPref().get(PROXY_SOCKS_PORT, null));
         socksProxySocketAddress = null;
         if (proxyPolicy == ProxyPolicy.USE_SOCKS_PROXY) {
-            if (host != null && !host.trim().isEmpty() && port > 0) {
+            if (!Utils.isStripEmpty(host) && port > 0) {
                 socksProxySocketAddress = new InetSocketAddress(host, port);
             } else {
                 Logging.warn(tr("Unexpected parameters for SOCKS proxy. Got host ''{0}'' and port ''{1}''.", host, port));
@@ -163,6 +169,10 @@ public class DefaultProxySelector extends ProxySelector {
         proxyExceptions = new HashSet<>(
             Config.getPref().getList(PROXY_EXCEPTIONS,
                     Arrays.asList("localhost", IPV4_LOOPBACK, IPV6_LOOPBACK))
+        );
+        proxyIncludes = new HashSet<>(
+            Config.getPref().getList(PROXY_INCLUDES,
+                    Collections.emptyList())
         );
     }
 
@@ -214,13 +224,20 @@ public class DefaultProxySelector extends ProxySelector {
 
     @Override
     public List<Proxy> select(URI uri) {
-        if (uri != null && proxyExceptions.contains(uri.getHost())) {
+        // This is specified in ProxySelector#select, "@throws IllegalArgumentException if the argument is null"
+        if (uri == null) {
+            throw new IllegalArgumentException("URI cannot be null");
+        }
+        if (proxyExceptions.contains(uri.getHost())) {
             return NO_PROXY_LIST;
         }
-        switch(proxyPolicy) {
+        if (!proxyIncludes.isEmpty() && !proxyIncludes.contains(uri.getHost())) {
+            return NO_PROXY_LIST;
+        }
+        switch (proxyPolicy) {
         case USE_SYSTEM_SETTINGS:
             if (!jvmWillUseSystemProxies) {
-                Logging.warn(tr("The JVM is not configured to lookup proxies from the system settings. "+
+                Logging.warn(tr("The JVM is not configured to lookup proxies from the system settings. " +
                         "The property ''java.net.useSystemProxies'' was missing at startup time.  Will not use a proxy."));
                 return NO_PROXY_LIST;
             }
@@ -236,8 +253,8 @@ public class DefaultProxySelector extends ProxySelector {
             if (socksProxySocketAddress == null)
                 return NO_PROXY_LIST;
             return Collections.singletonList(new Proxy(Type.SOCKS, socksProxySocketAddress));
-        }
         // should not happen
-        return null;
+        default: return Collections.emptyList();
+        }
     }
 }

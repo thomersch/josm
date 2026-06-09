@@ -1,32 +1,20 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.layer.imagery;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
 
 /**
  * Tests for the {@link GammaImageProcessor} class.
  * @author Michael Zangl
  */
-public class GammaImageProcessorTest {
-
-    /**
-     * No special rules
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+class GammaImageProcessorTest {
     /**
      * Test {@link GammaImageProcessor#setGamma(double)} and {@link GammaImageProcessor#getGamma()}
      */
     @Test
-    public void testSetGet() {
+    void testSetGet() {
         GammaImageProcessor processor = new GammaImageProcessor();
 
         assertEquals(1, processor.getGamma(), 0.001);
@@ -54,7 +42,7 @@ public class GammaImageProcessorTest {
      * Test {@link GammaImageProcessor#toString()}
      */
     @Test
-    public void testToString() {
+    void testToString() {
         GammaImageProcessor processor = new GammaImageProcessor();
         assertEquals("GammaImageProcessor [gamma=1.0]", processor.toString());
     }

@@ -39,7 +39,7 @@ public final class UndoRedoHandler {
     private final LinkedList<CommandQueueListener> listenerCommands = new LinkedList<>();
     private final LinkedList<CommandQueuePreciseListener> preciseListenerCommands = new LinkedList<>();
 
-    private static class InstanceHolder {
+    private static final class InstanceHolder {
         static final UndoRedoHandler INSTANCE = new UndoRedoHandler();
     }
 
@@ -377,7 +377,13 @@ public final class UndoRedoHandler {
             try {
                 for (int i = 1; i <= num; ++i) {
                     final Command c = commands.removeLast();
-                    c.undoCommand();
+                    try {
+                        c.undoCommand();
+                    } catch (Exception e) {
+                        // fix #20098: restore command stack as we will not fire an event
+                        commands.add(c);
+                        throw e;
+                    }
                     redoCommands.addFirst(c);
                     fireEvent(new CommandUndoneEvent(this, c));
                     if (commands.isEmpty()) {

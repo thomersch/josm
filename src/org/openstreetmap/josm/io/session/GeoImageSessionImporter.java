@@ -5,8 +5,8 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.io.File;
 import java.io.IOException;
+import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 
 import org.openstreetmap.josm.data.coor.LatLon;
@@ -25,6 +25,7 @@ import org.w3c.dom.NodeList;
 /**
  * Session importer for {@link GeoImageLayer}.
  * @since 5505
+ * @since 19387 exifGpsTrack, exifHPosErr, gpsDiffMode, gps2d3dMode, exifGpsDop, exifGpsDatum, exifGpsProcMethod importer added
  */
 public class GeoImageSessionImporter implements SessionLayerImporter {
 
@@ -73,7 +74,7 @@ public class GeoImageSessionImporter implements SessionLayerImporter {
 
     private static void handleElement(GpxImageEntry entry, Element attrElem) {
         try {
-            switch(attrElem.getTagName()) {
+            switch (attrElem.getTagName()) {
             case "file":
                 entry.setFile(new File(attrElem.getTextContent()));
                 break;
@@ -89,16 +90,16 @@ public class GeoImageSessionImporter implements SessionLayerImporter {
                 entry.setElevation(Double.valueOf(attrElem.getTextContent()));
                 break;
             case "gps-time":
-                entry.setGpsTime(new Date(Long.parseLong(attrElem.getTextContent())));
+                entry.setGpsTime(Instant.ofEpochMilli(Long.parseLong(attrElem.getTextContent())));
                 break;
             case "exif-orientation":
                 entry.setExifOrientation(Integer.valueOf(attrElem.getTextContent()));
                 break;
             case "exif-time":
-                entry.setExifTime(new Date(Long.parseLong(attrElem.getTextContent())));
+                entry.setExifTime(Instant.ofEpochMilli(Long.parseLong(attrElem.getTextContent())));
                 break;
             case "exif-gps-time":
-                entry.setExifGpsTime(new Date(Long.parseLong(attrElem.getTextContent())));
+                entry.setExifGpsTime(Instant.ofEpochMilli(Long.parseLong(attrElem.getTextContent())));
                 break;
             case "exif-coordinates":
                 entry.setExifCoor(new LatLon(
@@ -107,6 +108,27 @@ public class GeoImageSessionImporter implements SessionLayerImporter {
                 break;
             case "exif-image-direction":
                 entry.setExifImgDir(Double.valueOf(attrElem.getTextContent()));
+                break;
+            case "exif-gps-track":
+                entry.setExifGpsTrack(Double.valueOf(attrElem.getTextContent()));
+                break;
+            case "exif-gps-hposerr":
+                entry.setExifHPosErr(Double.valueOf(attrElem.getTextContent()));
+                break;
+            case "exif-gps-diffmode":
+                entry.setGpsDiffMode(Integer.valueOf(attrElem.getTextContent()));
+                break;
+            case "exif-gps-2d3dmode":
+                entry.setGps2d3dMode(Integer.valueOf(attrElem.getTextContent()));
+                break;
+            case "exif-gps-dop":
+                entry.setExifGpsDop(Double.valueOf(attrElem.getTextContent()));
+                break;
+            case "exif-gps-datum":
+                entry.setExifGpsDatum(attrElem.getTextContent());
+                break;
+            case "exif-gps-procmethod":
+                entry.setExifGpsProcMethod(attrElem.getTextContent());
                 break;
             case "is-new-gps-data":
                 if (Boolean.parseBoolean(attrElem.getTextContent())) {

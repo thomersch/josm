@@ -1,11 +1,12 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.io;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -18,33 +19,27 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.IntStream;
 
-import org.junit.Rule;
-import org.junit.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Relation;
 import org.openstreetmap.josm.data.osm.Way;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
+
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests of {@link GeoJSONReader}.
  */
-public class GeoJSONReaderTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    public JOSMTestRules rules = new JOSMTestRules();
-
+@BasicPreferences
+class GeoJSONReaderTest {
     /**
      * Test reading a GeoJSON file.
      * @throws Exception in case of error
      */
     @Test
-    public void testReadGeoJson() throws Exception {
+    void testReadGeoJson() throws Exception {
         try (InputStream in = Files.newInputStream(Paths.get(TestUtils.getTestDataRoot(), "geo.json"))) {
             final List<OsmPrimitive> primitives = new ArrayList<>(new GeoJSONReader()
                 .doParseDataSet(in, null)
@@ -59,7 +54,7 @@ public class GeoJSONReaderTest {
      * @throws Exception in case of an error
      */
     @Test
-    public void testReadLineByLineGeoJSON() throws Exception {
+    void testReadLineByLineGeoJSON() throws Exception {
         try (InputStream in = Files.newInputStream(Paths.get(TestUtils.getTestDataRoot(), "geoLineByLine.json"))) {
             final List<OsmPrimitive> primitives = new ArrayList<>(new GeoJSONReader()
                 .doParseDataSet(in, null)
@@ -149,7 +144,7 @@ public class GeoJSONReaderTest {
      * @throws Exception in case of error
      */
     @Test
-    public void testReadGeoJsonNamedCrs() throws Exception {
+    void testReadGeoJsonNamedCrs() throws Exception {
         try (InputStream in = Files.newInputStream(Paths.get(TestUtils.getTestDataRoot(), "geocrs.json"))) {
             final List<OsmPrimitive> primitives = new ArrayList<>(new GeoJSONReader()
                     .doParseDataSet(in, null)
@@ -164,7 +159,7 @@ public class GeoJSONReaderTest {
      * Test reading a JSON file which is not a proper GeoJSON (type missing).
      */
     @Test
-    public void testReadGeoJsonWithoutType() {
+    void testReadGeoJsonWithoutType() {
         assertThrows(IllegalDataException.class, () ->
                 new GeoJSONReader().doParseDataSet(new ByteArrayInputStream("{}".getBytes(StandardCharsets.UTF_8)), null));
     }
@@ -172,7 +167,7 @@ public class GeoJSONReaderTest {
     private static boolean areEqualNodes(final OsmPrimitive p1, final OsmPrimitive p2) {
         return (p1 instanceof Node)
             && (p2 instanceof Node)
-            && ((Node) p1).getCoor().equalsEpsilon(((Node) p2).getCoor());
+            && ((Node) p1).equalsEpsilon(((Node) p2));
     }
 
     private static boolean areEqualWays(final OsmPrimitive p1, final OsmPrimitive p2) {
@@ -192,7 +187,7 @@ public class GeoJSONReaderTest {
      * @throws Exception in case of error
      */
     @Test
-    public void testTicket19822() throws Exception {
+    void testTicket19822() throws Exception {
         try (InputStream in = TestUtils.getRegressionDataStream(19822, "data.geojson")) {
             final List<OsmPrimitive> primitives = new ArrayList<>(
                     new GeoJSONReader().doParseDataSet(in, null).getPrimitives(it -> true));
@@ -206,7 +201,7 @@ public class GeoJSONReaderTest {
      * @throws Exception in case of error
      */
     @Test
-    public void testTicket19822Nested() throws Exception {
+    void testTicket19822Nested() throws Exception {
         try (InputStream in = TestUtils.getRegressionDataStream(19822, "problem3.geojson")) {
             final List<OsmPrimitive> primitives = new ArrayList<>(
                     new GeoJSONReader().doParseDataSet(in, null).getPrimitives(it -> true));
@@ -215,4 +210,35 @@ public class GeoJSONReaderTest {
         }
     }
 
+    /**
+     * Non-regression test for <a href="https://josm.openstreetmap.de/ticket/21044">Bug #21044</a>.
+     * @throws Exception in case of error
+     */
+    @Test
+    void testTicket21044Duplicates() throws Exception {
+        try (InputStream in = TestUtils.getRegressionDataStream(21044, "test.geojson")) {
+            final List<OsmPrimitive> primitives = new ArrayList<>(
+                    new GeoJSONReader().doParseDataSet(in, null).getPrimitives(it -> true));
+            assertEquals(1, primitives.size());
+            OsmPrimitive primitive = primitives.get(0);
+            Node n = assertInstanceOf(Node.class, primitive);
+            assertNull(n.get("addr:building"));
+            assertEquals("06883", n.get("addr:postcode"));
+            assertEquals("22;26", n.get("addr:housenumber"));
+        }
+    }
+
+    /**
+     * Tests error reporting for an invalid FeatureCollection
+     * @throws Exception in case of error
+     */
+    @Test
+    void testInvalidFeatureCollection() throws Exception {
+        String featureCollection = "{\"type\": \"FeatureCollection\", \"features\": {}}";
+        try (InputStream in = new ByteArrayInputStream(featureCollection.getBytes(StandardCharsets.UTF_8))) {
+            IllegalDataException exception = assertThrows(IllegalDataException.class,
+                    () -> new GeoJSONReader().doParseDataSet(in, null));
+            assertEquals("java.lang.IllegalArgumentException: features must be ARRAY, but is OBJECT", exception.getMessage());
+        }
+    }
 }

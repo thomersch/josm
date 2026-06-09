@@ -8,6 +8,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
+import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.data.validation.Severity;
 import org.openstreetmap.josm.data.validation.Test;
 import org.openstreetmap.josm.data.validation.TestError;
@@ -41,7 +42,7 @@ public class Lanes extends Test.TagTest {
 
     protected void checkNumberOfLanesByKey(final OsmPrimitive p, String lanesKey, String message) {
         final Set<Integer> lanesCount =
-                p.keySet().stream()
+                p.keys()
                 .filter(x -> x.endsWith(":" + lanesKey))
                 .filter(x -> !Arrays.asList(BLACKLIST).contains(x))
                 .map(key -> getLanesCount(p.get(key)))
@@ -62,8 +63,8 @@ public class Lanes extends Test.TagTest {
                             .primitives(p)
                             .build());
                 }
-            } catch (NumberFormatException ignore) {
-                Logging.debug(ignore.getMessage());
+            } catch (NumberFormatException e) {
+                Logging.debug(e.getMessage());
             }
         }
     }
@@ -74,14 +75,14 @@ public class Lanes extends Test.TagTest {
         final String forward = Utils.firstNonNull(p.get("lanes:forward"), "0");
         final String backward = Utils.firstNonNull(p.get("lanes:backward"), "0");
         try {
-        if (Integer.parseInt(lanes) < Integer.parseInt(forward) + Integer.parseInt(backward)) {
-            errors.add(TestError.builder(this, Severity.WARNING, 3101)
-                    .message(tr("Number of {0} greater than {1}", tr("{0}+{1}", "lanes:forward", "lanes:backward"), "lanes"))
-                    .primitives(p)
-                    .build());
-        }
-        } catch (NumberFormatException ignore) {
-            Logging.debug(ignore.getMessage());
+            if (Integer.parseInt(lanes) < Integer.parseInt(forward) + Integer.parseInt(backward)) {
+                errors.add(TestError.builder(this, Severity.WARNING, 3101)
+                        .message(tr("Number of {0} greater than {1}", tr("{0}+{1}", "lanes:forward", "lanes:backward"), "lanes"))
+                        .primitives(p)
+                        .build());
+            }
+        } catch (NumberFormatException e) {
+            Logging.debug(e.getMessage());
         }
     }
 
@@ -95,6 +96,6 @@ public class Lanes extends Test.TagTest {
 
     @Override
     public boolean isPrimitiveUsable(OsmPrimitive p) {
-        return p.isTagged() && super.isPrimitiveUsable(p);
+        return p.isTagged() && p instanceof Way && p.hasTag("highway") && super.isPrimitiveUsable(p);
     }
 }

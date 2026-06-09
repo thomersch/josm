@@ -1,8 +1,6 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data;
 
-import static org.openstreetmap.josm.tools.I18n.tr;
-
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -11,6 +9,8 @@ import java.util.stream.Collectors;
 
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.gpx.GpxImageEntry;
+import org.openstreetmap.josm.data.osm.QuadBuckets;
+import org.openstreetmap.josm.gui.layer.Layer;
 import org.openstreetmap.josm.gui.layer.geoimage.ImageEntry;
 import org.openstreetmap.josm.tools.ListenerList;
 
@@ -41,6 +41,8 @@ public class ImageData implements Data {
     private final List<Integer> selectedImagesIndex = new ArrayList<>();
 
     private final ListenerList<ImageDataUpdateListener> listeners = ListenerList.create();
+    private final QuadBuckets<ImageEntry> geoImages = new QuadBuckets<>();
+    private Layer layer;
 
     /**
      * Construct a new image container without images
@@ -57,9 +59,11 @@ public class ImageData implements Data {
         if (data != null) {
             Collections.sort(data);
             this.data = data;
+            this.data.forEach(image -> image.setDataSet(this));
         } else {
             this.data = new ArrayList<>();
         }
+        this.geoImages.addAll(this.data);
         selectedImagesIndex.add(-1);
     }
 
@@ -85,6 +89,7 @@ public class ImageData implements Data {
      */
     public void mergeFrom(ImageData otherData) {
         data.addAll(otherData.getImages());
+        this.geoImages.addAll(otherData.getImages());
         Collections.sort(data);
 
         final ImageEntry selected = otherData.getSelectedImage();
@@ -125,23 +130,31 @@ public class ImageData implements Data {
      * @since 15333
      */
     public List<ImageEntry> getSelectedImages() {
-        return selectedImagesIndex.stream().filter(i -> i > -1).map(data::get).collect(Collectors.toList());
+        return selectedImagesIndex.stream().filter(i -> i > -1 && i < data.size()).map(data::get).collect(Collectors.toList());
     }
 
     /**
-     * Select the first image of the sequence
+     * Get the first image on the layer
+     * @return The first image
+     * @since 18246
      */
-    public void selectFirstImage() {
-        if (!data.isEmpty()) {
-            setSelectedImageIndex(0);
+    public ImageEntry getFirstImage() {
+        if (!this.data.isEmpty()) {
+            return this.data.get(0);
         }
+        return null;
     }
 
     /**
-     * Select the last image of the sequence
+     * Get the last image in the layer
+     * @return The last image
+     * @since 18246
      */
-    public void selectLastImage() {
-        setSelectedImageIndex(data.size() - 1);
+    public ImageEntry getLastImage() {
+        if (!this.data.isEmpty()) {
+            return this.data.get(this.data.size() - 1);
+        }
+        return null;
     }
 
     /**
@@ -153,12 +166,37 @@ public class ImageData implements Data {
     }
 
     /**
-     * Select the next image of the sequence
+     * Search for images in a bounds
+     * @param bounds The bounds to search
+     * @return images in the bounds
+     * @since 17459
      */
-    public void selectNextImage() {
-        if (hasNextImage()) {
-            setSelectedImageIndex(selectedImagesIndex.get(0) + 1);
+    public Collection<ImageEntry> searchImages(Bounds bounds) {
+        return this.geoImages.search(bounds.toBBox());
+    }
+
+    /**
+     * Get the image next to the current image
+     * @return The next image
+     * @since 18246
+     */
+    public ImageEntry getNextImage() {
+        if (this.hasNextImage()) {
+            return this.data.get(this.selectedImagesIndex.get(0) + 1);
         }
+        return null;
+    }
+
+    /**
+     * Get the image previous to the current image
+     * @return The previous image
+     * @since 18246
+     */
+    public ImageEntry getPreviousImage() {
+        if (this.hasPreviousImage()) {
+            return this.data.get(Integer.max(0, selectedImagesIndex.get(0) - 1));
+        }
+        return null;
     }
 
     /**
@@ -167,16 +205,6 @@ public class ImageData implements Data {
      */
     public boolean hasPreviousImage() {
         return (selectedImagesIndex.size() == 1 && selectedImagesIndex.get(0) - 1 > -1);
-    }
-
-    /**
-     * Select the previous image of the sequence
-     */
-    public void selectPreviousImage() {
-        if (data.isEmpty()) {
-            return;
-        }
-        setSelectedImageIndex(Integer.max(0, selectedImagesIndex.get(0) - 1));
     }
 
     /**
@@ -200,6 +228,16 @@ public class ImageData implements Data {
             selectedImagesIndex.add(index);
             listeners.fireEvent(l -> l.selectedImageChanged(this));
         }
+    }
+
+    /**
+     * Indicate that an entry has changed
+     * @param gpxImageEntry The entry to update
+     * @since 17574
+     */
+    public void fireNodeMoved(ImageEntry gpxImageEntry) {
+        this.geoImages.remove(gpxImageEntry);
+        this.geoImages.add(gpxImageEntry);
     }
 
     /**
@@ -241,22 +279,10 @@ public class ImageData implements Data {
 
     /**
      * Remove the current selected image from the list
-     */
-    public void removeSelectedImage() {
-        List<ImageEntry> selectedImages = getSelectedImages();
-        if (selectedImages.size() > 1) {
-            throw new IllegalStateException(tr("Multiple images have been selected"));
-        }
-        removeImages(selectedImages);
-    }
-
-    /**
-     * Remove the current selected image from the list
      * @since 15348
      */
     public void removeSelectedImages() {
-        List<ImageEntry> selectedImages = getSelectedImages();
-        removeImages(selectedImages);
+        removeImages(getSelectedImages());
     }
 
     private void removeImages(List<ImageEntry> selectedImages) {
@@ -264,12 +290,22 @@ public class ImageData implements Data {
             return;
         }
         for (ImageEntry img: getSelectedImages()) {
-            data.remove(img);
+            removeImage(img, false);
         }
-        if (selectedImagesIndex.get(0) >= data.size()) {
-            setSelectedImageIndex(data.size() - 1);
+        updateSelectedImage();
+    }
+
+    /**
+     * Update the selected image after removal of one or more images.
+     * @since 18049
+     */
+    public void updateSelectedImage() {
+        int size = data.size();
+        Integer firstSelectedImageIndex = selectedImagesIndex.get(0);
+        if (firstSelectedImageIndex >= size) {
+            setSelectedImageIndex(size - 1);
         } else {
-            setSelectedImageIndex(selectedImagesIndex.get(0), true);
+            setSelectedImageIndex(firstSelectedImageIndex, true);
         }
     }
 
@@ -280,8 +316,7 @@ public class ImageData implements Data {
      * @since 15333
      */
     public boolean isImageSelected(ImageEntry image) {
-        int index = data.indexOf(image);
-        return selectedImagesIndex.contains(index);
+        return selectedImagesIndex.contains(data.indexOf(image));
     }
 
     /**
@@ -289,8 +324,23 @@ public class ImageData implements Data {
      * @param img the {@link ImageEntry} to remove
      */
     public void removeImage(ImageEntry img) {
+        removeImage(img, true);
+    }
+
+    /**
+     * Remove the image from the list and optionally trigger update listener
+     * @param img the {@link ImageEntry} to remove
+     * @param fireUpdateEvent if {@code true}, notifies listeners of image update
+     * @since 18049
+     */
+    public void removeImage(ImageEntry img, boolean fireUpdateEvent) {
         data.remove(img);
-        notifyImageUpdate();
+        this.geoImages.remove(img);
+        if (fireUpdateEvent) {
+            notifyImageUpdate();
+            // Fix JOSM #21521 -- when an image is removed, we need to update the selected image
+            this.updateSelectedImage();
+        }
     }
 
     /**
@@ -300,6 +350,8 @@ public class ImageData implements Data {
      */
     public void updateImagePosition(ImageEntry img, LatLon newPos) {
         img.setPos(newPos);
+        this.geoImages.remove(img);
+        this.geoImages.add(img);
         afterImageUpdated(img);
     }
 
@@ -314,6 +366,83 @@ public class ImageData implements Data {
     }
 
     /**
+     * Update the GPS track direction of the image and trigger update.
+     * @param img the image to update
+     * @param trackDirection the new GPS track direction
+     * @since 19387
+     */
+    public void updateImageGpsTrack(ImageEntry img, double trackDirection) {
+        img.setExifGpsTrack(trackDirection);
+        afterImageUpdated(img);
+    }
+
+    /**
+     * Update the image horizontal positioning error and trigger update.
+     * @param img the image to update
+     * @param hposerr the new horizontal positionning error
+     * @since 19387
+     */
+    public void updateImageHPosErr(ImageEntry img, double hposerr) {
+        img.setExifHPosErr(hposerr);
+        afterImageUpdated(img);
+    }
+
+    /**
+     * Update the image GPS differential mode and trigger update.
+     * @param img the image to update
+     * @param gpsDiffMode the new GPS differential mode
+     * @since 19387
+     */
+    public void updateImageGpsDiffMode(ImageEntry img, Integer gpsDiffMode) {
+        img.setGpsDiffMode(gpsDiffMode);
+        afterImageUpdated(img);
+    }
+
+    /**
+     * Update the image GPS 2d/3d mode value and trigger update.
+     * @param img the image to update
+     * @param gps2d3dMode the new 2d/3d GPS mode
+     * @since 19387
+     */
+    public void updateImageGps2d3dMode(ImageEntry img, Integer gps2d3dMode) {
+        img.setGps2d3dMode(gps2d3dMode);
+        afterImageUpdated(img);
+    }
+
+    /**
+     * Update the image GPS DOP value and trigger update.
+     * @param img the image to update
+     * @param exifGpsDop the new GPS DOP value
+     * @since 19387
+     */
+    public void updateImageExifGpsDop(ImageEntry img, Double exifGpsDop) {
+        img.setExifGpsDop(exifGpsDop);
+        afterImageUpdated(img);
+    }
+
+    /**
+     * Update the image GPS datum and trigger update.
+     * @param img the image to update
+     * @param exifGpsDatum the new datum string value
+     * @since 19387
+     */
+    public void updateImageExifGpsDatum(ImageEntry img, String exifGpsDatum) {
+        img.setExifGpsDatum(exifGpsDatum);
+        afterImageUpdated(img);
+    }
+
+    /**
+     * Update the image GPS processing method and trigger update.
+     * @param img the image to update
+     * @param exifGpsProcMethod the new GPS processing method
+     * @since 19387
+     */
+    public void updateImageExifGpsProcMethod(ImageEntry img, String exifGpsProcMethod) {
+        img.setExifGpsProcMethod(exifGpsProcMethod);
+        afterImageUpdated(img);
+    }
+
+    /**
      * Manually trigger the {@link ImageDataUpdateListener#imageDataUpdated(ImageData)}
      */
     public void notifyImageUpdate() {
@@ -323,6 +452,24 @@ public class ImageData implements Data {
     private void afterImageUpdated(ImageEntry img) {
         img.flagNewGpsData();
         notifyImageUpdate();
+    }
+
+    /**
+     * Set the layer for use with {@link org.openstreetmap.josm.gui.layer.geoimage.ImageViewerDialog#displayImages(List)}
+     * @param layer The layer to use for organization
+     * @since 18591
+     */
+    public void setLayer(Layer layer) {
+        this.layer = layer;
+    }
+
+    /**
+     * Get the layer that this data is associated with. May be {@code null}.
+     * @return The layer this data is associated with.
+     * @since 18591
+     */
+    public Layer getLayer() {
+        return this.layer;
     }
 
     /**

@@ -7,14 +7,15 @@ import java.net.PasswordAuthentication;
 import java.util.Objects;
 
 import org.openstreetmap.josm.data.UserIdentityManager;
-import org.openstreetmap.josm.data.oauth.OAuthToken;
+import org.openstreetmap.josm.data.oauth.IOAuthToken;
 import org.openstreetmap.josm.io.OsmApi;
 import org.openstreetmap.josm.tools.CheckParameterUtil;
 import org.openstreetmap.josm.tools.Logging;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * CredentialManager is a factory for the single credential agent used.
- *
+ * <p>
  * Currently, it defaults to replying an instance of {@link JosmPreferencesCredentialAgent}.
  * @since 2641
  */
@@ -127,12 +128,12 @@ public class CredentialsManager implements CredentialsAgent {
     public void store(RequestorType requestorType, String host, PasswordAuthentication credentials) throws CredentialsAgentException {
         if (requestorType == RequestorType.SERVER && Objects.equals(OsmApi.getOsmApi().getHost(), host)) {
             String username = credentials.getUserName();
-            if (username != null && !username.trim().isEmpty()) {
+            if (!Utils.isStripEmpty(username)) {
                 UserIdentityManager.getInstance().setPartiallyIdentified(username);
             }
         }
         // see #11914: clear cache before we store new value
-        purgeCredentialsCache(requestorType);
+        purgeCredentialsCache(requestorType, host);
         delegate.store(requestorType, host, credentials);
     }
 
@@ -140,7 +141,7 @@ public class CredentialsManager implements CredentialsAgent {
     public CredentialsAgentResponse getCredentials(RequestorType requestorType, String host, boolean noSuccessWithLastResponse)
             throws CredentialsAgentException {
         CredentialsAgentResponse credentials = delegate.getCredentials(requestorType, host, noSuccessWithLastResponse);
-        if (requestorType == RequestorType.SERVER) {
+        if (requestorType == RequestorType.SERVER && Objects.equals(OsmApi.getOsmApi().getHost(), host)) {
             // see #11914 : Keep UserIdentityManager up to date
             String userName = credentials.getUsername();
             userName = userName == null ? "" : userName.trim();
@@ -155,13 +156,13 @@ public class CredentialsManager implements CredentialsAgent {
     }
 
     @Override
-    public OAuthToken lookupOAuthAccessToken() throws CredentialsAgentException {
-        return delegate.lookupOAuthAccessToken();
+    public IOAuthToken lookupOAuthAccessToken(String host) throws CredentialsAgentException {
+        return delegate.lookupOAuthAccessToken(host);
     }
 
     @Override
-    public void storeOAuthAccessToken(OAuthToken accessToken) throws CredentialsAgentException {
-        delegate.storeOAuthAccessToken(accessToken);
+    public void storeOAuthAccessToken(String host, IOAuthToken accessToken) throws CredentialsAgentException {
+        delegate.storeOAuthAccessToken(host, accessToken);
     }
 
     @Override
@@ -172,5 +173,10 @@ public class CredentialsManager implements CredentialsAgent {
     @Override
     public void purgeCredentialsCache(RequestorType requestorType) {
         delegate.purgeCredentialsCache(requestorType);
+    }
+
+    @Override
+    public void purgeCredentialsCache(RequestorType requestorType, String host) {
+        delegate.purgeCredentialsCache(requestorType, host);
     }
 }

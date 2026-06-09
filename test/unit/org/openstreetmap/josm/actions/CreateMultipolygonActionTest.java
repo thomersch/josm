@@ -1,9 +1,11 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.actions;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -11,8 +13,7 @@ import java.util.Collection;
 import java.util.Map;
 import java.util.TreeMap;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.command.SequenceCommand;
 import org.openstreetmap.josm.data.osm.DataSet;
@@ -27,24 +28,23 @@ import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.layer.Layer;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.io.OsmReader;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
+import org.openstreetmap.josm.testutils.annotations.Main;
+import org.openstreetmap.josm.testutils.annotations.MapPaintStyles;
+import org.openstreetmap.josm.testutils.annotations.Projection;
+import org.openstreetmap.josm.testutils.annotations.Territories;
 import org.openstreetmap.josm.tools.Pair;
 import org.openstreetmap.josm.tools.SubclassFilteredCollection;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
  * Unit test of {@link CreateMultipolygonAction}
  */
-public class CreateMultipolygonActionTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().projection().main().preferences();
-
+@BasicPreferences
+@Main
+@MapPaintStyles
+@Projection
+@Territories(Territories.Initialize.ALL)
+class CreateMultipolygonActionTest {
     private static Map<String, String> getRefToRoleMap(Relation relation) {
         Map<String, String> refToRole = new TreeMap<>();
         String ref = relation.get("ref");
@@ -79,7 +79,7 @@ public class CreateMultipolygonActionTest {
     }
 
     @Test
-    public void testCreate1() throws Exception {
+    void testCreate1() throws Exception {
         DataSet ds = OsmReader.parseDataSet(Files.newInputStream(Paths.get(TestUtils.getTestDataRoot(), "create_multipolygon.osm")), null);
         Pair<SequenceCommand, Relation> mp = CreateMultipolygonAction.createMultipolygonCommand(ds.getWays(), null);
         assertEquals("Sequence: Create multipolygon", mp.a.getDescriptionText());
@@ -87,14 +87,14 @@ public class CreateMultipolygonActionTest {
     }
 
     @Test
-    public void testCreate2() throws Exception {
+    void testCreate2() throws Exception {
         DataSet ds = OsmReader.parseDataSet(Files.newInputStream(Paths.get(TestUtils.getTestDataRoot(), "create_multipolygon.osm")), null);
         Relation mp = createMultipolygon(ds.getWays(), "ref=1 OR ref:1.1.", null, true);
         assertEquals("{1=outer, 1.1.1=inner, 1.1.2=inner}", getRefToRoleMap(mp).toString());
     }
 
     @Test
-    public void testUpdate1() throws Exception {
+    void testUpdate1() throws Exception {
         DataSet ds = OsmReader.parseDataSet(Files.newInputStream(Paths.get(TestUtils.getTestDataRoot(), "create_multipolygon.osm")), null);
         Relation mp = createMultipolygon(ds.getWays(), "ref=\".*1$\"", null, true);
         assertEquals(3, mp.getMembersCount());
@@ -105,7 +105,7 @@ public class CreateMultipolygonActionTest {
     }
 
     @Test
-    public void testUpdate2() throws Exception {
+    void testUpdate2() throws Exception {
         DataSet ds = OsmReader.parseDataSet(Files.newInputStream(Paths.get(TestUtils.getTestDataRoot(), "create_multipolygon.osm")), null);
         Relation mp = createMultipolygon(ds.getWays(), "ref=1 OR ref:1.1.1", null, true);
         assertEquals("{1=outer, 1.1.1=inner}", getRefToRoleMap(mp).toString());
@@ -118,7 +118,7 @@ public class CreateMultipolygonActionTest {
      * @throws Exception if an error occurs
      */
     @Test
-    public void testTicket17767() throws Exception {
+    void testTicket17767() throws Exception {
         DataSet ds = OsmReader.parseDataSet(TestUtils.getRegressionDataStream(17767, "upd-mp.osm"), null);
         Layer layer = new OsmDataLayer(ds, null, null);
         MainApplication.getLayerManager().addLayer(layer);
@@ -140,7 +140,7 @@ public class CreateMultipolygonActionTest {
      * @throws Exception if an error occurs
      */
     @Test
-    public void testTicket17768() throws Exception {
+    void testTicket17768() throws Exception {
         DataSet ds = OsmReader.parseDataSet(TestUtils.getRegressionDataStream(17768, "dupmem.osm"), null);
         Layer layer = new OsmDataLayer(ds, null, null);
         MainApplication.getLayerManager().addLayer(layer);
@@ -155,4 +155,164 @@ public class CreateMultipolygonActionTest {
         }
 
     }
+
+    /**
+     * Non-regression test for <a href="https://josm.openstreetmap.de/ticket/20110">Bug #20110</a>.
+     * @throws Exception if an error occurs
+     */
+    @Test
+    void testTicket20110() throws Exception {
+        DataSet ds = OsmReader.parseDataSet(TestUtils.getRegressionDataStream(20110, "data.osm"), null);
+        assertEquals(1, ds.getRelations().size());
+        Relation mp = ds.getRelations().iterator().next();
+        assertEquals("wetland", mp.get("natural"));
+        long numCoastlineWays = ds.getWays().stream().filter(w -> "coastline".equals(w.get("natural"))).count();
+        Relation modMp = createMultipolygon(ds.getWays(), "type:way", mp, false);
+        assertNotNull(modMp);
+        assertEquals("wetland", modMp.get("natural"));
+        assertEquals(numCoastlineWays, ds.getWays().stream().filter(w -> "coastline".equals(w.get("natural"))).count());
+    }
+
+    /**
+     * Non-regression test for <a href="https://josm.openstreetmap.de/ticket/20230">Bug #20230</a>.
+     * @throws Exception if an error occurs
+     */
+    @Test
+    void testTicket20230() throws Exception {
+        DataSet ds = OsmReader.parseDataSet(TestUtils.getRegressionDataStream(20230, "data.osm"), null);
+        assertEquals(1, ds.getRelations().size());
+        Relation mp = ds.getRelations().iterator().next();
+        Relation modMp = createMultipolygon(ds.getWays(), "type:way", mp, true);
+        assertNotNull(modMp);
+        assertEquals(1, ds.getRelations().size());
+        modMp = ds.getRelations().iterator().next();
+        assertTrue(modMp.hasTag("building", "yes"));
+        assertEquals(0, ds.getWays().stream().filter(w -> w.hasTag("building", "yes")).count());
+    }
+
+    /**
+     * Non-regression test for <a href="https://josm.openstreetmap.de/ticket/20238">Bug #20238</a>.
+     * @throws Exception if an error occurs
+     */
+    @Test
+    void testTicket20238() throws Exception {
+        DataSet ds = OsmReader.parseDataSet(TestUtils.getRegressionDataStream(20238, "data.osm"), null);
+        assertEquals(1, ds.getRelations().size());
+        Relation mp = ds.getRelations().iterator().next();
+        assertFalse(ds.getRelations().iterator().next().hasTag("building", "yes"));
+        assertEquals(1, ds.getWays().stream().filter(w -> w.hasTag("building", "yes")).count());
+        Pair<SequenceCommand, Relation> cmd = CreateMultipolygonAction.createMultipolygonCommand(ds.getWays(), mp);
+        assertNotNull(cmd);
+        cmd.a.executeCommand();
+        assertEquals(1, ds.getRelations().size());
+        assertTrue(ds.getRelations().iterator().next().hasTag("building", "yes"));
+        assertEquals(0, ds.getWays().stream().filter(w -> w.hasTag("building", "yes")).count());
+        cmd.a.undoCommand();
+        assertEquals(1, ds.getRelations().size());
+        assertFalse(ds.getRelations().iterator().next().hasTag("building", "yes"));
+        assertEquals(1, ds.getWays().stream().filter(w -> w.hasTag("building", "yes")).count());
+    }
+
+    /**
+     * Non-regression test for <a href="https://josm.openstreetmap.de/ticket/20325">Bug #20325</a>.
+     * @throws Exception if an error occurs
+     */
+    @Test
+    void testTicket20325() throws Exception {
+        DataSet ds = OsmReader.parseDataSet(TestUtils.getRegressionDataStream(20325, "data.osm"), null);
+        assertEquals(1, ds.getRelations().size());
+        Relation mp = ds.getRelations().iterator().next();
+        assertFalse(ds.getRelations().iterator().next().hasTag("landuse", "farmland"));
+        assertEquals(1, ds.getWays().stream().filter(w -> w.hasTag("landuse", "farmland")).count());
+        Pair<SequenceCommand, Relation> cmd = CreateMultipolygonAction.createMultipolygonCommand(ds.getWays(), mp);
+        assertNotNull(cmd);
+        cmd.a.executeCommand();
+        assertEquals(1, ds.getRelations().size());
+        assertTrue(ds.getRelations().iterator().next().hasTag("landuse", "farmland"));
+        assertEquals(0, ds.getWays().stream().filter(w -> w.hasTag("landuse", "farmland")).count());
+        cmd.a.undoCommand();
+        assertEquals(1, ds.getRelations().size());
+        assertFalse(ds.getRelations().iterator().next().hasTag("landuse", "farmland"));
+        assertEquals(1, ds.getWays().stream().filter(w -> w.hasTag("landuse", "farmland")).count());
+    }
+
+    /**
+     * Coverage test for <a href="https://josm.openstreetmap.de/ticket/20325">Bug #20325</a>.
+     * New relation, no update needed, no command should be produced.
+     * @throws Exception if an error occurs
+     */
+    @Test
+    void testTicket20325New() throws Exception {
+        DataSet ds = OsmReader.parseDataSet(TestUtils.getRegressionDataStream(20325, "no-change-new.osm"), null);
+        assertEquals(1, ds.getRelations().size());
+        Relation mp = ds.getRelations().iterator().next();
+        Pair<SequenceCommand, Relation> cmd = CreateMultipolygonAction.createMultipolygonCommand(ds.getWays(), mp);
+        assertNull(cmd);
+    }
+
+    /**
+     * Coverage test for <a href="https://josm.openstreetmap.de/ticket/20325">Bug #20325</a>.
+     * Old relation, no update needed, no command should be produced.
+     * @throws Exception if an error occurs
+     */
+    @Test
+    void testTicket20325Old() throws Exception {
+        DataSet ds = OsmReader.parseDataSet(TestUtils.getRegressionDataStream(20325, "no-change-old.osm"), null);
+        assertEquals(1, ds.getRelations().size());
+        Relation mp = ds.getRelations().iterator().next();
+        Pair<SequenceCommand, Relation> cmd = CreateMultipolygonAction.createMultipolygonCommand(ds.getWays(), mp);
+        assertNull(cmd);
+    }
+
+    /**
+     * Coverage test for <a href="https://josm.openstreetmap.de/ticket/20325">Bug #20325</a>.
+     * Relation cannot be updated but produces warnings. Doesn't test that a popup was shown.
+     * @throws Exception if an error occurs
+     */
+    @Test
+    void testTicket20325Invalid() throws Exception {
+        DataSet ds = OsmReader.parseDataSet(TestUtils.getRegressionDataStream(20325, "invalid-new-upldate.osm"), null);
+        assertEquals(1, ds.getRelations().size());
+        Relation mp = ds.getRelations().iterator().next();
+        Pair<SequenceCommand, Relation> cmd = CreateMultipolygonAction.createMultipolygonCommand(ds.getWays(), mp);
+        assertNull(cmd);
+    }
+
+    /**
+     * Coverage test for <a href="https://josm.openstreetmap.de/ticket/20325">Bug #20325</a>.
+     * Relation needs no updates but produces warnings. Doesn't test that a popup was shown.
+     * @throws Exception if an error occurs
+     */
+    @Test
+    void testTicket20325NoUpdateWarning() throws Exception {
+        DataSet ds = OsmReader.parseDataSet(TestUtils.getRegressionDataStream(20325, "update-no-command-warning.osm"), null);
+        assertEquals(1, ds.getRelations().size());
+        Relation mp = ds.getRelations().iterator().next();
+        Pair<SequenceCommand, Relation> cmd = CreateMultipolygonAction.createMultipolygonCommand(ds.getWays(), mp);
+        assertNull(cmd);
+    }
+
+    /**
+     * Non-regression test for <a href="https://josm.openstreetmap.de/ticket/23641">Bug #23641</a>.
+     * @throws Exception if an error occurs
+     */
+    @Test
+    void testTicket23642() throws Exception {
+        DataSet ds = OsmReader.parseDataSet(TestUtils.getRegressionDataStream(23641, "data.osm"), null);
+        assertEquals(0, ds.getRelations().size());
+        Pair<SequenceCommand, Relation> cmd = CreateMultipolygonAction.createMultipolygonCommand(ds.getWays(), null);
+        assertNotNull(cmd);
+        cmd.a.executeCommand();
+        assertEquals(1, ds.getRelations().size());
+        Relation mp = ds.getRelations().iterator().next();
+        assertTrue(mp.hasTag("landuse", "forest"));
+        assertTrue(mp.hasTag("leaf_type", "needleleaved"));
+        assertEquals(0, ds.getWays().stream().filter(w -> w.hasTag("leaf_type", "needleleaved")).count());
+        assertEquals(1, ds.getWays().stream().filter(w -> w.hasTag("leaf_type", "broadleaved")).count());
+        assertEquals(1, mp.getMembers().stream()
+                .filter(m -> "inner".equals(m.getRole()) && m.getMember().hasTag("landuse", "forest")).count());
+        Pair<SequenceCommand, Relation> updateCmd = CreateMultipolygonAction.createMultipolygonCommand(ds.getWays(), mp);
+        assertNull(updateCmd);
+    }
+
 }

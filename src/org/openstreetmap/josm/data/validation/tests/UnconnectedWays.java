@@ -52,6 +52,10 @@ import org.openstreetmap.josm.tools.Logging;
  * @author frsantos
  */
 public abstract class UnconnectedWays extends Test {
+    private static final String POWER = "power";
+    private static final String PLATFORM = "platform";
+    private static final String PLATFORM_EDGE = "platform_edge";
+    private static final String CONSTRUCTION = "construction";
     private final int code;
     private final boolean isHighwayTest;
 
@@ -98,10 +102,10 @@ public abstract class UnconnectedWays extends Test {
         @Override
         protected boolean ignoreUnconnectedEndNode(Node n) {
             return n.hasTag(HIGHWAY, "turning_circle", "bus_stop", "elevator")
-                    || n.hasTag("amenity", "parking_entrance")
+                    || n.hasTag("amenity", "parking_entrance", "ferry_terminal")
                     || n.isKeyTrue("noexit")
                     || n.hasKey("entrance", "barrier")
-                    || n.getParentWays().stream().anyMatch(p -> isBuilding(p) || p.hasTag(RAILWAY, "platform", "platform_edge"));
+                    || n.getParentWays().stream().anyMatch(p -> isBuilding(p) || p.hasTag(RAILWAY, PLATFORM, PLATFORM_EDGE));
         }
     }
 
@@ -111,21 +115,38 @@ public abstract class UnconnectedWays extends Test {
     public static class UnconnectedRailways extends UnconnectedWays {
         static final int UNCONNECTED_RAILWAYS = 1321;
         /**
-         * Constructs a new {@code UnconnectedRailways} test.
-         */
+        * Constructs a new {@code UnconnectedRailways} test.
+        */
         public UnconnectedRailways() {
             super(tr("Unconnected railways"), UNCONNECTED_RAILWAYS, false);
         }
 
         @Override
         protected boolean isCandidate(OsmPrimitive p) {
-            return p.hasTagDifferent(RAILWAY, "abandoned", "platform", "razed");
+            if (p.hasTag(RAILWAY, CONSTRUCTION) && p.hasKey(CONSTRUCTION))
+                return p.hasTagDifferent(CONSTRUCTION, PLATFORM, PLATFORM_EDGE, "service_station", "station");
+            return p.hasTagDifferent(RAILWAY, "proposed", "planned", "abandoned", "razed", "disused", "no",
+                    PLATFORM, PLATFORM_EDGE, "service_station", "station");
         }
 
         @Override
         protected boolean ignoreUnconnectedEndNode(Node n) {
-            return n.hasTag(RAILWAY, "buffer_stop")
-                || n.isKeyTrue("noexit");
+            if (n.hasTag(RAILWAY, "buffer_stop") || n.isKeyTrue("noexit"))
+                return true;
+            // See #21038. Check also if next node to end node is a buffer stop.
+            Way parent = getWantedParentWay(n);
+            if (parent != null && parent.getNodesCount() > 1) {
+                Node next = null;
+                if (n == parent.firstNode())
+                    next = parent.getNode(1);
+                else if (n == parent.lastNode()) {
+                    next = parent.getNode(parent.getNodesCount() - 2);
+                }
+                if (next != null)
+                    return next.hasTag(RAILWAY, "buffer_stop");
+            }
+            return false;
+
         }
     }
 
@@ -143,7 +164,7 @@ public abstract class UnconnectedWays extends Test {
 
         @Override
         protected boolean isCandidate(OsmPrimitive p) {
-            return p.hasKey("waterway");
+            return p.hasTagDifferent("waterway", "dam", "lock_gate", "weir");
         }
     }
 
@@ -161,7 +182,7 @@ public abstract class UnconnectedWays extends Test {
 
         @Override
         protected boolean isCandidate(OsmPrimitive p) {
-            return p.hasKey("landuse") || p.hasTagDifferent("natural", "tree_row", "cliff");
+            return p.hasKey("landuse") || p.hasTagDifferent("natural", "arete", "cliff", "ridge", "tree_row");
         }
     }
 
@@ -179,12 +200,13 @@ public abstract class UnconnectedWays extends Test {
 
         @Override
         protected boolean isCandidate(OsmPrimitive p) {
-            return p.hasTag("power", "line", "minor_line", "cable");
+            return p.hasTag(POWER, "line", "minor_line", "cable");
         }
 
         @Override
         protected boolean ignoreUnconnectedEndNode(Node n) {
-            return n.hasTag("power", "terminal") || n.hasTag("location:transition", "yes");
+            return n.hasTag(POWER, "terminal") || n.hasTag("location:transition", "yes")
+                    || n.hasTag("line_management", "transition", "termination");
         }
     }
 
@@ -238,6 +260,8 @@ public abstract class UnconnectedWays extends Test {
         middlenodes = new HashSet<>();
         othernodes = new HashSet<>();
         mindist = Config.getPref().getDouble(PREFIX + ".node_way_distance", 10.0);
+        if (this instanceof UnconnectedRailways)
+            mindist = Config.getPref().getDouble(PREFIX + ".node_way_distance_railway", 1.0);
         minmiddledist = Config.getPref().getDouble(PREFIX + ".way_way_distance", 0.0);
         ds = OsmDataManager.getInstance().getActiveDataSet();
         dsArea = ds == null ? null : ds.getDataSourceArea();
@@ -250,11 +274,11 @@ public abstract class UnconnectedWays extends Test {
                 map.clear();
                 return map;
             }
-            if (s.w.hasTag(HIGHWAY, "platform"))
+            if (s.w.hasTag(HIGHWAY, PLATFORM))
                 continue;
             for (Node endnode : s.nearbyNodes(mindist)) {
                 Way parentWay = getWantedParentWay(endnode);
-                if (parentWay != null && !parentWay.hasTag(HIGHWAY, "platform")
+                if (parentWay != null && !parentWay.hasTag(HIGHWAY, PLATFORM)
                         && Objects.equals(OsmUtils.getLayer(s.w), OsmUtils.getLayer(parentWay))
                         // to handle intersections of 't' shapes and similar
                         && !s.isConnectedTo(endnode) && !s.obstacleBetween(endnode)) {
@@ -276,7 +300,7 @@ public abstract class UnconnectedWays extends Test {
             if (!s.concernsArea) {
                 for (Node endnode : s.nearbyNodes(mindist)) {
                     if (!s.isConnectedTo(endnode)) {
-                        if (s.w.hasTag("power")) {
+                        if (s.w.hasTag(POWER)) {
                             boolean badConnection = false;
                             Way otherWay = getWantedParentWay(endnode);
                             if (otherWay != null) {
@@ -321,7 +345,7 @@ public abstract class UnconnectedWays extends Test {
      * @param endnode the node which is known to be an end node of the wanted way
      * @return the wanted way
      */
-    private Way getWantedParentWay(Node endnode) {
+    protected Way getWantedParentWay(Node endnode) {
         for (Way w : endnode.getParentWays()) {
             if (isWantedWay(w))
                 return w;
@@ -394,6 +418,8 @@ public abstract class UnconnectedWays extends Test {
         middlenodes = null;
         othernodes = null;
         searchNodes = null;
+        waysToTest = null;
+        nodesToTest = null;
         dsArea = null;
         ds = null;
         super.endTest();
@@ -439,7 +465,7 @@ public abstract class UnconnectedWays extends Test {
          * @param parent the previous parent way
          * @return true if a reasonable connection was found
          */
-        private boolean isConnectedTo(Node node, LinkedHashSet<Node> visited, double len, Way parent) {
+        private boolean isConnectedTo(Node node, Set<Node> visited, double len, Way parent) {
             if (len > maxLen) {
                 return false;
             }
@@ -447,7 +473,7 @@ public abstract class UnconnectedWays extends Test {
                 Node uncon = visited.iterator().next();
                 LatLon cl = ProjectionRegistry.getProjection().eastNorth2latlon(calcClosest(uncon));
                 // calculate real detour length, closest point might be somewhere between n1 and n2
-                double detourLen = len + node.getCoor().greatCircleDistance(cl);
+                double detourLen = len + node.greatCircleDistance(cl);
                 if (detourLen > maxLen)
                     return false;
                 // see #17914: flag also nodes which are very close
@@ -458,7 +484,7 @@ public abstract class UnconnectedWays extends Test {
             }
             if (visited != null) {
                 visited.add(node);
-                List<Way> wantedParents = node.getParentWays().stream().filter(pw -> isWantedWay(pw))
+                List<Way> wantedParents = node.getParentWays().stream().filter(UnconnectedWays.this::isWantedWay)
                         .collect(Collectors.toList());
                 if (wantedParents.size() > 1 && wantedParents.indexOf(parent) != wantedParents.size() - 1) {
                     // we want to find a different way. so move known way to the end of the list
@@ -479,7 +505,7 @@ public abstract class UnconnectedWays extends Test {
                         final boolean containsN = visited.contains(next);
                         visited.add(next);
                         if (!containsN && isConnectedTo(next, visited,
-                                len + node.getCoor().greatCircleDistance(next.getCoor()), way)) {
+                                len + node.greatCircleDistance(next), way)) {
                             return true;
                         }
                     }
@@ -494,7 +520,7 @@ public abstract class UnconnectedWays extends Test {
 
         double getDist(Node n) {
             EastNorth closest = calcClosest(n);
-            return n.getCoor().greatCircleDistance(ProjectionRegistry.getProjection().eastNorth2latlon(closest));
+            return n.greatCircleDistance(ProjectionRegistry.getProjection().eastNorth2latlon(closest));
         }
 
         private boolean nearby(Node n, double dist) {
@@ -505,15 +531,15 @@ public abstract class UnconnectedWays extends Test {
         }
 
         private BBox getBounds(double fudge) {
-            double x1 = n1.getCoor().lon();
-            double x2 = n2.getCoor().lon();
+            double x1 = n1.lon();
+            double x2 = n2.lon();
             if (x1 > x2) {
                 double tmpx = x1;
                 x1 = x2;
                 x2 = tmpx;
             }
-            double y1 = n1.getCoor().lat();
-            double y2 = n2.getCoor().lat();
+            double y1 = n1.lat();
+            double y2 = n2.lat();
             if (y1 > y2) {
                 double tmpy = y1;
                 y1 = y2;
@@ -592,7 +618,7 @@ public abstract class UnconnectedWays extends Test {
             }
             Node a = w.getNode(i-1);
             Node b = w.getNode(i);
-            if (a.isDrawable() && b.isDrawable()) {
+            if (a.isLatLonKnown() && b.isLatLonKnown()) {
                 MyWaySegment ws = new MyWaySegment(w, a, b, concersArea);
                 ret.add(ws);
             }

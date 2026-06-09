@@ -5,7 +5,10 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Objects;
+import java.util.stream.Stream;
 
 import javax.swing.JOptionPane;
 
@@ -35,6 +38,8 @@ public abstract class FileImporter implements Comparable<FileImporter> {
     public final ExtensionFileFilter filter;
 
     private boolean enabled;
+
+    protected final EnumSet<Options> options = EnumSet.noneOf(Options.class);
 
     /**
      * Constructs a new {@code FileImporter} with the given extension file filter.
@@ -109,7 +114,7 @@ public abstract class FileImporter implements Comparable<FileImporter> {
         } catch (IOException e) {
             displayError(f, e);
             return false;
-        } catch (RuntimeException | LinkageError e) { // NOPMD
+        } catch (RuntimeException | LinkageError e) {
             BugReportExceptionHandler.handleException(e);
             return false;
         }
@@ -174,7 +179,7 @@ public abstract class FileImporter implements Comparable<FileImporter> {
     }
 
     /**
-     * Returns the enabled state of this {@code FileImporter}. When enabled, it is listed and usable in "File-&gt;Open" dialog.
+     * Returns the enabled state of this {@code FileImporter}. When enabled, it is listed and usable in "File → Open" dialog.
      * @return true if this {@code FileImporter} is enabled
      * @since 5459
      */
@@ -183,11 +188,23 @@ public abstract class FileImporter implements Comparable<FileImporter> {
     }
 
     /**
-     * Sets the enabled state of the {@code FileImporter}. When enabled, it is listed and usable in "File-&gt;Open" dialog.
+     * Sets the enabled state of the {@code FileImporter}. When enabled, it is listed and usable in "File → Open" dialog.
      * @param enabled true to enable this {@code FileImporter}, false to disable it
      * @since 5459
      */
     public final void setEnabled(boolean enabled) {
         this.enabled = enabled;
+    }
+
+    /**
+     * Set the options for the {@code FileImporter}.
+     * @param options The options to set
+     * @since 17534
+     */
+    public final void setOptions(Options[] options) {
+        this.options.clear();
+        if (options != null) {
+            Stream.of(options).filter(Objects::nonNull).forEach(this.options::add);
+        }
     }
 }

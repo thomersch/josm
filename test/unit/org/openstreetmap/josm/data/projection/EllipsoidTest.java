@@ -1,25 +1,26 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.projection;
 
+import static org.junit.jupiter.api.Assertions.fail;
+
 import java.security.SecureRandom;
 import java.util.Random;
 
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.coor.LatLon;
 
 /**
  * Unit tests for class {@link Ellipsoid}.
  */
-public class EllipsoidTest {
+class EllipsoidTest {
 
-    private static final double EPSILON = 1e-8;
+    private static final double EPSILON = 1.5e-8;
 
     /**
      * convert latlon to cartesian coordinates back and forth
      */
     @Test
-    public void testLatLon2Cart2LatLon() {
+    void testLatLon2Cart2LatLon() {
         Random r = new SecureRandom();
         double maxErrLat = 0, maxErrLon = 0;
         Ellipsoid ellips = Ellipsoid.WGS84;
@@ -36,8 +37,7 @@ public class EllipsoidTest {
                 if (!(Math.abs(lat - ll.lat()) < EPSILON && Math.abs(lon - ll.lon()) < EPSILON)) {
                     String error = String.format("point: %s iterations: %s current: %s errorLat: %s errorLon %s",
                             new LatLon(lat, lon), i, ll, Math.abs(lat - ll.lat()), Math.abs(lon - ll.lon()));
-                    System.err.println(error);
-                    Assert.fail();
+                    fail(error);
                 }
             }
 

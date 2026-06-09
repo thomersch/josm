@@ -1,21 +1,23 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.tools;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import org.junit.Assert;
-import org.junit.Rule;
-import org.junit.Test;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 
 /**
  * Test {@link Tag2Link}
  */
-public class Tag2LinkTest {
+@BasicPreferences
+class Tag2LinkTest {
 
     List<String> links = new ArrayList<>();
 
@@ -24,30 +26,43 @@ public class Tag2LinkTest {
     }
 
     void checkLinks(String... expected) {
-        Assert.assertEquals(Arrays.asList(expected), links);
+        assertEquals(Arrays.asList(expected), this.links);
     }
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences();
 
     /**
      * Unit test of function {@link Tag2Link#initialize()}.
      */
     @Test
-    public void testInitialize() {
+    void testInitialize() {
         Tag2Link.initialize();
-        Assert.assertTrue("obtains at least 40 rules", Tag2Link.wikidataRules.size() > 40);
+        assertTrue(Tag2Link.wikidataRules.size() > 40, "obtains at least 40 rules");
+    }
+
+    /**
+     * Unit test for links that may come in multiple forms.
+     * Example: <a href="https://wiki.osm.org/wiki/Key:contact:facebook">https://wiki.openstreetmap.org/wiki/Key:contact:facebook</a>
+     * <p>
+     * See also JOSM #21794
+     * @param value The tag value for "contact:facebook"
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"https://www.facebook.com/FacebookUserName", "FacebookUserName"})
+    void testUrlKeyMultipleForms(final String value) {
+        // We need the wikidata rules Since testInitialize tests initialization, reuse it.
+        if (!Tag2Link.wikidataRules.containsKey("contact:facebook")) {
+            this.testInitialize();
+        }
+        Tag2Link.getLinksForTag("contact:facebook", value, this::addLink);
+        this.checkLinks("Open facebook.com // https://www.facebook.com/FacebookUserName",
+                "Open unavatar.now.sh // https://unavatar.now.sh/facebook/FacebookUserName",
+                "Open messenger.com // https://www.messenger.com/t/FacebookUserName");
     }
 
     /**
      * Unit test of function {@link Tag2Link#getLinksForTag}.
      */
     @Test
-    public void testName() {
+    void testName() {
         Tag2Link.getLinksForTag("name", "foobar", this::addLink);
         checkLinks("Search on duckduckgo.com // https://duckduckgo.com/?q=foobar",
                 "Search on google.com // https://www.google.com/search?q=foobar");
@@ -57,7 +72,7 @@ public class Tag2LinkTest {
      * Unit test of function {@link Tag2Link#getLinksForTag}.
      */
     @Test
-    public void testWebsite() {
+    void testWebsite() {
         Tag2Link.getLinksForTag("website", "http://www.openstreetmap.org/", this::addLink);
         checkLinks("Open openstreetmap.org // http://www.openstreetmap.org/");
         links.clear();
@@ -72,7 +87,7 @@ public class Tag2LinkTest {
      * Unit test of function {@link Tag2Link#getLinksForTag}.
      */
     @Test
-    public void testWikipedia() {
+    void testWikipedia() {
         Tag2Link.getLinksForTag("wikipedia", "de:Wohnhausgruppe Herderstraße", this::addLink);
         checkLinks("View Wikipedia article // https://de.wikipedia.org/wiki/Wohnhausgruppe_Herderstraße");
         links.clear();
@@ -84,30 +99,36 @@ public class Tag2LinkTest {
      * Unit test of function {@link Tag2Link#getLinksForTag}.
      */
     @Test
-    public void testImageCommonsImage() {
+    void testImageCommonsImage() {
         Tag2Link.getLinksForTag("image", "File:Witten Brücke Gasstraße.jpg", this::addLink);
-        checkLinks("View image on Wikimedia Commons // https://commons.wikimedia.org/wiki/File:Witten Brücke Gasstraße.jpg");
+        checkLinks("View image on Wikimedia Commons // https://commons.wikimedia.org/wiki/File%3AWitten_Br%C3%BCcke_Gasstra%C3%9Fe.jpg");
         links.clear();
         // non-regression test for #19754
         Tag2Link.getLinksForTag("image", "File:Foo.jpg;File:Bar.jpg", this::addLink);
-        checkLinks("View image on Wikimedia Commons // https://commons.wikimedia.org/wiki/File:Foo.jpg",
-                "View image on Wikimedia Commons // https://commons.wikimedia.org/wiki/File:Bar.jpg");
+        checkLinks("View image on Wikimedia Commons // https://commons.wikimedia.org/wiki/File%3AFoo.jpg",
+                "View image on Wikimedia Commons // https://commons.wikimedia.org/wiki/File%3ABar.jpg");
+        links.clear();
+        // non-regression test for #19771
+        Tag2Link.getLinksForTag("image", "File:Côte de granite rose - Trégastel à Ploumanac'h - 20190723 - 025.jpg", this::addLink);
+        checkLinks("View image on Wikimedia Commons // " +
+                "https://commons.wikimedia.org/wiki/" +
+                "File%3AC%C3%B4te_de_granite_rose_-_Tr%C3%A9gastel_%C3%A0_Ploumanac%27h_-_20190723_-_025.jpg");
     }
 
     /**
      * Unit test of function {@link Tag2Link#getLinksForTag}.
      */
     @Test
-    public void testImageCommonsCategory() {
+    void testImageCommonsCategory() {
         Tag2Link.getLinksForTag("image", "category:JOSM", this::addLink);
-        checkLinks("View category on Wikimedia Commons // https://commons.wikimedia.org/wiki/category:JOSM");
+        checkLinks("View category on Wikimedia Commons // https://commons.wikimedia.org/wiki/category%3AJOSM");
     }
 
     /**
      * Unit test of function {@link Tag2Link#getLinksForTag}.
      */
     @Test
-    public void testBrandWikidata() {
+    void testBrandWikidata() {
         Tag2Link.getLinksForTag("brand:wikidata", "Q259340", this::addLink);
         checkLinks("View Wikidata item // https://www.wikidata.org/wiki/Q259340");
     }
@@ -116,10 +137,23 @@ public class Tag2LinkTest {
      * Unit test of function {@link Tag2Link#getLinksForTag}.
      */
     @Test
-    public void testArchipelagoWikidata() {
+    void testArchipelagoWikidata() {
         Tag2Link.getLinksForTag("archipelago:wikidata", "Q756987;Q756988", this::addLink);
         checkLinks("View Wikidata item // https://www.wikidata.org/wiki/Q756987",
                 "View Wikidata item // https://www.wikidata.org/wiki/Q756988");
+    }
+
+    /**
+     * Unit test of function {@link Tag2Link#getLinksForTag}.
+     * <p>
+     * Non-regression test for <a href="https://josm.openstreetmap.de/ticket/19754#comment:9">comment:9:ticket:19754</a>
+     */
+    @Test
+    void testMultipleSources() {
+        Tag2Link.getLinksForTag("source", "https://foo.com/; https://bar.com/; https://baz.com/", this::addLink);
+        checkLinks("Open foo.com // https://foo.com/",
+                "Open bar.com // https://bar.com/",
+                "Open baz.com // https://baz.com/");
     }
 
 }

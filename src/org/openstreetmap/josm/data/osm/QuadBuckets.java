@@ -10,19 +10,22 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.stream.IntStream;
 
+import org.openstreetmap.josm.data.IQuadBucketType;
+import org.openstreetmap.josm.data.coor.ILatLon;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.coor.QuadTiling;
 import org.openstreetmap.josm.tools.Logging;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * Note: bbox of primitives added to QuadBuckets has to stay the same. In case of coordinate change, primitive must
  * be removed and re-added.
  *
  * This class is (no longer) thread safe.
- * @param <T> type of primitives
- * @since 2165
+ * @param <T> type of object extending {@link IQuadBucketType}.
+ * @since 2165 ({@link IPrimitive} only), 17459 for {@link IQuadBucketType}
  */
-public class QuadBuckets<T extends IPrimitive> implements Collection<T> {
+public class QuadBuckets<T extends IQuadBucketType> implements Collection<T> {
     private static final boolean CONSISTENCY_TESTING = false;
     private static final byte NW_INDEX = 1;
     private static final byte NE_INDEX = 3;
@@ -35,7 +38,7 @@ public class QuadBuckets<T extends IPrimitive> implements Collection<T> {
 
     private static final int MAX_OBJECTS_PER_NODE = 48;
 
-    static class QBLevel<T extends IPrimitive> extends BBox {
+    static class QBLevel<T extends IQuadBucketType> extends BBox {
         private final byte level;
         private final byte index;
         private final long quad;
@@ -171,6 +174,10 @@ public class QuadBuckets<T extends IPrimitive> implements Collection<T> {
         }
 
         boolean matches(final T o, final BBox searchBbox) {
+            // Avoid allocations for point (AKA Node) objects
+            if (o instanceof ILatLon) {
+                return searchBbox.contains((ILatLon) o);
+            }
             return o.getBBox().intersects(searchBbox);
         }
 
@@ -350,7 +357,7 @@ public class QuadBuckets<T extends IPrimitive> implements Collection<T> {
         }
 
         boolean canRemove() {
-            return (content == null || content.isEmpty()) && !this.hasChildren();
+            return Utils.isEmpty(content) && !this.hasChildren();
         }
     }
 
@@ -453,7 +460,12 @@ public class QuadBuckets<T extends IPrimitive> implements Collection<T> {
 
     @Override
     public Object[] toArray() {
-        return this.toList().toArray();
+        // Don't call toList() -- in some cases, this can produce an infinite loop
+        // For example, ArrayList may call toArray to get the initial array. However, since we are
+        // creating a new ArrayList in toList with `this`, this creates an infinite recursion loop.
+        // So a `toArray` call becomes `toArray -> toList -> toArray -> toList -> toArray -> ...`
+        // For more information, see #20587.
+        return this.stream().toArray();
     }
 
     @Override

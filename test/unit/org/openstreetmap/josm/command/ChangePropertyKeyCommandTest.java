@@ -1,18 +1,15 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.command;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.command.CommandTest.CommandTestData;
 import org.openstreetmap.josm.data.osm.DataSet;
@@ -20,29 +17,28 @@ import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.User;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.gui.mappaint.ElemStyles;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
+import org.openstreetmap.josm.testutils.annotations.I18n;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import nl.jqno.equalsverifier.EqualsVerifier;
 import nl.jqno.equalsverifier.Warning;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests of {@link ChangePropertyKeyCommand} class.
  */
-public class ChangePropertyKeyCommandTest {
-
-    /**
-     * We need prefs for nodes.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences().i18n();
+@I18n
+// We need prefs for nodes.
+@BasicPreferences
+class ChangePropertyKeyCommandTest {
     private CommandTestData testData;
 
     /**
      * Set up the test data.
      */
-    @Before
+    @BeforeEach
     public void createTestData() {
         testData = new CommandTestData();
     }
@@ -51,7 +47,7 @@ public class ChangePropertyKeyCommandTest {
      * Tests that a key is changed.
      */
     @Test
-    public void testChangeKeySingle() {
+    void testChangeKeySingle() {
         assertTrue(new ChangePropertyKeyCommand(testData.existingNode, "existing", "newKey").executeCommand());
 
         assertNull(testData.existingNode.get("existing"));
@@ -63,7 +59,7 @@ public class ChangePropertyKeyCommandTest {
      * Tests that a key is changed.
      */
     @Test
-    public void testChangeKey() {
+    void testChangeKey() {
         assertTrue(new ChangePropertyKeyCommand(Arrays.asList(testData.existingNode, testData.existingWay), "existing",
                 "newKey").executeCommand());
 
@@ -79,7 +75,7 @@ public class ChangePropertyKeyCommandTest {
      * Tests that nop operations are ignored.
      */
     @Test
-    public void testChangeKeyIgnored() {
+    void testChangeKeyIgnored() {
         Node node1 = testData.createNode(15);
         node1.removeAll();
         Node node2 = testData.createNode(16);
@@ -108,7 +104,7 @@ public class ChangePropertyKeyCommandTest {
      * Test {@link ChangePropertyKeyCommand#getDescriptionText()}
      */
     @Test
-    public void testDescription() {
+    void testDescription() {
         Node node1 = testData.createNode(15);
         node1.put("name", "xy");
 
@@ -122,7 +118,7 @@ public class ChangePropertyKeyCommandTest {
      * Test {@link ChangePropertyCommand#getChildren()}
      */
     @Test
-    public void testChildren() {
+    void testChildren() {
         Node node1 = testData.createNode(15);
         Node node2 = testData.createNode(16);
         node1.put("name", "node1");
@@ -148,7 +144,7 @@ public class ChangePropertyKeyCommandTest {
      * Unit test of methods {@link ChangePropertyKeyCommand#equals} and {@link ChangePropertyKeyCommand#hashCode}.
      */
     @Test
-    public void testEqualsContract() {
+    void testEqualsContract() {
         TestUtils.assumeWorkingEqualsVerifier();
         EqualsVerifier.forClass(ChangePropertyKeyCommand.class).usingGetClass()
             .withPrefabValues(DataSet.class,
@@ -157,6 +153,8 @@ public class ChangePropertyKeyCommandTest {
                     User.createOsmUser(1, "foo"), User.createOsmUser(2, "bar"))
             .withPrefabValues(OsmDataLayer.class,
                 new OsmDataLayer(new DataSet(), "1", null), new OsmDataLayer(new DataSet(), "2", null))
+            .withPrefabValues(ElemStyles.class,
+                new ElemStyles(), new ElemStyles())
             .suppress(Warning.NONFINAL_FIELDS)
             .verify();
     }

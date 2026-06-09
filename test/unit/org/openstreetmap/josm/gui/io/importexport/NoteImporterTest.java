@@ -1,33 +1,24 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.io.importexport;
 
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.gui.MainApplication;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
 
 /**
  * Unit tests of {@link NoteImporter} class.
  */
-public class NoteImporterTest {
-
-    /**
-     * Use the test rules to remove any layers and reset state.
-     */
-    @Rule
-    public final JOSMTestRules rules = new JOSMTestRules();
-
+class NoteImporterTest {
     /**
      * Non-regression test for <a href="https://josm.openstreetmap.de/ticket/12531">Bug #12531</a>.
      */
     @Test
-    public void testTicket12531() {
+    void testTicket12531() {
         MainApplication.getLayerManager().resetState();
         assertNull(MainApplication.getMap());
         assertTrue(new NoteImporter().importDataHandleExceptions(

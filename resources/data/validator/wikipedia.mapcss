@@ -9,7 +9,7 @@
 }
 
 /* Valid languages are extracted from <https://www.wikidata.org/w/api.php?action=sitematrix&formatversion=2>, which may change, so this is a warning only. */
-*[wikipedia =~ /(?i)^[-a-z]{2,12}:/][wikipedia !~ /^https?:\/\//][wikipedia !~ /^(ab|ace|ady|af|ak|als|am|an|ang|ar|arc|arz|as|ast|atj|av|ay|az|azb|ba|ban|bar|bat-smg|bcl|be|be-x-old|bg|bh|bi|bjn|bm|bn|bo|bpy|br|bs|bug|bxr|ca|cbk-zam|cdo|ce|ceb|ch|chr|chy|ckb|co|cr|crh|cs|csb|cu|cv|cy|da|de|din|diq|dsb|dty|dv|dz|ee|el|eml|en|eo|es|et|eu|ext|fa|ff|fi|fiu-vro|fj|fo|fr|frp|frr|fur|fy|ga|gag|gan|gcr|gd|gl|glk|gn|gom|gor|got|gu|gv|ha|hak|haw|he|hi|hif|hr|hsb|ht|hu|hy|hyw|ia|id|ie|ig|ik|ilo|inh|io|is|it|iu|ja|jam|jbo|jv|ka|kaa|kab|kbd|kbp|kg|ki|kk|kl|km|kn|ko|koi|krc|ks|ksh|ku|kv|kw|ky|la|lad|lb|lbe|lez|lfn|lg|li|lij|lmo|ln|lo|lrc|lt|ltg|lv|mai|map-bms|mdf|mg|mhr|mi|min|mk|ml|mn|mnw|mr|mrj|ms|mt|mwl|my|myv|mzn|na|nah|nap|nds|nds-nl|ne|new|nl|nn|no|nov|nqo|nrm|nso|nv|ny|oc|olo|om|or|os|pa|pag|pam|pap|pcd|pdc|pfl|pi|pih|pl|pms|pnb|pnt|ps|pt|qu|rm|rmy|rn|ro|roa-rup|roa-tara|ru|rue|rw|sa|sah|sat|sc|scn|sco|sd|se|sg|sh|shn|si|simple|sk|sl|sm|sn|so|sq|sr|srn|ss|st|stq|su|sv|sw|szl|szy|ta|tcy|te|tet|tg|th|ti|tk|tl|tn|to|tpi|tr|ts|tt|tum|tw|ty|tyv|udm|ug|uk|ur|uz|ve|vec|vep|vi|vls|vo|wa|war|wo|wuu|xal|xh|xmf|yi|yo|za|zea|zh|zh-classical|zh-min-nan|zh-yue|zu):/] {
+*[wikipedia =~ /(?i)^[-a-z]{2,12}:/][wikipedia !~ /^https?:\/\//][wikipedia !~ /^(aa|ab|ace|ady|af|ak|als|alt|am|ami|an|ang|ar|arc|ary|arz|as|ast|atj|av|avk|awa|ay|az|azb|ba|ban|bar|bat-smg|bcl|be|be-tarask|be-x-old|bg|bh|bi|bjn|bm|bn|bo|bpy|br|bs|bug|bxr|ca|cbk-zam|cdo|ce|ceb|ch|cho|chr|chy|ckb|co|cr|crh|cs|csb|cu|cv|cy|da|dag|de|din|diq|dsb|dty|dv|dz|ee|el|eml|en|eo|es|et|eu|ext|fa|ff|fi|fiu-vro|fj|fo|fr|frp|frr|fur|fy|ga|gag|gan|gcr|gd|gl|glk|gn|gom|gor|got|gu|guw|gv|ha|hak|haw|he|hi|hif|ho|hr|hsb|ht|hu|hy|hyw|hz|ia|id|ie|ig|ii|ik|ilo|inh|io|is|it|iu|ja|jam|jbo|jv|ka|kaa|kab|kbd|kbp|kcg|kg|ki|kj|kk|kl|km|kn|ko|koi|kr|krc|ks|ksh|ku|kv|kw|ky|la|lad|lb|lbe|lez|lfn|lg|li|lij|lld|lmo|ln|lo|lrc|lt|ltg|lv|mad|mai|map-bms|mdf|mg|mh|mhr|mi|min|mk|ml|mn|mni|mnw|mo|mr|mrj|ms|mt|mus|mwl|my|myv|mzn|na|nah|nap|nds|nds-nl|ne|new|ng|nia|nl|nn|no|nov|nqo|nrm|nso|nv|ny|oc|olo|om|or|os|pa|pag|pam|pap|pcd|pdc|pfl|pi|pih|pl|pms|pnb|pnt|ps|pt|pwn|qu|rm|rmy|rn|ro|roa-rup|roa-tara|ru|rue|rw|sa|sah|sat|sc|scn|sco|sd|se|sg|sh|shi|shn|shy|si|simple|sk|skr|sl|sm|smn|sn|so|sq|sr|srn|ss|st|stq|su|sv|sw|szl|szy|ta|tay|tcy|te|tet|tg|th|ti|tk|tl|tn|to|tpi|tr|trv|ts|tt|tum|tw|ty|tyv|udm|ug|uk|ur|uz|ve|vec|vep|vi|vls|vo|wa|war|wo|wuu|xal|xh|xmf|yi|yo|yue|za|zea|zh|zh-classical|zh-min-nan|zh-yue|zu):/] {
   throwWarning: tr("wikipedia tag has an unknown language prefix");
   assertMatch: "node wikipedia=X-Y-Z:Foobar";
   assertNoMatch: "node wikipedia=en:Foobar";
@@ -54,8 +54,7 @@
 
 *[/^wikipedia:[-a-z]{2,12}$/][/^wikipedia:[-a-z]{2,12}$/ =~ /(?i).*%[0-9A-F][0-9A-F]/] {
   throwError: tr("{0} tag should not have URL-encoded values like ''%27''", "{0.key}");
-  /* fixAdd: concat("{0.key}", "=", get(regexp_match("(?i)^([-a-z]+:)(.*)$", tag("{0.key}")),1), trim(replace(URL_decode(get(regexp_match("(?i)^([-a-z]+:)(.+)$", tag("{0.key}")),2)), "_", " "))); */
-    /* tag("{0.key}") is not yet supported */
+  fixAdd: concat("{0.key}", "=", get(regexp_match("(?i)^([-a-z]+:)?(.*)$", tag("{0.key}")),1), trim(replace(URL_decode(get(println(regexp_match("(?i)^([-a-z]+:)?(.+)$", tag("{0.key}"))),2)), "_", " ")));
   assertMatch: "node wikipedia:de=Foo%27s";
   assertNoMatch: "node wikipedia:de=Foo";
 }
@@ -77,7 +76,7 @@
 /* All wikipedias except "jbo" automatically capitalize first letter of the page title.
    To see the latest list, see <https://noc.wikimedia.org/conf/highlight.php?file=InitialiseSettings.php>
    and look for 'wgCapitalLinks' setting. */
-*[wikipedia =~ /^[-a-zA-Z]{2,12}:\p{Ll}/][wikipedia !~ /^jbo:/][wikipedia !~ /(?i)^[-a-z]{2,12}:https?:/] {
+*[wikipedia =~ /^[-a-zA-Z]{2,12}:(?!\p{sc=Georgian})\p{Ll}/][wikipedia !~ /^jbo:/][wikipedia !~ /(?i)^[-a-z]{2,12}:https?:/] {
   throwWarning: tr("wikipedia page title should have first letter capitalized");
   fixAdd: concat("wikipedia=", get(regexp_match("(?i)^([-a-z]+:)(.)(.*)$", tag("wikipedia")),1), upper(get(regexp_match("(?i)^([-a-z]+:)(.)(.*)$", tag("wikipedia")),2)), get(regexp_match("(?i)^([-a-z]+:)(.)(.*)$", tag("wikipedia")),3));
   assertMatch: "node wikipedia=en:foo";

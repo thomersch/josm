@@ -1,6 +1,7 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.osm;
 
+import static org.openstreetmap.josm.tools.I18n.marktr;
 import static org.openstreetmap.josm.tools.I18n.tr;
 import static org.openstreetmap.josm.tools.I18n.trc;
 import static org.openstreetmap.josm.tools.I18n.trcLazy;
@@ -28,6 +29,8 @@ import org.openstreetmap.josm.data.osm.history.HistoryNode;
 import org.openstreetmap.josm.data.osm.history.HistoryOsmPrimitive;
 import org.openstreetmap.josm.data.osm.history.HistoryRelation;
 import org.openstreetmap.josm.data.osm.history.HistoryWay;
+import org.openstreetmap.josm.data.preferences.BooleanProperty;
+import org.openstreetmap.josm.data.preferences.CachingProperty;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPreset;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetNameTemplateList;
 import org.openstreetmap.josm.spi.preferences.Config;
@@ -47,6 +50,19 @@ public class DefaultNameFormatter implements NameFormatter, HistoryNameFormatter
     private static DefaultNameFormatter instance;
 
     private static final List<NameFormatterHook> formatHooks = new LinkedList<>();
+    private static final CachingProperty<Boolean> PROPERTY_SHOW_ID =
+            new BooleanProperty("osm-primitives.showid", false).cached();
+    private static final CachingProperty<Boolean> PROPERTY_SHOW_ID_NEW_PRIMITIVES =
+            new BooleanProperty("osm-primitives.showid.new-primitives", false).cached();
+    private static final CachingProperty<Boolean> PROPERTY_SHOW_VERSION =
+            new BooleanProperty("osm-primitives.showversion", false).cached();
+    private static final CachingProperty<Boolean> PROPERTY_SHOW_COOR =
+            new BooleanProperty("osm-primitives.showcoor", false).cached();
+    private static final CachingProperty<Boolean> PROPERTY_LOCALIZE_NAME =
+            new BooleanProperty("osm-primitives.localize-name", true).cached();
+
+    private static final List<String> HIGHWAY_RAILWAY_WATERWAY_LANDUSE_BUILDING = Arrays.asList(
+            marktr("highway"), marktr("railway"), marktr("waterway"), marktr("landuse"), marktr("building"));
 
     /**
      * Replies the unique instance of this formatter
@@ -101,6 +117,7 @@ public class DefaultNameFormatter implements NameFormatter, HistoryNameFormatter
             "wetland",
             //
             ":LocationCode",
+            "description",
             "note",
             "?building",
             "?building:part",
@@ -137,17 +154,42 @@ public class DefaultNameFormatter implements NameFormatter, HistoryNameFormatter
      */
     protected void decorateNameWithId(StringBuilder name, IPrimitive primitive) {
         int version = primitive.getVersion();
-        if (Config.getPref().getBoolean("osm-primitives.showid")) {
-            long id = Config.getPref().getBoolean("osm-primitives.showid.new-primitives") ?
+        if (Boolean.TRUE.equals(PROPERTY_SHOW_ID.get())) {
+            long id = Boolean.TRUE.equals(PROPERTY_SHOW_ID_NEW_PRIMITIVES.get()) ?
                     primitive.getUniqueId() : primitive.getId();
-            if (Config.getPref().getBoolean("osm-primitives.showversion") && version > 0) {
+            if (version > 0 && Boolean.TRUE.equals(PROPERTY_SHOW_VERSION.get())) {
                 name.append(tr(" [id: {0}, v{1}]", id, version));
             } else {
                 name.append(tr(" [id: {0}]", id));
             }
-        } else if (Config.getPref().getBoolean("osm-primitives.showversion")) {
+        } else if (Boolean.TRUE.equals(PROPERTY_SHOW_VERSION.get())) {
             name.append(tr(" [v{0}]", version));
         }
+    }
+
+    /**
+     * Decorates the name of primitive with nodes count
+     *
+     * @param name the name without the nodes count
+     * @param way the way
+     * @since 18808
+     */
+    protected void decorateNameWithNodes(StringBuilder name, IWay<?> way) {
+        char mark;
+        // If current language is left-to-right (almost all languages)
+        if (ComponentOrientation.getOrientation(Locale.getDefault()).isLeftToRight()) {
+            // will insert Left-To-Right Mark to ensure proper display of text in the case when object name is right-to-left
+            mark = '\u200E';
+        } else {
+            // otherwise will insert Right-To-Left Mark to ensure proper display in the opposite case
+            mark = '\u200F';
+        }
+        int nodesNo = way.getRealNodesCount();
+        /* note: length == 0 should no longer happen, but leave the bracket code
+            nevertheless, who knows what future brings */
+        /* I18n: count of nodes as parameter */
+        String nodes = trn("{0} node", "{0} nodes", nodesNo, nodesNo);
+        name.append(mark).append(" (").append(nodes).append(')');
     }
 
     /**
@@ -159,14 +201,7 @@ public class DefaultNameFormatter implements NameFormatter, HistoryNameFormatter
      * @since 13564 (signature)
      */
     public String format(IPrimitive osm) {
-        if (osm instanceof INode) {
-            return format((INode) osm);
-        } else if (osm instanceof IWay) {
-            return format((IWay<?>) osm);
-        } else if (osm instanceof IRelation) {
-            return format((IRelation<?>) osm);
-        }
-        return null;
+        return osm.getDisplayName(this);
     }
 
     @Override
@@ -177,29 +212,9 @@ public class DefaultNameFormatter implements NameFormatter, HistoryNameFormatter
         } else {
             TaggingPreset preset = TaggingPresetNameTemplateList.getInstance().findPresetTemplate(node);
             if (preset == null || !(node instanceof TemplateEngineDataProvider)) {
-                String n;
-                if (Config.getPref().getBoolean("osm-primitives.localize-name", true)) {
-                    n = node.getLocalName();
-                } else {
-                    n = node.getName();
-                }
+                String n = formatLocalName(node);
                 if (n == null) {
-                    String s = node.get("addr:housename");
-                    if (s != null) {
-                        /* I18n: name of house as parameter */
-                        n = tr("House {0}", s);
-                    }
-                    if (n == null && (s = node.get("addr:housenumber")) != null) {
-                        String t = node.get("addr:street");
-                        if (t != null) {
-                            /* I18n: house number, street as parameter, number should remain
-                        before street for better visibility */
-                            n = tr("House number {0} at {1}", s, t);
-                        } else {
-                            /* I18n: house number as parameter */
-                            n = tr("House number {0}", s);
-                        }
-                    }
+                    n = formatAddress(node);
                 }
 
                 if (n == null) {
@@ -209,19 +224,23 @@ public class DefaultNameFormatter implements NameFormatter, HistoryNameFormatter
             } else {
                 preset.nameTemplate.appendText(name, (TemplateEngineDataProvider) node);
             }
-            if (node.isLatLonKnown() && Config.getPref().getBoolean("osm-primitives.showcoor")) {
-                name.append(" \u200E(");
-                name.append(CoordinateFormatManager.getDefaultFormat().toString(node, ", "));
-                name.append(")\u200C");
+            if (node.isLatLonKnown() && Boolean.TRUE.equals(PROPERTY_SHOW_COOR.get())) {
+                name.append(" \u200E(")
+                    .append(CoordinateFormatManager.getDefaultFormat().toString(node, ", "))
+                    .append(")\u200C");
             }
         }
         decorateNameWithId(name, node);
 
         String result = name.toString();
-        return formatHooks.stream().map(hook -> hook.checkFormat(node, result))
-                .filter(Objects::nonNull)
-                .findFirst().orElse(result);
-
+        // This avoids memallocs from Stream map, filter and Optional creation.
+        for (NameFormatterHook hook : formatHooks) {
+            final String checkFormat = hook.checkFormat(node, result);
+            if (checkFormat != null) {
+                return checkFormat;
+            }
+        }
+        return result;
     }
 
     private final Comparator<INode> nodeComparator = Comparator.comparing(this::format);
@@ -253,42 +272,23 @@ public class DefaultNameFormatter implements NameFormatter, HistoryNameFormatter
             TaggingPreset preset = TaggingPresetNameTemplateList.getInstance().findPresetTemplate(way);
             if (preset == null || !(way instanceof TemplateEngineDataProvider)) {
                 String n;
-                if (Config.getPref().getBoolean("osm-primitives.localize-name", true)) {
-                    n = way.getLocalName();
-                } else {
-                    n = way.getName();
-                }
+                n = formatLocalName(way);
                 if (n == null) {
                     n = way.get("ref");
                 }
                 if (n == null) {
-                    n = way.hasKey("highway") ? tr("highway") :
-                        way.hasKey("railway") ? tr("railway") :
-                        way.hasKey("waterway") ? tr("waterway") :
-                        way.hasKey("landuse") ? tr("landuse") : null;
+                    n = formatAddress(way);
                 }
                 if (n == null) {
-                    String s = way.get("addr:housename");
-                    if (s != null) {
-                        /* I18n: name of house as parameter */
-                        n = tr("House {0}", s);
-                    }
-                    if (n == null && (s = way.get("addr:housenumber")) != null) {
-                        String t = way.get("addr:street");
-                        if (t != null) {
-                            /* I18n: house number, street as parameter, number should remain
-                        before street for better visibility */
-                            n = tr("House number {0} at {1}", s, t);
-                        } else {
-                            /* I18n: house number as parameter */
-                            n = tr("House number {0}", s);
+                    for (String key : HIGHWAY_RAILWAY_WATERWAY_LANDUSE_BUILDING) {
+                        if (way.hasKey(key) && !way.isKeyFalse(key)) {
+                            /* I18N: first is highway, railway, waterway, landuse or building type, second is the type itself */
+                            n = way.isKeyTrue(key) ? tr(key) : tr("{0} ({1})", trcLazy(key, way.get(key)), tr(key));
+                            break;
                         }
                     }
                 }
-                if (n == null && way.hasKey("building")) {
-                    n = tr("building");
-                }
-                if (n == null || n.isEmpty()) {
+                if (Utils.isEmpty(n)) {
                     n = String.valueOf(way.getId());
                 }
 
@@ -297,12 +297,7 @@ public class DefaultNameFormatter implements NameFormatter, HistoryNameFormatter
                 preset.nameTemplate.appendText(name, (TemplateEngineDataProvider) way);
             }
 
-            int nodesNo = way.getRealNodesCount();
-            /* note: length == 0 should no longer happen, but leave the bracket code
-               nevertheless, who knows what future brings */
-            /* I18n: count of nodes as parameter */
-            String nodes = trn("{0} node", "{0} nodes", nodesNo, nodesNo);
-            name.append(mark).append(" (").append(nodes).append(')');
+            decorateNameWithNodes(name, way);
         }
         decorateNameWithId(name, way);
         name.append('\u200C');
@@ -312,6 +307,43 @@ public class DefaultNameFormatter implements NameFormatter, HistoryNameFormatter
                 .filter(Objects::nonNull)
                 .findFirst().orElse(result);
 
+    }
+
+    private static String formatLocalName(IPrimitive osm) {
+        if (Boolean.TRUE.equals(PROPERTY_LOCALIZE_NAME.get())) {
+            return osm.getLocalName();
+        } else {
+            return osm.getName();
+        }
+    }
+
+    private static String formatLocalName(HistoryOsmPrimitive osm) {
+        if (Boolean.TRUE.equals(PROPERTY_LOCALIZE_NAME.get())) {
+            return osm.getLocalName();
+        } else {
+            return osm.getName();
+        }
+    }
+
+    private static String formatAddress(Tagged osm) {
+        String n = null;
+        String s = osm.get("addr:housename");
+        if (s != null) {
+            /* I18n: name of house as parameter */
+            n = tr("House {0}", s);
+        }
+        if (n == null && (s = osm.get("addr:housenumber")) != null) {
+            String t = osm.get("addr:street");
+            if (t != null) {
+                /* I18n: house number, street as parameter, number should remain
+            before street for better visibility */
+                n = tr("House number {0} at {1}", s, t);
+            } else {
+                /* I18n: house number as parameter */
+                n = tr("House number {0}", s);
+            }
+        }
+        return n;
     }
 
     private final Comparator<IWay<?>> wayComparator = Comparator.comparing(this::format);
@@ -361,7 +393,7 @@ public class DefaultNameFormatter implements NameFormatter, HistoryNameFormatter
             result.append(" (").append(relationName).append(", ");
         } else {
             preset.nameTemplate.appendText(result, (TemplateEngineDataProvider) relation);
-            result.append('(');
+            result.append(" (");
         }
         return result;
     }
@@ -414,6 +446,7 @@ public class DefaultNameFormatter implements NameFormatter, HistoryNameFormatter
     }
 
     private static String getRelationTypeName(IRelation<?> relation) {
+        // see https://josm.openstreetmap.de/browser/osm/applications/editors/josm/i18n/specialmessages.java
         String name = trc("Relation type", relation.get("type"));
         if (name == null) {
             name = relation.hasKey("public_transport") ? tr("public transport") : null;
@@ -427,6 +460,7 @@ public class DefaultNameFormatter implements NameFormatter, HistoryNameFormatter
             }
         }
         if (name == null) {
+            // see https://josm.openstreetmap.de/browser/osm/applications/editors/josm/i18n/specialmessages.java
             name = trc("Place type", relation.get("place"));
         }
         if (name == null) {
@@ -448,12 +482,9 @@ public class DefaultNameFormatter implements NameFormatter, HistoryNameFormatter
 
     private static String getNameTagValue(IRelation<?> relation, String nameTag) {
         if ("name".equals(nameTag)) {
-            if (Config.getPref().getBoolean("osm-primitives.localize-name", true))
-                return relation.getLocalName();
-            else
-                return relation.getName();
+            return formatLocalName(relation);
         } else if (":LocationCode".equals(nameTag)) {
-            return relation.keySet().stream()
+            return relation.keys()
                     .filter(m -> m.endsWith(nameTag))
                     .findFirst()
                     .map(relation::get)
@@ -527,14 +558,14 @@ public class DefaultNameFormatter implements NameFormatter, HistoryNameFormatter
     /**
      * Decorates the name of primitive with its id, if the preference
      * <code>osm-primitives.showid</code> is set.
-     *
-     * The id is append to the {@link StringBuilder} passed in <code>name</code>.
+     * <p>
+     * The id is appended to the {@link StringBuilder} passed in <code>name</code>.
      *
      * @param name  the name without the id
      * @param primitive the primitive
      */
     protected void decorateNameWithId(StringBuilder name, HistoryOsmPrimitive primitive) {
-        if (Config.getPref().getBoolean("osm-primitives.showid")) {
+        if (Boolean.TRUE.equals(PROPERTY_SHOW_ID.get())) {
             name.append(tr(" [id: {0}]", primitive.getId()));
         }
     }
@@ -542,12 +573,7 @@ public class DefaultNameFormatter implements NameFormatter, HistoryNameFormatter
     @Override
     public String format(HistoryNode node) {
         StringBuilder sb = new StringBuilder();
-        String name;
-        if (Config.getPref().getBoolean("osm-primitives.localize-name", true)) {
-            name = node.getLocalName();
-        } else {
-            name = node.getName();
-        }
+        String name = formatLocalName(node);
         if (name == null) {
             sb.append(node.getId());
         } else {
@@ -568,12 +594,7 @@ public class DefaultNameFormatter implements NameFormatter, HistoryNameFormatter
     @Override
     public String format(HistoryWay way) {
         StringBuilder sb = new StringBuilder();
-        String name;
-        if (Config.getPref().getBoolean("osm-primitives.localize-name", true)) {
-            name = way.getLocalName();
-        } else {
-            name = way.getName();
-        }
+        String name = formatLocalName(way);
         if (name != null) {
             sb.append(name);
         }
@@ -581,12 +602,15 @@ public class DefaultNameFormatter implements NameFormatter, HistoryNameFormatter
             sb.append(way.get("ref"));
         }
         if (sb.length() == 0) {
-            sb.append(
-                    way.hasKey("highway") ? tr("highway") :
-                    way.hasKey("railway") ? tr("railway") :
-                    way.hasKey("waterway") ? tr("waterway") :
-                    way.hasKey("landuse") ? tr("landuse") : ""
-                    );
+            if (way.hasKey("highway")) {
+                sb.append(tr("highway"));
+            } else if (way.hasKey("railway")) {
+                sb.append("railway");
+            } else if (way.hasKey("waterway")) {
+                sb.append(tr("waterway"));
+            } else if (way.hasKey("landuse")) {
+                sb.append(tr("landuse"));
+            }
         }
 
         int nodesNo = way.isClosed() ? (way.getNumNodes() -1) : way.getNumNodes();
@@ -596,7 +620,11 @@ public class DefaultNameFormatter implements NameFormatter, HistoryNameFormatter
         }
         /* note: length == 0 should no longer happen, but leave the bracket code
            nevertheless, who knows what future brings */
-        sb.append((sb.length() > 0) ? (" ("+nodes+')') : nodes);
+        if (sb.length() > 0) {
+            sb.append(" (").append(nodes).append(')');
+        } else {
+            sb.append(nodes);
+        }
         decorateNameWithId(sb, way);
         return sb.toString();
     }
@@ -616,11 +644,7 @@ public class DefaultNameFormatter implements NameFormatter, HistoryNameFormatter
         for (String n : relation.getTags().keySet()) {
             // #3328: "note " and " note" are name tags too
             if (namingTags.contains(n.trim())) {
-                if (Config.getPref().getBoolean("osm-primitives.localize-name", true)) {
-                    nameTag = relation.getLocalName();
-                } else {
-                    nameTag = relation.getName();
-                }
+                nameTag = formatLocalName(relation);
                 if (nameTag == null) {
                     nameTag = relation.get(n);
                 }

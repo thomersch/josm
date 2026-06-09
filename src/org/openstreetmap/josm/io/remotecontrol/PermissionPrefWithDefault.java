@@ -26,9 +26,15 @@ public class PermissionPrefWithDefault {
     /** Import data from URL */
     public static final PermissionPrefWithDefault IMPORT_DATA =
             new PermissionPrefWithDefault("remotecontrol.permission.import", true, tr("Import data from URL"));
+    /** Export data from JOSM */
+    public static final PermissionPrefWithDefault EXPORT_DATA =
+            new PermissionPrefWithDefault("remotecontrol.permission.export", false, tr("Export data from JOSM"));
     /** Open local files */
     public static final PermissionPrefWithDefault OPEN_FILES =
             new PermissionPrefWithDefault("remotecontrol.permission.open-files", false, tr("Open local files"));
+    /** Open web files */
+    public static final PermissionPrefWithDefault ALLOW_WEB_RESOURCES =
+            new PermissionPrefWithDefault("remotecontrol.permission.open-remote-files", false, tr("Open remote files"));
     /** Load imagery layers */
     public static final PermissionPrefWithDefault LOAD_IMAGERY =
             new PermissionPrefWithDefault("remotecontrol.permission.imagery", true, tr("Load imagery layers"));
@@ -44,6 +50,7 @@ public class PermissionPrefWithDefault {
     /** Read protocol version */
     public static final PermissionPrefWithDefault READ_PROTOCOL_VERSION =
             new PermissionPrefWithDefault("remotecontrol.permission.read-protocolversion", true, tr("Read protocol version"));
+
     /**
      * name of the preference setting to permit the remote operation
      */

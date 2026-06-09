@@ -1,17 +1,29 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.io.session;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import java.awt.Color;
 import java.io.File;
 import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.gpx.GpxData;
 import org.openstreetmap.josm.data.gpx.WayPoint;
@@ -28,15 +40,16 @@ import org.openstreetmap.josm.gui.layer.NoteLayer;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.layer.TMSLayer;
 import org.openstreetmap.josm.gui.layer.markerlayer.MarkerLayer;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.Main;
+import org.openstreetmap.josm.testutils.annotations.Projection;
 import org.openstreetmap.josm.tools.MultiMap;
 import org.openstreetmap.josm.tools.Utils;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
  * Unit tests for Session writing.
  */
+@Main
+@Projection
 public class SessionWriterTest {
 
     protected static final class OsmHeadlessJosExporter extends OsmDataSessionExporter {
@@ -86,19 +99,12 @@ public class SessionWriterTest {
     /**
      * Setup tests.
      */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().projection().main();
-
-    /**
-     * Setup tests.
-     */
-    @Before
+    @BeforeEach
     public void setUp() {
         MainApplication.getLayerManager().addLayer(createOsmLayer());
     }
 
-    private void testWrite(List<Layer> layers, final boolean zip) throws IOException {
+    private Map<String, byte[]> testWrite(List<Layer> layers, final boolean zip) throws IOException {
         Map<Layer, SessionLayerExporter> exporters = new HashMap<>();
         if (zip) {
             SessionWriter.registerSessionLayerExporter(OsmDataLayer.class, OsmHeadlessJozExporter.class);
@@ -108,12 +114,31 @@ public class SessionWriterTest {
             SessionWriter.registerSessionLayerExporter(GpxLayer.class, GpxHeadlessJosExporter.class);
         }
         for (final Layer l : layers) {
-            exporters.put(l, SessionWriter.getSessionLayerExporter(l));
+            SessionLayerExporter s = SessionWriter.getSessionLayerExporter(l);
+            s.getExportPanel();
+            exporters.put(l, s);
+            if (s instanceof GpxTracksSessionExporter) {
+                ((GpxTracksSessionExporter) s).setMetaTime(Instant.parse("2021-10-16T18:27:12.351Z"));
+            } else if (s instanceof MarkerSessionExporter) {
+                ((MarkerSessionExporter) s).setMetaTime(Instant.parse("2021-10-16T18:27:12.351Z"));
+            }
         }
-        SessionWriter sw = new SessionWriter(layers, -1, exporters, new MultiMap<Layer, Layer>(), zip);
+        SessionWriter sw = new SessionWriter(layers, -1, exporters, new MultiMap<>(), zip);
         File file = new File(System.getProperty("java.io.tmpdir"), getClass().getName()+(zip ? ".joz" : ".jos"));
         try {
             sw.write(file);
+            if (!zip) {
+                return null;
+            }
+            try (ZipFile zipFile = new ZipFile(file)) {
+                return Collections.list(zipFile.entries()).stream().collect(Collectors.toMap(ZipEntry::getName, e -> {
+                    try {
+                        return zipFile.getInputStream(e).readAllBytes();
+                    } catch (IOException ex) {
+                        throw new UncheckedIOException(ex);
+                    }
+                }));
+            }
         } finally {
             if (file.exists()) {
                 Utils.deleteFile(file);
@@ -121,34 +146,66 @@ public class SessionWriterTest {
         }
     }
 
-    private OsmDataLayer createOsmLayer() {
+    /**
+     * Creates an OSM layer
+     * @return OSM layer
+     * @since 18466
+     */
+    public static OsmDataLayer createOsmLayer() {
         OsmDataLayer layer = new OsmDataLayer(new DataSet(), "OSM layer name", null);
         layer.setAssociatedFile(new File("data.osm"));
         return layer;
     }
 
-    private GpxLayer createGpxLayer() {
+    /**
+     * Creates a GPX layer
+     * @return GPX layer
+     * @since 18466
+     */
+    public static GpxLayer createGpxLayer() {
         GpxData data = new GpxData();
-        data.waypoints.add(new WayPoint(new LatLon(42.72665, -0.00747)));
+        WayPoint wp = new WayPoint(new LatLon(42.72665, -0.00747));
+        wp.setInstant(Instant.parse("2021-01-01T10:15:30.00Z"));
+        data.waypoints.add(wp);
         data.waypoints.add(new WayPoint(new LatLon(42.72659, -0.00749)));
         GpxLayer layer = new GpxLayer(data, "GPX layer name");
         layer.setAssociatedFile(new File("data.gpx"));
         return layer;
     }
 
-    private MarkerLayer createMarkerLayer(GpxLayer gpx) {
-        return new MarkerLayer(gpx.data, "Marker layer name", gpx.getAssociatedFile(), gpx);
+    /**
+     * Creates a MarkerLayer
+     * @param gpx linked GPX layer
+     * @return MarkerLayer
+     * @since 18466
+     */
+    public static MarkerLayer createMarkerLayer(GpxLayer gpx) {
+        MarkerLayer layer = new MarkerLayer(gpx.data, "Marker layer name", gpx.getAssociatedFile(), gpx);
+        layer.setOpacity(0.5);
+        layer.setColor(new Color(0x12345678, true));
+        gpx.setLinkedMarkerLayer(layer);
+        return layer;
     }
 
-    private ImageryLayer createImageryLayer() {
+    /**
+     * Creates an ImageryLayer
+     * @return ImageryLayer
+     * @since 18466
+     */
+    public static ImageryLayer createImageryLayer() {
         TMSLayer layer = new TMSLayer(new ImageryInfo("the name", "http://www.url.com/"));
         layer.getDisplaySettings().setOffsetBookmark(
                 new OffsetBookmark(ProjectionRegistry.getProjection().toCode(), layer.getInfo().getId(), layer.getInfo().getName(), "", 12, 34));
         return layer;
     }
 
-    private NoteLayer createNoteLayer() {
-        return new NoteLayer(Arrays.asList(new Note(LatLon.ZERO)), "layer name");
+    /**
+     * Creates a NoteLayer
+     * @return NoteLayer
+     * @since 18466
+     */
+    public static NoteLayer createNoteLayer() {
+        return new NoteLayer(Collections.singletonList(new Note(LatLon.ZERO)), "layer name");
     }
 
     /**
@@ -156,8 +213,8 @@ public class SessionWriterTest {
      * @throws IOException if an I/O error occurs
      */
     @Test
-    public void testWriteEmptyJos() throws IOException {
-        testWrite(Collections.<Layer>emptyList(), false);
+    void testWriteEmptyJos() throws IOException {
+        testWrite(Collections.emptyList(), false);
     }
 
     /**
@@ -165,8 +222,8 @@ public class SessionWriterTest {
      * @throws IOException if an I/O error occurs
      */
     @Test
-    public void testWriteEmptyJoz() throws IOException {
-        testWrite(Collections.<Layer>emptyList(), true);
+    void testWriteEmptyJoz() throws IOException {
+        testWrite(Collections.emptyList(), true);
     }
 
     /**
@@ -174,8 +231,8 @@ public class SessionWriterTest {
      * @throws IOException if an I/O error occurs
      */
     @Test
-    public void testWriteOsmJos() throws IOException {
-        testWrite(Collections.<Layer>singletonList(createOsmLayer()), false);
+    void testWriteOsmJos() throws IOException {
+        testWrite(Collections.singletonList(createOsmLayer()), false);
     }
 
     /**
@@ -183,8 +240,8 @@ public class SessionWriterTest {
      * @throws IOException if an I/O error occurs
      */
     @Test
-    public void testWriteOsmJoz() throws IOException {
-        testWrite(Collections.<Layer>singletonList(createOsmLayer()), true);
+    void testWriteOsmJoz() throws IOException {
+        testWrite(Collections.singletonList(createOsmLayer()), true);
     }
 
     /**
@@ -192,8 +249,8 @@ public class SessionWriterTest {
      * @throws IOException if an I/O error occurs
      */
     @Test
-    public void testWriteGpxJos() throws IOException {
-        testWrite(Collections.<Layer>singletonList(createGpxLayer()), false);
+    void testWriteGpxJos() throws IOException {
+        testWrite(Collections.singletonList(createGpxLayer()), false);
     }
 
     /**
@@ -201,8 +258,8 @@ public class SessionWriterTest {
      * @throws IOException if an I/O error occurs
      */
     @Test
-    public void testWriteGpxJoz() throws IOException {
-        testWrite(Collections.<Layer>singletonList(createGpxLayer()), true);
+    void testWriteGpxJoz() throws IOException {
+        testWrite(Collections.singletonList(createGpxLayer()), true);
     }
 
     /**
@@ -210,9 +267,42 @@ public class SessionWriterTest {
      * @throws IOException if an I/O error occurs
      */
     @Test
-    public void testWriteGpxAndMarkerJoz() throws IOException {
+    void testWriteGpxAndMarkerJoz() throws IOException {
         GpxLayer gpx = createGpxLayer();
-        testWrite(Arrays.asList(gpx, createMarkerLayer(gpx)), true);
+        MarkerLayer markers = createMarkerLayer(gpx);
+        Map<String, byte[]> bytes = testWrite(Arrays.asList(gpx, markers), true);
+
+        Path path = Paths.get(TestUtils.getTestDataRoot() + "/sessions/gpx_markers_combined.jos");
+        String expected = Files.readString(path).replace("\r", "");
+        String actual = new String(bytes.get("session.jos"), StandardCharsets.UTF_8).replace("\r", "");
+        assertEquals(expected, actual);
+
+        path = Paths.get(TestUtils.getTestDataRoot() + "/sessions/data_export.gpx");
+        expected = Files.readString(path).replace("\r", "");
+        actual = new String(bytes.get("layers/01/data.gpx"), StandardCharsets.UTF_8).replace("\r", "");
+        assertEquals(expected, actual);
+
+        //Test writing when the marker layer has no corresponding GPX layer:
+        gpx.setLinkedMarkerLayer(null);
+        markers.fromLayer = null;
+        markers.data.transferLayerPrefs(gpx.data.getLayerPrefs());
+        bytes = testWrite(Arrays.asList(gpx, markers), true);
+
+        path = Paths.get(TestUtils.getTestDataRoot() + "/sessions/gpx_markers.jos");
+        expected = Files.readString(path).replace("\r", "");
+        actual = new String(bytes.get("session.jos"), StandardCharsets.UTF_8).replace("\r", "");
+        assertEquals(expected, actual);
+
+        path = Paths.get(TestUtils.getTestDataRoot() + "/sessions/data_export.gpx");
+        expected = Files.readString(path).replace("\r", "");
+        actual = new String(bytes.get("layers/01/data.gpx"), StandardCharsets.UTF_8).replace("\r", "");
+        assertEquals(expected, actual);
+
+        path = Paths.get(TestUtils.getTestDataRoot() + "/sessions/markers.gpx");
+        expected = Files.readString(path).replace("\r", "");
+        actual = new String(bytes.get("layers/02/data.gpx"), StandardCharsets.UTF_8).replace("\r", "");
+        assertEquals(expected, actual);
+
     }
 
     /**
@@ -220,7 +310,7 @@ public class SessionWriterTest {
      * @throws IOException if an I/O error occurs
      */
     @Test
-    public void testWriteImageryLayer() throws IOException {
+    void testWriteImageryLayer() throws IOException {
         final Layer layer = createImageryLayer();
         testWrite(Collections.singletonList(layer), true);
     }
@@ -230,7 +320,7 @@ public class SessionWriterTest {
      * @throws IOException if an I/O error occurs
      */
     @Test
-    public void testWriteNoteLayer() throws IOException {
+    void testWriteNoteLayer() throws IOException {
         final Layer layer = createNoteLayer();
         testWrite(Collections.singletonList(layer), true);
     }

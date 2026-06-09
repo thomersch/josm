@@ -1,29 +1,17 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.validation.tests;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.Way;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
  * JUnit Test of "Long Segment" validation test.
  */
-public class LongSegmentTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+class LongSegmentTest {
     private static int test(Way w) throws Exception {
         LongSegment test = new LongSegment();
         test.initialize();
@@ -38,7 +26,7 @@ public class LongSegmentTest {
      * @throws Exception if any error occurs
      */
     @Test
-    public void testLongSegment() throws Exception {
+    void testLongSegment() throws Exception {
         // Long way
         Way w = new Way();
         // https://www.openstreetmap.org/node/798475224

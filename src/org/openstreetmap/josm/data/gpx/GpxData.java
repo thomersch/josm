@@ -3,12 +3,12 @@ package org.openstreetmap.josm.data.gpx;
 
 import java.io.File;
 import java.text.MessageFormat;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -32,6 +33,8 @@ import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.layer.GpxLayer;
 import org.openstreetmap.josm.tools.ListenerList;
 import org.openstreetmap.josm.tools.ListeningCollection;
+import org.openstreetmap.josm.tools.Utils;
+import org.openstreetmap.josm.tools.date.Interval;
 
 /**
  * Objects of this class represent a gpx file with tracks, waypoints and routes.
@@ -40,7 +43,7 @@ import org.openstreetmap.josm.tools.ListeningCollection;
  *
  * @author Raphael Mack &lt;ramack@raphael-mack.de&gt;
  */
-public class GpxData extends WithAttributes implements Data {
+public class GpxData extends WithAttributes implements Data, IGpxLayerPrefs {
 
     /**
      * Constructs a new GpxData.
@@ -64,6 +67,11 @@ public class GpxData extends WithAttributes implements Data {
      * A boolean flag indicating if the data was read from the OSM server.
      */
     public boolean fromServer;
+    /**
+     * A boolean flag indicating if the data was read from a session file.
+     * @since 18287
+     */
+    public boolean fromSession;
 
     /**
      * Creator metadata for this file (usually software)
@@ -93,14 +101,16 @@ public class GpxData extends WithAttributes implements Data {
     private final Map<String, String> layerPrefs = new HashMap<>();
 
     private final GpxTrackChangeListener proxy = e -> invalidate();
-    private boolean modified, updating, initializing;
+    private boolean modified;
+    private boolean updating;
+    private boolean initializing;
     private boolean suppressedInvalidate;
 
     /**
      * Tracks. Access is discouraged, use {@link #getTracks()} to read.
      * @see #getTracks()
      */
-    public final Collection<IGpxTrack> tracks = new ListeningCollection<IGpxTrack>(privateTracks, this::invalidate) {
+    public final Collection<IGpxTrack> tracks = new ListeningCollection<>(privateTracks, this::invalidate) {
 
         @Override
         protected void removed(IGpxTrack cursor) {
@@ -199,13 +209,13 @@ public class GpxData extends WithAttributes implements Data {
                 }
                 boolean split = false;
                 WayPoint prevLastOwnWp = null;
-                Date prevWpTime = null;
+                Instant prevWpTime = null;
                 for (WayPoint wp : wpsOld) {
-                    Date wpTime = wp.getDate();
+                    Instant wpTime = wp.getInstant();
                     boolean overlap = false;
                     if (wpTime != null) {
                         for (GpxTrackSegmentSpan ownspan : getSegmentSpans()) {
-                            if (wpTime.after(ownspan.firstTime) && wpTime.before(ownspan.lastTime)) {
+                            if (wpTime.isAfter(ownspan.firstTime) && wpTime.isBefore(ownspan.lastTime)) {
                                 overlap = true;
                                 if (connect) {
                                     if (!split) {
@@ -218,8 +228,8 @@ public class GpxData extends WithAttributes implements Data {
                                 split = true;
                                 break;
                             } else if (connect && prevWpTime != null
-                                    && prevWpTime.before(ownspan.firstTime)
-                                    && wpTime.after(ownspan.lastTime)) {
+                                    && prevWpTime.isBefore(ownspan.firstTime)
+                                    && wpTime.isAfter(ownspan.lastTime)) {
                                 // the overlapping high priority track is shorter than the distance
                                 // between two waypoints of the low priority track
                                 if (split) {
@@ -286,16 +296,16 @@ public class GpxData extends WithAttributes implements Data {
 
     static class GpxTrackSegmentSpan {
 
-        final Date firstTime;
-        final Date lastTime;
+        final Instant firstTime;
+        final Instant lastTime;
         private final boolean inv;
         private final WayPoint firstWp;
         private final WayPoint lastWp;
 
         GpxTrackSegmentSpan(WayPoint a, WayPoint b) {
-            Date at = a.getDate();
-            Date bt = b.getDate();
-            inv = bt.before(at);
+            Instant at = a.getInstant();
+            Instant bt = b.getInstant();
+            inv = at != null && bt != null && bt.isBefore(at);
             if (inv) {
                 firstWp = b;
                 firstTime = bt;
@@ -332,8 +342,8 @@ public class GpxData extends WithAttributes implements Data {
         }
 
         boolean overlapsWith(GpxTrackSegmentSpan other) {
-            return (firstTime.before(other.lastTime) && other.firstTime.before(lastTime))
-                || (other.firstTime.before(lastTime) && firstTime.before(other.lastTime));
+            return (firstTime.isBefore(other.lastTime) && other.firstTime.isBefore(lastTime))
+                || (other.firstTime.isBefore(lastTime) && firstTime.isBefore(other.lastTime));
         }
 
         static GpxTrackSegmentSpan tryGetFromSegment(IGpxTrackSegment seg) {
@@ -384,11 +394,50 @@ public class GpxData extends WithAttributes implements Data {
     }
 
     /**
-     * Get all tracks contained in this data set.
+     * Get all tracks contained in this data set, without any guaranteed order.
      * @return The tracks.
      */
     public synchronized Collection<IGpxTrack> getTracks() {
         return Collections.unmodifiableCollection(privateTracks);
+    }
+
+    /**
+     * Get all tracks contained in this data set, ordered chronologically.
+     * @return The tracks in chronological order.
+     * @since 18207
+     */
+    public synchronized List<IGpxTrack> getOrderedTracks() {
+        return privateTracks.stream().sorted((t1, t2) -> {
+            boolean t1empty = Utils.isEmpty(t1.getSegments());
+            boolean t2empty = Utils.isEmpty(t2.getSegments());
+            if (t1empty && t2empty) {
+                return 0;
+            } else if (t1empty && !t2empty) {
+                return -1;
+            } else if (!t1empty && t2empty) {
+                return 1;
+            } else {
+                OptionalLong i1 = getTrackFirstWaypointMin(t1);
+                OptionalLong i2 = getTrackFirstWaypointMin(t2);
+                boolean i1absent = i1.isEmpty();
+                boolean i2absent = i2.isEmpty();
+                if (i1absent && i2absent) {
+                    return 0;
+                } else if (i1absent && !i2absent) {
+                    return 1;
+                } else if (!i1absent && i2absent) {
+                    return -1;
+                } else {
+                    return Long.compare(i1.getAsLong(), i2.getAsLong());
+                }
+            }
+        }).collect(Collectors.toList());
+    }
+
+    private static OptionalLong getTrackFirstWaypointMin(IGpxTrack track) {
+        return track.getSegments().stream().map(IGpxTrackSegment::getWayPoints)
+                .filter(Objects::nonNull).flatMap(Collection::stream)
+                .mapToLong(WayPoint::getTimeInMillis).min();
     }
 
     /**
@@ -489,7 +538,7 @@ public class GpxData extends WithAttributes implements Data {
             .flatMap(trk -> trk.getSegments().stream().map(seg -> {
                     HashMap<String, Object> attrs = new HashMap<>(trk.getAttributes());
                     ensureUniqueName(attrs, counts, srcLayerName);
-                    return new GpxTrack(Arrays.asList(seg), attrs);
+                    return new GpxTrack(Collections.singletonList(seg), attrs);
                 }))
             .collect(Collectors.toCollection(ArrayList<GpxTrack>::new));
 
@@ -500,7 +549,7 @@ public class GpxData extends WithAttributes implements Data {
     /**
      * Split tracks into layers, the result is one layer for each track.
      * If this layer currently has only one GpxTrack this is a no-operation.
-     *
+     * <p>
      * The new GpxLayers are added to the LayerManager, the original GpxLayer
      * is untouched as to preserve potential route or wpt parts.
      *
@@ -717,26 +766,26 @@ public class GpxData extends WithAttributes implements Data {
     /**
      * returns minimum and maximum timestamps in the track
      * @param trk track to analyze
-     * @return  minimum and maximum dates in array of 2 elements
+     * @return minimum and maximum as interval
      */
-    public static Date[] getMinMaxTimeForTrack(IGpxTrack trk) {
+    public static Optional<Interval> getMinMaxTimeForTrack(IGpxTrack trk) {
         final LongSummaryStatistics statistics = trk.getSegments().stream()
                 .flatMap(seg -> seg.getWayPoints().stream())
                 .mapToLong(WayPoint::getTimeInMillis)
                 .summaryStatistics();
         return statistics.getCount() == 0 || (statistics.getMin() == 0 && statistics.getMax() == 0)
-                ? null
-                : new Date[]{new Date(statistics.getMin()), new Date(statistics.getMax())};
+                ? Optional.empty()
+                : Optional.of(new Interval(Instant.ofEpochMilli(statistics.getMin()), Instant.ofEpochMilli(statistics.getMax())));
     }
 
     /**
     * Returns minimum and maximum timestamps for all tracks
     * Warning: there are lot of track with broken timestamps,
     * so we just ignore points from future and from year before 1970 in this method
-    * @return minimum and maximum dates in array of 2 elements
+    * @return minimum and maximum as interval
     * @since 7319
     */
-    public synchronized Date[] getMinMaxTimeForAllTracks() {
+    public synchronized Optional<Interval> getMinMaxTimeForAllTracks() {
         long now = System.currentTimeMillis();
         final LongSummaryStatistics statistics = tracks.stream()
                 .flatMap(trk -> trk.getSegments().stream())
@@ -745,8 +794,8 @@ public class GpxData extends WithAttributes implements Data {
                 .filter(t -> t > 0 && t <= now)
                 .summaryStatistics();
         return statistics.getCount() == 0
-                ? new Date[0]
-                : new Date[]{new Date(statistics.getMin()), new Date(statistics.getMax())};
+                ? Optional.empty()
+                : Optional.of(new Interval(Instant.ofEpochMilli(statistics.getMin()), Instant.ofEpochMilli(statistics.getMax())));
     }
 
     /**
@@ -974,12 +1023,7 @@ public class GpxData extends WithAttributes implements Data {
         return Collections.unmodifiableCollection(dataSources);
     }
 
-    /**
-     * The layer specific prefs formerly saved in the preferences, e.g. drawing options.
-     * NOT the track specific settings (e.g. color, width)
-     * @return Modifiable map
-     * @since 15496
-     */
+    @Override
     public Map<String, String> getLayerPrefs() {
         return layerPrefs;
     }
@@ -1050,10 +1094,29 @@ public class GpxData extends WithAttributes implements Data {
         return true;
     }
 
+    /**
+     * Put a key / value pair as a new attribute. Overrides key / value pair with the same key (if present).
+     *
+     * @param key the key
+     * @param value the value
+     */
     @Override
     public void put(String key, Object value) {
+        put(key, value, true);
+    }
+
+    /**
+     * Put a key / value pair as a new attribute. Overrides key / value pair with the same key (if present).
+     * Only sets the modified state when setModified is true.
+     *
+     * @param key the key
+     * @param value the value
+     * @param setModified whether to change the modified state
+     * @since 18399
+     */
+    public void put(String key, Object value, boolean setModified) {
         super.put(key, value);
-        invalidate();
+        fireInvalidate(setModified);
     }
 
     /**
@@ -1090,12 +1153,12 @@ public class GpxData extends WithAttributes implements Data {
     }
 
     private void fireInvalidate(boolean setModified) {
+        if (setModified) {
+            setModified(true);
+        }
         if (updating || initializing) {
             suppressedInvalidate = true;
         } else {
-            if (setModified) {
-                modified = true;
-            }
             if (listeners.hasListeners()) {
                 GpxDataChangeEvent e = new GpxDataChangeEvent(this);
                 listeners.fireEvent(l -> l.gpxDataChanged(e));
@@ -1116,10 +1179,9 @@ public class GpxData extends WithAttributes implements Data {
      * @since 15496
      */
     public void endUpdate() {
-        boolean setModified = updating;
         updating = initializing = false;
         if (suppressedInvalidate) {
-            fireInvalidate(setModified);
+            fireInvalidate(false);
             suppressedInvalidate = false;
         }
     }
@@ -1136,6 +1198,14 @@ public class GpxData extends WithAttributes implements Data {
          * @param e The event
          */
         void gpxDataChanged(GpxDataChangeEvent e);
+
+        /**
+         * Called when the modified state of the data changed
+         * @param modified the new modified state
+         */
+        default void modifiedStateChanged(boolean modified) {
+            // Override if needed
+        }
     }
 
     /**
@@ -1174,8 +1244,14 @@ public class GpxData extends WithAttributes implements Data {
      * @param value modified flag
      * @since 15496
      */
+    @Override
     public void setModified(boolean value) {
-        modified = value;
+        if (!initializing && modified != value) {
+            modified = value;
+            if (listeners.hasListeners()) {
+                listeners.fireEvent(l -> l.modifiedStateChanged(modified));
+            }
+        }
     }
 
     /**
@@ -1183,7 +1259,8 @@ public class GpxData extends WithAttributes implements Data {
      * @since 15496
      */
     public static class XMLNamespace {
-        private final String uri, prefix;
+        private final String uri;
+        private final String prefix;
         private String location;
 
         /**
@@ -1272,5 +1349,18 @@ public class GpxData extends WithAttributes implements Data {
                 return false;
             return true;
         }
+    }
+
+    /**
+     * Removes all gpx elements
+     * @since 17439
+     */
+    public void clear() {
+        dataSources.clear();
+        layerPrefs.clear();
+        privateRoutes.clear();
+        privateTracks.clear();
+        privateWaypoints.clear();
+        attr.clear();
     }
 }

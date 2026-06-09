@@ -15,7 +15,6 @@ import java.awt.event.ItemListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.Arrays;
-import java.util.List;
 
 import javax.swing.BorderFactory;
 import javax.swing.ButtonGroup;
@@ -29,6 +28,7 @@ import javax.swing.text.BadLocationException;
 import javax.swing.text.Document;
 import javax.swing.text.JTextComponent;
 
+import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Filter;
 import org.openstreetmap.josm.data.osm.search.SearchCompiler;
 import org.openstreetmap.josm.data.osm.search.SearchMode;
@@ -37,10 +37,11 @@ import org.openstreetmap.josm.data.osm.search.SearchSetting;
 import org.openstreetmap.josm.gui.ExtendedDialog;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.mappaint.mapcss.MapCSSException;
+import org.openstreetmap.josm.gui.tagging.ac.AutoCompComboBox;
+import org.openstreetmap.josm.gui.tagging.ac.AutoCompComboBoxModel;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPreset;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetSelector;
 import org.openstreetmap.josm.gui.widgets.AbstractTextComponentValidator;
-import org.openstreetmap.josm.gui.widgets.HistoryComboBox;
 import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.JosmRuntimeException;
 import org.openstreetmap.josm.tools.Logging;
@@ -54,7 +55,7 @@ public class SearchDialog extends ExtendedDialog {
 
     private final SearchSetting searchSettings;
 
-    protected final HistoryComboBox hcbSearchString = new HistoryComboBox();
+    protected final AutoCompComboBox<SearchSetting> hcbSearchString;
 
     private JCheckBox addOnToolbar;
     private JCheckBox caseSensitive;
@@ -71,12 +72,13 @@ public class SearchDialog extends ExtendedDialog {
     private TaggingPresetSelector selector;
     /**
      * Constructs a new {@code SearchDialog}.
-     * @param initialValues initial search settings
-     * @param searchExpressionHistory list of all texts that were recently used in the search
-     * @param expertMode expert mode
+     * @param initialValues initial search settings, eg. when opened for editing from the filter panel
+     * @param model The combobox model.
+     * @param expertMode expert mode. Shows more options and the "search syntax" panel.
+     * @since 18173 (signature)
      */
-    public SearchDialog(SearchSetting initialValues, List<String> searchExpressionHistory, boolean expertMode) {
-        this(initialValues, searchExpressionHistory, new PanelOptions(expertMode, false), MainApplication.getMainFrame(),
+    public SearchDialog(SearchSetting initialValues, AutoCompComboBoxModel<SearchSetting> model, boolean expertMode) {
+        this(initialValues, model, new PanelOptions(expertMode, false), MainApplication.getMainFrame(),
                 initialValues instanceof Filter ? tr("Filter") : tr("Search"),
                 initialValues instanceof Filter ? tr("Submit filter") : tr("Search"),
                 tr("Cancel"));
@@ -84,11 +86,26 @@ public class SearchDialog extends ExtendedDialog {
         configureContextsensitiveHelp("/Action/Search", true /* show help button */);
     }
 
-    protected SearchDialog(SearchSetting initialValues, List<String> searchExpressionHistory, PanelOptions options,
+    protected SearchDialog(SearchSetting initialValues, AutoCompComboBoxModel<SearchSetting> model, PanelOptions options,
                            Component mainFrame, String title, String... buttonTexts) {
         super(mainFrame, title, buttonTexts);
+        hcbSearchString = new AutoCompComboBox<>(model);
         this.searchSettings = new SearchSetting(initialValues);
-        setContent(buildPanel(searchExpressionHistory, options));
+        setContent(buildPanel(options));
+
+        // See #24333
+        if (!(initialValues instanceof Filter)) {
+            DataSet data = MainApplication.getLayerManager().getActiveDataSet();
+            if (data != null && data.getSelected().isEmpty()) {
+                remove.setEnabled(false);
+                inSelection.setEnabled(false);
+                if (this.searchSettings.mode == SearchMode.in_selection
+                        || this.searchSettings.mode == SearchMode.remove) {
+                    this.searchSettings.mode = SearchMode.replace;
+                    replace.setSelected(true);
+                }
+            }
+        }
     }
 
     /**
@@ -100,8 +117,8 @@ public class SearchDialog extends ExtendedDialog {
 
         /**
          * Constructs new options which determine which parts of the search dialog will be shown
-         * @param expertMode whether export mode is enabled
-         * @param overpassQuery whether the panel shall be adapted for Overpass query
+         * @param expertMode Shows more options and the "search syntax" panel.
+         * @param overpassQuery Don't show left panels and right "preset" panel. Show different "hints".
          */
         public PanelOptions(boolean expertMode, boolean overpassQuery) {
             this.expertMode = expertMode;
@@ -109,16 +126,14 @@ public class SearchDialog extends ExtendedDialog {
         }
     }
 
-    private JPanel buildPanel(List<String> searchExpressionHistory, PanelOptions options) {
+    private JPanel buildPanel(PanelOptions options) {
 
         // prepare the combo box with the search expressions
         JLabel label = new JLabel(searchSettings instanceof Filter ? tr("Filter string:") : tr("Search string:"));
 
         String tooltip = tr("Enter the search expression");
-        hcbSearchString.setText(searchSettings.text);
+        hcbSearchString.setText(searchSettings.toString());
         hcbSearchString.setToolTipText(tooltip);
-
-        hcbSearchString.setPossibleItemsTopDown(searchExpressionHistory);
         hcbSearchString.setPreferredSize(new Dimension(40, hcbSearchString.getPreferredSize().height));
         label.setLabelFor(hcbSearchString);
 
@@ -306,7 +321,7 @@ public class SearchDialog extends ExtendedDialog {
         return addOnToolbar.isSelected();
     }
 
-    private static JPanel buildHintsSection(HistoryComboBox hcbSearchString, PanelOptions options) {
+    private static JPanel buildHintsSection(AutoCompComboBox<SearchSetting> hcbSearchString, PanelOptions options) {
         JPanel hintPanel = new JPanel(new GridBagLayout());
         hintPanel.setBorder(BorderFactory.createTitledBorder(tr("Hints")));
 
@@ -321,6 +336,7 @@ public class SearchDialog extends ExtendedDialog {
                 GBC.eol());
         hintPanel.add(new SearchKeywordRow(hcbSearchString)
                 .addKeyword("<i>key:</i>", null, tr("matches if ''key'' exists"))
+                .addKeyword("<i>key?</i>", null, tr("matches if ''key'' has a truthy value (''true'', ''yes'', ''1'', ''on'')"))
                 .addKeyword("<i>key</i>=<i>value</i>", null, tr("''key'' with exactly ''value''"))
                 .addKeyword("<i>key</i>~<i>regexp</i>", null, tr("value of ''key'' matching the regular expression ''regexp''"))
                 .addKeyword("<i>key</i>=*", null, tr("''key'' with any value"))
@@ -338,11 +354,17 @@ public class SearchDialog extends ExtendedDialog {
                 .addKeyword("<i>expr</i> <i>expr</i>", null,
                         tr("logical and (both expressions have to be satisfied)"),
                         trc("search string example", "Baker Street"))
+                .addKeyword("<i>expr</i> & <i>expr</i>", "& ", tr("logical and (both expressions have to be satisfied)"))
+                .addKeyword("<i>expr</i> AND <i>expr</i>", "AND ", tr("logical and (both expressions have to be satisfied)"))
                 .addKeyword("<i>expr</i> | <i>expr</i>", "| ", tr("logical or (at least one expression has to be satisfied)"))
-                .addKeyword("<i>expr</i> OR <i>expr</i>", "OR ", tr("logical or (at least one expression has to be satisfied)"))
+                .addKeyword("<i>expr</i> OR <i>expr</i>", "OR ", tr("logical or (at least one expression has to be satisfied)")),
+                GBC.eol());
+        hintPanel.add(new SearchKeywordRow(hcbSearchString)
+                .addKeyword("<i>expr</i> ^ <i>expr</i>", "^ ", tr("logical xor (one and only one expression has to be satisfied)"))
+                .addKeyword("<i>expr</i> XOR <i>expr</i>", "XOR ", tr("logical xor (one and only one expression has to be satisfied)"))
                 .addKeyword("-<i>expr</i>", null, tr("logical not"))
                 .addKeyword("(<i>expr</i>)", "()", tr("use parenthesis to group expressions")),
-                GBC.eol());
+                GBC.eol().anchor(GBC.CENTER));
 
         SearchKeywordRow objectHints = new SearchKeywordRow(hcbSearchString)
                 .addTitle(tr("objects"))
@@ -465,9 +487,9 @@ public class SearchDialog extends ExtendedDialog {
 
     private static class SearchKeywordRow extends JPanel {
 
-        private final HistoryComboBox hcb;
+        private final AutoCompComboBox<SearchSetting> hcb;
 
-        SearchKeywordRow(HistoryComboBox hcb) {
+        SearchKeywordRow(AutoCompComboBox<SearchSetting> hcb) {
             super(new FlowLayout(FlowLayout.LEFT));
             this.hcb = hcb;
         }

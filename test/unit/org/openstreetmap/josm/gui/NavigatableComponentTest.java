@@ -2,37 +2,45 @@
 package org.openstreetmap.josm.gui;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 import java.awt.Point;
 import java.awt.Rectangle;
+import java.awt.event.MouseEvent;
 import java.awt.geom.Point2D;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReference;
 
 import javax.swing.JPanel;
 
 import org.CustomMatchers;
 import org.hamcrest.CustomTypeSafeMatcher;
 import org.hamcrest.Matcher;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.data.ProjectionBounds;
 import org.openstreetmap.josm.data.coor.EastNorth;
 import org.openstreetmap.josm.data.coor.LatLon;
+import org.openstreetmap.josm.data.osm.DataSet;
+import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.projection.ProjectionRegistry;
+import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.util.GuiHelper;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
+import org.openstreetmap.josm.testutils.annotations.Projection;
 
 /**
  * Some tests for the {@link NavigatableComponent} class.
  * @author Michael Zangl
  *
  */
-public class NavigatableComponentTest {
+@BasicPreferences
+@Projection // We need the projection for coordinate conversions.
+class NavigatableComponentTest {
 
     private static final class NavigatableComponentMock extends NavigatableComponent {
         @Override
@@ -44,32 +52,26 @@ public class NavigatableComponentTest {
         protected boolean isVisibleOnScreen() {
             return true;
         }
+
+        @Override
+        public void processMouseMotionEvent(MouseEvent mouseEvent) {
+            super.processMouseMotionEvent(mouseEvent);
+        }
     }
 
     private static final int HEIGHT = 200;
     private static final int WIDTH = 300;
-    private NavigatableComponent component;
-
-    /**
-     * We need the projection for coordinate conversions.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences().projection();
+    private NavigatableComponentMock component;
 
     /**
      * Create a new, fresh {@link NavigatableComponent}
      */
-    @Before
+    @BeforeEach
     public void setUp() {
         component = new NavigatableComponentMock();
         component.setBounds(new Rectangle(WIDTH, HEIGHT));
         // wait for the event to be propagated.
-        GuiHelper.runInEDTAndWait(new Runnable() {
-            @Override
-            public void run() {
-            }
-        });
+        GuiHelper.runInEDTAndWait(() -> { /* Do nothing */ });
         component.setVisible(true);
         JPanel parent = new JPanel();
         parent.add(component);
@@ -80,7 +82,7 @@ public class NavigatableComponentTest {
      * Test if the default scale was set correctly.
      */
     @Test
-    public void testDefaultScale() {
+    void testDefaultScale() {
         assertEquals(ProjectionRegistry.getProjection().getDefaultZoomInPPD(), component.getScale(), 0.00001);
     }
 
@@ -88,21 +90,21 @@ public class NavigatableComponentTest {
      * Tests {@link NavigatableComponent#getPoint2D(EastNorth)}
      */
     @Test
-    public void testPoint2DEastNorth() {
+    void testPoint2DEastNorth() {
         assertThat(component.getPoint2D((EastNorth) null), CustomMatchers.is(new Point2D.Double()));
         Point2D shouldBeCenter = component.getPoint2D(component.getCenter());
-        assertThat(shouldBeCenter, CustomMatchers.is(new Point2D.Double(WIDTH / 2, HEIGHT / 2)));
+        assertThat(shouldBeCenter, CustomMatchers.is(new Point2D.Double(WIDTH / 2.0, HEIGHT / 2.0)));
 
         EastNorth testPoint = component.getCenter().add(300 * component.getScale(), 200 * component.getScale());
         Point2D testPointConverted = component.getPoint2D(testPoint);
-        assertThat(testPointConverted, CustomMatchers.is(new Point2D.Double(WIDTH / 2 + 300, HEIGHT / 2 - 200)));
+        assertThat(testPointConverted, CustomMatchers.is(new Point2D.Double(WIDTH / 2.0 + 300, HEIGHT / 2.0 - 200)));
     }
 
     /**
      * TODO: Implement this test.
      */
     @Test
-    public void testPoint2DLatLon() {
+    void testPoint2DLatLon() {
         assertThat(component.getPoint2D((LatLon) null), CustomMatchers.is(new Point2D.Double()));
         // TODO: Really test this.
     }
@@ -111,7 +113,7 @@ public class NavigatableComponentTest {
      * Tests {@link NavigatableComponent#zoomTo(LatLon)}
      */
     @Test
-    public void testZoomToLatLon() {
+    void testZoomToLatLon() {
         component.zoomTo(new LatLon(10, 10));
         Point2D shouldBeCenter = component.getPoint2D(new LatLon(10, 10));
         // 0.5 pixel tolerance, see isAfterZoom
@@ -123,7 +125,7 @@ public class NavigatableComponentTest {
      * Tests {@link NavigatableComponent#zoomToFactor(double)} and {@link NavigatableComponent#zoomToFactor(EastNorth, double)}
      */
     @Test
-    public void testZoomToFactor() {
+    void testZoomToFactor() {
         EastNorth center = component.getCenter();
         double initialScale = component.getScale();
 
@@ -149,7 +151,7 @@ public class NavigatableComponentTest {
      * Tests {@link NavigatableComponent#getEastNorth(int, int)}
      */
     @Test
-    public void testGetEastNorth() {
+    void testGetEastNorth() {
         EastNorth center = component.getCenter();
         assertThat(component.getEastNorth(WIDTH / 2, HEIGHT / 2), CustomMatchers.is(center));
 
@@ -161,7 +163,7 @@ public class NavigatableComponentTest {
      * Tests {@link NavigatableComponent#zoomToFactor(double, double, double)}
      */
     @Test
-    public void testZoomToFactorCenter() {
+    void testZoomToFactorCenter() {
         // zoomToFactor(double, double, double)
         // assumes getEastNorth works as expected
         EastNorth testPoint1 = component.getEastNorth(0, 0);
@@ -188,7 +190,7 @@ public class NavigatableComponentTest {
      * Tests {@link NavigatableComponent#getProjectionBounds()}
      */
     @Test
-    public void testGetProjectionBounds() {
+    void testGetProjectionBounds() {
         ProjectionBounds bounds = component.getProjectionBounds();
         assertThat(bounds.getCenter(), CustomMatchers.is(component.getCenter()));
 
@@ -200,7 +202,7 @@ public class NavigatableComponentTest {
      * Tests {@link NavigatableComponent#getRealBounds()}
      */
     @Test
-    public void testGetRealBounds() {
+    void testGetRealBounds() {
         Bounds bounds = component.getRealBounds();
         assertThat(bounds.getCenter(), CustomMatchers.is(component.getLatLon(WIDTH / 2, HEIGHT / 2)));
 
@@ -208,9 +210,54 @@ public class NavigatableComponentTest {
         assertThat(bounds.getMax(), CustomMatchers.is(component.getLatLon(WIDTH, 0)));
     }
 
+    @Test
+    void testHoverListeners() {
+        AtomicReference<PrimitiveHoverListener.PrimitiveHoverEvent> hoverEvent = new AtomicReference<>();
+        PrimitiveHoverListener testListener = hoverEvent::set;
+        assertNull(hoverEvent.get());
+        component.addNotify();
+        component.addPrimitiveHoverListener(testListener);
+        DataSet ds = new DataSet();
+        MainApplication.getLayerManager().addLayer(new OsmDataLayer(ds, "testHoverListeners", null));
+        LatLon center = component.getRealBounds().getCenter();
+        Node node1 = new Node(center);
+        ds.addPrimitive(node1);
+        double x = component.getBounds().getCenterX();
+        double y = component.getBounds().getCenterY();
+        // Check hover over primitive
+        MouseEvent node1Event = new MouseEvent(component, MouseEvent.MOUSE_MOVED, System.currentTimeMillis(),
+                0, (int) x, (int) y, 0, false, MouseEvent.NOBUTTON);
+        component.processMouseMotionEvent(node1Event);
+        GuiHelper.runInEDTAndWait(() -> { /* Sync */ });
+        PrimitiveHoverListener.PrimitiveHoverEvent event = hoverEvent.getAndSet(null);
+        assertNotNull(event);
+        assertSame(node1, event.getHoveredPrimitive());
+        assertNull(event.getPreviousPrimitive());
+        assertSame(node1Event, event.getMouseEvent());
+        // Check moving to the (same) primitive. No new mouse motion event should be called.
+        component.processMouseMotionEvent(node1Event);
+        GuiHelper.runInEDTAndWait(() -> { /* Sync */ });
+        event = hoverEvent.getAndSet(null);
+        assertNull(event);
+        // Check moving off primitive. A new mouse motion event should be called with the previous primitive and null.
+        MouseEvent noNodeEvent =
+                new MouseEvent(component, MouseEvent.MOUSE_MOVED, System.currentTimeMillis(), 0, 0, 0, 0, false, MouseEvent.NOBUTTON);
+        component.processMouseMotionEvent(noNodeEvent);
+        GuiHelper.runInEDTAndWait(() -> { /* Sync */ });
+        event = hoverEvent.getAndSet(null);
+        assertNotNull(event);
+        assertSame(node1, event.getPreviousPrimitive());
+        assertNull(event.getHoveredPrimitive());
+        assertSame(noNodeEvent, event.getMouseEvent());
+        // Check moving to area with no primitive with no previous hover primitive
+        component.processMouseMotionEvent(
+                new MouseEvent(component, MouseEvent.MOUSE_MOVED, System.currentTimeMillis(), 0, 1, 1, 0, false, MouseEvent.NOBUTTON));
+        assertNull(hoverEvent.get());
+    }
+
     /**
      * Check that EastNorth is the same as expected after zooming the NavigatableComponent.
-     *
+     * <p>
      * Adds tolerance of 0.5 pixel for pixel grid alignment, see
      * {@link NavigatableComponent#zoomTo(EastNorth, double, boolean)}
      * @param expected expected

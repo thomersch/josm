@@ -19,7 +19,6 @@ import org.openstreetmap.josm.data.osm.Relation;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.data.osm.visitor.OsmPrimitiveVisitor;
 import org.openstreetmap.josm.tools.CheckParameterUtil;
-import org.openstreetmap.josm.tools.Utils;
 
 /**
  * Classes implementing Command modify a dataset in a specific way. A command is
@@ -154,7 +153,7 @@ public abstract class Command implements PseudoCommand {
         for (OsmPrimitive osm : all) {
             osm.accept(visitor);
         }
-        cloneMap = Utils.toUnmodifiableMap(visitor.orig);
+        cloneMap = visitor.orig;
         return true;
     }
 
@@ -228,9 +227,7 @@ public abstract class Command implements PseudoCommand {
         for (OsmPrimitive osm : primitives) {
             if (osm.isIncomplete()) {
                 res |= IS_INCOMPLETE;
-            } else if ((res & IS_OUTSIDE) == 0 && (osm.isOutsideDownloadArea()
-                    || (osm instanceof Node && !osm.isNew() && osm.getDataSet() != null && osm.getDataSet().getDataSourceBounds().isEmpty()))
-                            && (ignore == null || !ignore.contains(osm))) {
+            } else if ((res & IS_OUTSIDE) == 0 && !osm.isReferrersDownloaded() && (ignore == null || !ignore.contains(osm))) {
                 res |= IS_OUTSIDE;
             }
         }
@@ -240,7 +237,7 @@ public abstract class Command implements PseudoCommand {
     /**
      * Ensures that all primitives that are participating in this command belong to the affected data set.
      *
-     * Commands may use this in their update methods to check the consitency of the primitives they operate on.
+     * Commands may use this in their update methods to check the consistency of the primitives they operate on.
      * @throws AssertionError if no {@link DataSet} is set or if any primitive does not belong to that dataset.
      */
     protected void ensurePrimitivesAreInDataset() {

@@ -1,10 +1,10 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -13,41 +13,34 @@ import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import javax.swing.JLabel;
 import javax.swing.JOptionPane;
+import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 
-import org.junit.Rule;
-import org.junit.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.preferences.plugin.PluginPreferenceTest;
 import org.openstreetmap.josm.gui.widgets.JosmTextArea;
 import org.openstreetmap.josm.plugins.PluginHandler.DeprecatedPlugin;
 import org.openstreetmap.josm.plugins.PluginHandler.PluginInformationAction;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 import org.openstreetmap.josm.testutils.mockers.HelpAwareOptionPaneMocker;
 import org.openstreetmap.josm.testutils.mockers.JOptionPaneSimpleMocker;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import nl.jqno.equalsverifier.EqualsVerifier;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests of {@link PluginHandler} class.
  */
-public class PluginHandlerTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+@BasicPreferences
+class PluginHandlerTest {
     /**
      * Unit test of methods {@link DeprecatedPlugin#equals} and {@link DeprecatedPlugin#hashCode}.
      */
     @Test
-    public void testEqualsContract() {
+    void testEqualsContract() {
         TestUtils.assumeWorkingEqualsVerifier();
         EqualsVerifier.forClass(DeprecatedPlugin.class).usingGetClass().verify();
     }
@@ -56,7 +49,7 @@ public class PluginHandlerTest {
      * Unit test of {@link PluginHandler#buildListOfPluginsToLoad}.
      */
     @Test
-    public void testBuildListOfPluginsToLoad() {
+    void testBuildListOfPluginsToLoad() {
         TestUtils.assumeWorkingJMockit();
         final HelpAwareOptionPaneMocker haMocker = new HelpAwareOptionPaneMocker(
                 PluginHandler.UNMAINTAINED_PLUGINS.stream().collect(
@@ -99,7 +92,7 @@ public class PluginHandlerTest {
      * Unit test of {@link PluginHandler#filterDeprecatedPlugins}.
      */
     @Test
-    public void testFilterDeprecatedPlugins() {
+    void testFilterDeprecatedPlugins() {
         TestUtils.assumeWorkingJMockit();
         final JOptionPaneSimpleMocker jopsMocker = new JOptionPaneSimpleMocker(
             Collections.singletonMap(
@@ -124,7 +117,7 @@ public class PluginHandlerTest {
      * Unit test of {@link PluginHandler#filterUnmaintainedPlugins}.
      */
     @Test
-    public void testFilterUnmaintainedPlugins() {
+    void testFilterUnmaintainedPlugins() {
         TestUtils.assumeWorkingJMockit();
         final HelpAwareOptionPaneMocker haMocker = new HelpAwareOptionPaneMocker(
             Collections.singletonMap(
@@ -151,20 +144,20 @@ public class PluginHandlerTest {
      * @throws PluginException if an error occurs
      */
     @Test
-    public void testPluginInformationAction() throws PluginException {
+    void testPluginInformationAction() throws PluginException {
         TestUtils.assumeWorkingJMockit();
         final String expectedText = "Ant-Version: Apache Ant 1.9.6\n" +
-            "Author: Don-vip\n" +
-            "Created-By: 1.7.0_91-b02 (Oracle Corporation)\n" +
-            "Manifest-Version: 1.0\n" +
-            "Plugin-Canloadatruntime: true\n" +
-            "Plugin-Class: org.openstreetmap.josm.plugins.fr.epci.EpciPlugin\n" +
-            "Plugin-Date: 2015-11-19T08:21:07.645033Z\n" +
-            "Plugin-Description: Handling of French EPCIs (boundary=local_authority)\n" +
-            "Plugin-Early: true\n" +
-            "Plugin-Link: http://wiki.openstreetmap.org/wiki/FR:JOSM/Fr:Plugin/EPCI-fr\n" +
-            "Plugin-Mainversion: 7001\n" +
-            "Plugin-Version: 31772\n";
+                "Author: Don-vip\n" +
+                "Created-By: 1.7.0_91-b02 (Oracle Corporation)\n" +
+                "Manifest-Version: 1.0\n" +
+                "Plugin-Canloadatruntime: true\n" +
+                "Plugin-Class: org.openstreetmap.josm.plugins.fr.epci.EpciPlugin\n" +
+                "Plugin-Date: 2015-11-19T08:21:07.645033Z\n" +
+                "Plugin-Description: Handling of French EPCIs (boundary=local_authority)\n" +
+                "Plugin-Early: true\n" +
+                "Plugin-Link: http://wiki.openstreetmap.org/wiki/FR:JOSM/Fr:Plugin/EPCI-fr\n" +
+                "Plugin-Mainversion: 7001\n" +
+                "Plugin-Version: 31772\n";
         final JOptionPaneSimpleMocker jopsMocker = new JOptionPaneSimpleMocker() {
             @Override
             public String getStringFromMessage(final Object message) {
@@ -181,5 +174,23 @@ public class PluginHandlerTest {
         Object[] invocationLogEntry = jopsMocker.getInvocationLog().get(0);
         assertEquals(0, (int) invocationLogEntry[0]);
         assertEquals("Plugin information", invocationLogEntry[2]);
+    }
+
+    /**
+     * Unit test of {@link PluginHandler#getInfoPanel}.
+     */
+    @Test
+    void testGetInfoPanel() {
+        JPanel panel = PluginHandler.getInfoPanel();
+        assertNotNull(panel);
+
+        assertTrue(PluginHandler.getPlugins().isEmpty());
+
+        // if no plugins are loaded in the test environment, the panel should show "No plugins installed"
+        boolean found = Arrays.stream(panel.getComponents())
+            .filter(JLabel.class::isInstance)
+            .map(JLabel.class::cast)
+            .anyMatch(l -> l.getText().equals("No plugins installed"));
+        assertTrue(found, "Should find 'No plugins installed' label");
     }
 }

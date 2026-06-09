@@ -29,6 +29,7 @@ import org.openstreetmap.josm.gui.layer.AbstractCachedTileSourceLayer;
 import org.openstreetmap.josm.gui.layer.ImageryLayer;
 import org.openstreetmap.josm.gui.layer.TMSLayer;
 import org.openstreetmap.josm.tools.Logging;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * An extension of {@link JMapViewer} that implements JOSM-specific tile loading mechanisms.
@@ -76,7 +77,7 @@ public class JosmMapViewer extends JMapViewer {
             } catch (IllegalArgumentException ex) {
                 Logging.trace(ex);
                 Logging.warn(ex.getMessage());
-                if (ex.getMessage() != null && !ex.getMessage().isEmpty()) {
+                if (!Utils.isEmpty(ex.getMessage())) {
                     new Notification(ex.getMessage()).setIcon(JOptionPane.WARNING_MESSAGE).show();
                 }
             }
@@ -90,7 +91,7 @@ public class JosmMapViewer extends JMapViewer {
     public static class DefaultOsmTileSourceProvider implements TileSourceProvider {
 
         protected static final StringProperty DEFAULT_OSM_TILE_URL = new StringProperty(
-                "default.osm.tile.source.url", "https://{switch:a,b,c}.tile.openstreetmap.org/{zoom}/{x}/{y}.png");
+                "default.osm.tile.source.url", "https://tile.openstreetmap.org/{zoom}/{x}/{y}.png");
 
         @Override
         public List<TileSource> getTileSources() {

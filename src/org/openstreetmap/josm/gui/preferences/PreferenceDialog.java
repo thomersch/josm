@@ -54,7 +54,7 @@ public class PreferenceDialog extends JDialog {
     public PreferenceDialog(Component parent) {
         super(GuiHelper.getFrameForComponent(parent), tr("Preferences"), ModalityType.DOCUMENT_MODAL);
         build();
-        this.setMinimumSize(new Dimension(800, 600));
+        this.setMinimumSize(new Dimension(400, 300));
         // set the maximum width to the current screen. If the dialog is opened on a
         // smaller screen than before, this will reset the stored preference.
         this.setMaximumSize(GuiHelper.getScreenSize());
@@ -153,6 +153,8 @@ public class PreferenceDialog extends JDialog {
             tpPreferences.selectSubTabByPref(previouslySelected.b);
         } else if (previouslySelected != null && previouslySelected.a != null) {
             tpPreferences.selectTabByPref(previouslySelected.a);
+        } else {
+            tpPreferences.setSelectedIndex(0);
         }
     }
 

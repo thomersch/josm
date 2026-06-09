@@ -4,6 +4,7 @@ package org.openstreetmap.josm.gui.preferences.projection;
 import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.awt.BorderLayout;
+import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.event.ActionListener;
@@ -16,22 +17,19 @@ import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
-import javax.swing.plaf.basic.BasicComboBoxEditor;
 
 import org.openstreetmap.josm.data.projection.CustomProjection;
 import org.openstreetmap.josm.data.projection.Projection;
 import org.openstreetmap.josm.data.projection.ProjectionConfigurationException;
 import org.openstreetmap.josm.data.projection.Projections;
-import org.openstreetmap.josm.data.tagging.ac.AutoCompletionItem;
 import org.openstreetmap.josm.gui.ExtendedDialog;
 import org.openstreetmap.josm.gui.widgets.AbstractTextComponentValidator;
 import org.openstreetmap.josm.gui.widgets.HistoryComboBox;
 import org.openstreetmap.josm.gui.widgets.HtmlPanel;
-import org.openstreetmap.josm.gui.widgets.JosmTextField;
-import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.Logging;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * ProjectionChoice where a CRS can be defined using various parameters.
@@ -53,7 +51,6 @@ public class CustomProjectionChoice extends AbstractProjectionChoice implements 
 
     private static class PreferencePanel extends JPanel {
 
-        public JosmTextField input;
         private HistoryComboBox cbInput;
 
         PreferencePanel(String initialText, ActionListener listener) {
@@ -61,19 +58,12 @@ public class CustomProjectionChoice extends AbstractProjectionChoice implements 
         }
 
         private void build(String initialText, final ActionListener listener) {
-            input = new JosmTextField(30);
             cbInput = new HistoryComboBox();
-            cbInput.setPrototypeDisplayValue(new AutoCompletionItem("xxxx"));
-            cbInput.setEditor(new BasicComboBoxEditor() {
-                @Override
-                protected JosmTextField createEditorComponent() {
-                    return input;
-                }
-            });
+            cbInput.getEditorComponent().setColumns(30);
             List<String> samples = Arrays.asList(
                     "+proj=lonlat +ellps=WGS84 +datum=WGS84 +bounds=-180,-90,180,90",
                     "+proj=tmerc +lat_0=0 +lon_0=9 +k_0=1 +x_0=3500000 +y_0=0 +ellps=bessel +nadgrids=BETA2007.gsb");
-            cbInput.setPossibleItemsTopDown(Config.getPref().getList("projection.custom.value.history", samples));
+            cbInput.getModel().prefs().load("projection.custom.value.history", samples);
             cbInput.setText(initialText == null ? "" : initialText);
 
             final HtmlPanel errorsPanel = new HtmlPanel();
@@ -81,7 +71,7 @@ public class CustomProjectionChoice extends AbstractProjectionChoice implements 
             final JLabel valStatus = new JLabel();
             valStatus.setVisible(false);
 
-            final AbstractTextComponentValidator val = new AbstractTextComponentValidator(input, false, false, false) {
+            final AbstractTextComponentValidator val = new AbstractTextComponentValidator(cbInput.getEditorComponent(), false, false, false) {
 
                 private String error;
 
@@ -99,7 +89,7 @@ public class CustomProjectionChoice extends AbstractProjectionChoice implements 
                 public boolean isValid() {
                     try {
                         CustomProjection test = new CustomProjection();
-                        test.update(input.getText());
+                        test.update(cbInput.getEditorComponent().getText());
                     } catch (ProjectionConfigurationException ex) {
                         Logging.warn(ex);
                         error = ex.getMessage();
@@ -130,25 +120,31 @@ public class CustomProjectionChoice extends AbstractProjectionChoice implements 
 
             this.setLayout(new GridBagLayout());
             JPanel p2 = new JPanel(new GridBagLayout());
-            p2.add(cbInput, GBC.std().fill(GBC.HORIZONTAL).insets(0, 20, 5, 5));
+            p2.add(cbInput, GBC.std().fill(GridBagConstraints.HORIZONTAL).insets(0, 20, 5, 5));
             p2.add(btnCheck, GBC.eol().insets(0, 20, 0, 5));
-            this.add(p2, GBC.eol().fill(GBC.HORIZONTAL));
+            this.add(p2, GBC.eol().fill(GridBagConstraints.HORIZONTAL));
             p2 = new JPanel(new GridBagLayout());
-            p2.add(valStatus, GBC.std().anchor(GBC.WEST).weight(0.0001, 0));
-            p2.add(errorsPanel, GBC.eol().fill(GBC.HORIZONTAL));
-            this.add(p2, GBC.eol().fill(GBC.HORIZONTAL));
+            p2.add(valStatus, GBC.std().anchor(GridBagConstraints.WEST).weight(0.0001, 0));
+            p2.add(errorsPanel, GBC.eol().fill(GridBagConstraints.HORIZONTAL));
+            this.add(p2, GBC.eol().fill(GridBagConstraints.HORIZONTAL));
             p2 = new JPanel(new GridBagLayout());
             p2.add(btnInfo, GBC.std().insets(0, 20, 0, 0));
-            p2.add(GBC.glue(1, 0), GBC.eol().fill(GBC.HORIZONTAL));
-            this.add(p2, GBC.eol().fill(GBC.HORIZONTAL));
+            p2.add(GBC.glue(1, 0), GBC.eol().fill(GridBagConstraints.HORIZONTAL));
+            this.add(p2, GBC.eol().fill(GridBagConstraints.HORIZONTAL));
         }
 
+        /**
+         * Remember the current input
+         */
         public void rememberHistory() {
             cbInput.addCurrentItemToHistory();
-            Config.getPref().putList("projection.custom.value.history", cbInput.getHistory());
+            cbInput.getModel().prefs().save("projection.custom.value.history");
         }
     }
 
+    /**
+     * A dialog for the available parameters of the custom projection
+     */
     public static class ParameterInfoDialog extends ExtendedDialog {
 
         /**
@@ -189,7 +185,7 @@ public class CustomProjectionChoice extends AbstractProjectionChoice implements 
 
     @Override
     public void setPreferences(Collection<String> args) {
-        if (args != null && !args.isEmpty()) {
+        if (!Utils.isEmpty(args)) {
             pref = args.iterator().next();
         }
     }
@@ -222,9 +218,9 @@ public class CustomProjectionChoice extends AbstractProjectionChoice implements 
             throw new IllegalArgumentException("Unsupported panel: "+panel);
         }
         PreferencePanel prefPanel = (PreferencePanel) panel;
-        String pref = prefPanel.input.getText();
+        String savePreferences = prefPanel.cbInput.getEditorComponent().getText();
         prefPanel.rememberHistory();
-        return Collections.singleton(pref);
+        return Collections.singleton(savePreferences);
     }
 
     @Override

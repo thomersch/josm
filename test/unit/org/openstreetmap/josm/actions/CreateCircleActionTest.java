@@ -1,50 +1,39 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.actions;
 
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
 import java.util.Arrays;
 import java.util.Collection;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.data.coor.EastNorth;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.BBox;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.Way;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.Projection;
 import org.openstreetmap.josm.tools.GeoProperty;
 import org.openstreetmap.josm.tools.GeoPropertyIndex;
 import org.openstreetmap.josm.tools.Geometry;
 import org.openstreetmap.josm.tools.ReflectionUtils;
 import org.openstreetmap.josm.tools.RightAndLefthandTraffic;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-
 /**
  * Unit tests for class {@link CreateCircleAction}.
  */
-public final class CreateCircleActionTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().projection();
-
+@Projection
+final class CreateCircleActionTest {
     /**
      * Test case: When Create Circle action is performed with a single way selected,
      * circle direction must equals way direction.
      * see #7421
-     * @throws ReflectiveOperationException if an error occurs
      */
     @Test
-    public void testTicket7421case0() throws ReflectiveOperationException {
+    void testTicket7421case0() {
         DataSet dataSet = new DataSet();
 
         Node n1 = new Node(new EastNorth(0, 0));
@@ -54,7 +43,7 @@ public final class CreateCircleActionTest {
         dataSet.addPrimitive(n2);
         dataSet.addPrimitive(n3);
 
-        Way w = new Way(); // Way is Clockwize
+        Way w = new Way(); // Way is clockwise
         w.setNodes(Arrays.asList(new Node[] {n1, n2, n3}));
         dataSet.addPrimitive(w);
 
@@ -64,13 +53,10 @@ public final class CreateCircleActionTest {
 
         // Expected result: Dataset contain one closed way, clockwise
         Collection<Way> resultingWays = dataSet.getWays();
-        assertSame(String.format("Expect one way after perform action. %d found", resultingWays.size()),
-                   resultingWays.size(), 1);
+        assertSame(1, resultingWays.size(), String.format("Expect one way after perform action. %d found", resultingWays.size()));
         Way resultingWay = resultingWays.iterator().next();
-        assertTrue("Resulting way is not closed",
-                   resultingWay.isClosed());
-        assertTrue("Found anti-clockwize circle while way was clockwize",
-                   Geometry.isClockwise(resultingWay));
+        assertTrue(resultingWay.isClosed(), "Resulting way is not closed");
+        assertTrue(Geometry.isClockwise(resultingWay), "Found anti-clockwise circle while way was clockwise");
     }
 
     /**
@@ -101,7 +87,7 @@ public final class CreateCircleActionTest {
      * @throws ReflectiveOperationException if an error occurs
      */
     @Test
-    public void testTicket7421case1() throws ReflectiveOperationException {
+    void testTicket7421case1() throws ReflectiveOperationException {
         DataSet dataSet = new DataSet();
 
         Node n1 = new Node(new EastNorth(0, 0));
@@ -126,13 +112,10 @@ public final class CreateCircleActionTest {
 
             // Expected result: Dataset contain one closed way, clockwise
             Collection<Way> resultingWays = dataSet.getWays();
-            assertSame(String.format("Expect one way after perform action. %d found", resultingWays.size()),
-                       resultingWays.size(), 1);
+            assertSame(1, resultingWays.size(), String.format("Expect one way after perform action. %d found", resultingWays.size()));
             Way resultingWay = resultingWays.iterator().next();
-            assertTrue("Resulting way is not closed",
-                       resultingWay.isClosed());
-            assertTrue("Found anti-clockwise way while traffic is left hand.",
-                       Geometry.isClockwise(resultingWay));
+            assertTrue(resultingWay.isClosed(), "Resulting way is not closed");
+            assertTrue(Geometry.isClockwise(resultingWay), "Found anti-clockwise way while traffic is left hand.");
         } finally {
             // Restore left/right hand traffic database
             rlCache.set(null, origRlCache);

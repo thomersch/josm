@@ -1,33 +1,24 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.io;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.util.Arrays;
 
-import org.junit.Rule;
-import org.junit.Test;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.Changeset;
 import org.openstreetmap.josm.data.osm.Node;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 import org.openstreetmap.josm.tools.Logging;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests of {@link OsmChangeBuilder}
  */
-public class OsmChangeBuilderTest {
-
-    /**
-     * Setup rule
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+@BasicPreferences
+class OsmChangeBuilderTest {
     private static void shouldFail(Runnable r) {
         try {
             r.run();
@@ -41,7 +32,7 @@ public class OsmChangeBuilderTest {
      * Test various constructor invocations
      */
     @Test
-    public void testConstructor() {
+    void testConstructor() {
         Changeset cs = new Changeset(1);
         // should not fail
         new OsmChangeBuilder(cs);
@@ -56,7 +47,7 @@ public class OsmChangeBuilderTest {
      * the protocol start(),append()*, finish() is violated.
      */
     @Test
-    public void testSequenceOfMethodCalls() {
+    void testSequenceOfMethodCalls() {
         Changeset cs = new Changeset(1);
         OsmChangeBuilder csBuilder = new OsmChangeBuilder(cs);
 
@@ -92,7 +83,7 @@ public class OsmChangeBuilderTest {
      * Test building a document with a new node
      */
     @Test
-    public void testDocumentWithNewNode() {
+    void testDocumentWithNewNode() {
         Changeset cs = new Changeset(1);
         OsmChangeBuilder builder = new OsmChangeBuilder(cs);
         Node n = new Node(LatLon.ZERO);
@@ -113,7 +104,7 @@ public class OsmChangeBuilderTest {
      * Test building a document with a modified node
      */
     @Test
-    public void testDocumentWithModifiedNode() {
+    void testDocumentWithModifiedNode() {
         Changeset cs = new Changeset(1);
         OsmChangeBuilder builder = new OsmChangeBuilder(cs);
         Node n = new Node(LatLon.ZERO);
@@ -136,7 +127,7 @@ public class OsmChangeBuilderTest {
      * Test building a document with a deleted node
      */
     @Test
-    public void testDocumentWithDeletedNode() {
+    void testDocumentWithDeletedNode() {
         Changeset cs = new Changeset(1);
         OsmChangeBuilder builder = new OsmChangeBuilder(cs);
         Node n = new Node(LatLon.ZERO);
@@ -159,7 +150,7 @@ public class OsmChangeBuilderTest {
      * Test building a mixed document.
      */
     @Test
-    public void testMixed() {
+    void testMixed() {
         Changeset cs = new Changeset(1);
         OsmChangeBuilder builder = new OsmChangeBuilder(cs);
         Node n1 = new Node(LatLon.ZERO);

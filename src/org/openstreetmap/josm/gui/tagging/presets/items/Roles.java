@@ -5,19 +5,18 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.awt.GridBagLayout;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 
-import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Tag;
 import org.openstreetmap.josm.data.osm.search.SearchCompiler;
 import org.openstreetmap.josm.data.osm.search.SearchParseError;
 import org.openstreetmap.josm.data.osm.search.SearchSetting;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetItem;
+import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetItemGuiSupport;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetType;
 import org.openstreetmap.josm.tools.GBC;
 import org.openstreetmap.josm.tools.ImageProvider;
@@ -68,7 +67,7 @@ public class Roles extends TaggingPresetItem {
         }
 
         /**
-         * Sets wether this role is required at least once in the relation.
+         * Sets whether this role is required at least once in the relation.
          * @param str "required" or "optional"
          * @throws SAXException if str is neither "required" or "optional"
          */
@@ -80,7 +79,7 @@ public class Roles extends TaggingPresetItem {
         }
 
         /**
-         * Sets wether the role name is a regular expression.
+         * Sets whether the role name is a regular expression.
          * @param str "true" or "false"
          * @throws SAXException if str is neither "true" or "false"
          */
@@ -190,7 +189,7 @@ public class Roles extends TaggingPresetItem {
     public final List<Role> roles = new ArrayList<>(2);
 
     @Override
-    public boolean addToPanel(JPanel p, Collection<OsmPrimitive> sel, boolean presetInitiallyMatches) {
+    public boolean addToPanel(JPanel p, TaggingPresetItemGuiSupport support) {
         p.add(new JLabel(" "), GBC.eol()); // space
         if (!roles.isEmpty()) {
             JPanel proles = new JPanel(new GridBagLayout());
@@ -201,6 +200,7 @@ public class Roles extends TaggingPresetItem {
             for (Role i : roles) {
                 i.addToPanel(proles);
             }
+            proles.applyComponentOrientation(support.getDefaultComponentOrientation());
             p.add(proles, GBC.eol());
         }
         return false;

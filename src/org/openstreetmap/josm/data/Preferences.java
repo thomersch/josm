@@ -1,7 +1,6 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data;
 
-import static org.openstreetmap.josm.tools.I18n.marktr;
 import static org.openstreetmap.josm.tools.I18n.tr;
 import static org.openstreetmap.josm.tools.Utils.getSystemEnv;
 import static org.openstreetmap.josm.tools.Utils.getSystemProperty;
@@ -13,7 +12,9 @@ import java.io.PrintWriter;
 import java.io.Reader;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -36,11 +37,13 @@ import javax.xml.stream.XMLStreamException;
 
 import org.openstreetmap.josm.data.preferences.ColorInfo;
 import org.openstreetmap.josm.data.preferences.JosmBaseDirectories;
+import org.openstreetmap.josm.data.preferences.JosmUrls;
 import org.openstreetmap.josm.data.preferences.NamedColorProperty;
 import org.openstreetmap.josm.data.preferences.PreferencesReader;
 import org.openstreetmap.josm.data.preferences.PreferencesWriter;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.io.NetworkManager;
+import org.openstreetmap.josm.io.OsmApi;
 import org.openstreetmap.josm.spi.preferences.AbstractPreferences;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.spi.preferences.DefaultPreferenceChangeEvent;
@@ -82,51 +85,17 @@ public class Preferences extends AbstractPreferences {
 
     /** remove if key equals */
     private static final String[] OBSOLETE_PREF_KEYS = {
-        "remotecontrol.https.enabled", /* remove entry after Dec. 2019 */
-        "remotecontrol.https.port", /* remove entry after Dec. 2019 */
-        "curves.circlearc.angle-separation", // see #19076
-        "update.selected.complete-relation" // see #19124
+        // nothing ATM
     };
 
     /** remove if key starts with */
     private static final String[] OBSOLETE_PREF_KEYS_START = {
-            //only remove layer specific prefs
-            "draw.rawgps.layer.wpt.",
-            "draw.rawgps.layer.audiowpt.",
-            "draw.rawgps.lines.force.",
-            "draw.rawgps.lines.alpha-blend.",
-            "draw.rawgps.lines.",
-            "markers.show ", //uses space as separator
-            "marker.makeautomarker.",
-            "clr.layer.",
-
-            //remove both layer specific and global prefs
-            "draw.rawgps.colors",
-            "draw.rawgps.direction",
-            "draw.rawgps.alternatedirection",
-            "draw.rawgps.linewidth",
-            "draw.rawgps.max-line-length.local",
-            "draw.rawgps.max-line-length",
-            "draw.rawgps.large",
-            "draw.rawgps.large.size",
-            "draw.rawgps.hdopcircle",
-            "draw.rawgps.min-arrow-distance",
-            "draw.rawgps.colorTracksTune",
-            "draw.rawgps.colors.dynamic",
-            "draw.rawgps.lines.local",
-            "draw.rawgps.heatmap"
+        // nothing ATM
     };
 
     /** keep subkey even if it starts with any of {@link #OBSOLETE_PREF_KEYS_START} */
     private static final List<String> KEEP_PREF_KEYS = Arrays.asList(
-            "draw.rawgps.lines.alpha-blend",
-            "draw.rawgps.lines.arrows",
-            "draw.rawgps.lines.arrows.fast",
-            "draw.rawgps.lines.arrows.min-distance",
-            "draw.rawgps.lines.force",
-            "draw.rawgps.lines.max-length",
-            "draw.rawgps.lines.max-length.local",
-            "draw.rawgps.lines.width"
+    // nothing ATM
     );
 
     /** rename keys that equal */
@@ -134,27 +103,8 @@ public class Preferences extends AbstractPreferences {
 
     private static Map<String, String> getUpdatePrefKeys() {
         HashMap<String, String> m = new HashMap<>();
-        m.put("draw.rawgps.direction", "draw.rawgps.lines.arrows");
-        m.put("draw.rawgps.alternatedirection", "draw.rawgps.lines.arrows.fast");
-        m.put("draw.rawgps.min-arrow-distance", "draw.rawgps.lines.arrows.min-distance");
-        m.put("draw.rawgps.linewidth", "draw.rawgps.lines.width");
-        m.put("draw.rawgps.max-line-length.local", "draw.rawgps.lines.max-length.local");
-        m.put("draw.rawgps.max-line-length", "draw.rawgps.lines.max-length");
-        m.put("draw.rawgps.large", "draw.rawgps.points.large");
-        m.put("draw.rawgps.large.alpha", "draw.rawgps.points.large.alpha");
-        m.put("draw.rawgps.large.size", "draw.rawgps.points.large.size");
-        m.put("draw.rawgps.hdopcircle", "draw.rawgps.points.hdopcircle");
-        m.put("draw.rawgps.layer.wpt.pattern", "draw.rawgps.markers.pattern");
-        m.put("draw.rawgps.layer.audiowpt.pattern", "draw.rawgps.markers.audio.pattern");
-        m.put("draw.rawgps.colors", "draw.rawgps.colormode");
-        m.put("draw.rawgps.colorTracksTune", "draw.rawgps.colormode.velocity.tune");
-        m.put("draw.rawgps.colors.dynamic", "draw.rawgps.colormode.dynamic-range");
-        m.put("draw.rawgps.heatmap.line-extra", "draw.rawgps.colormode.heatmap.line-extra");
-        m.put("draw.rawgps.heatmap.colormap", "draw.rawgps.colormode.heatmap.colormap");
-        m.put("draw.rawgps.heatmap.use-points", "draw.rawgps.colormode.heatmap.use-points");
-        m.put("draw.rawgps.heatmap.gain", "draw.rawgps.colormode.heatmap.gain");
-        m.put("draw.rawgps.heatmap.lower-limit", "draw.rawgps.colormode.heatmap.lower-limit");
-        m.put("draw.rawgps.date-coloring-min-dt", "draw.rawgps.colormode.time.min-distance");
+        m.put("hdop.color.alpha", "circle.color.alpha");
+        m.put("points.hdopcircle", "points.circle");
         return Collections.unmodifiableMap(m);
     }
 
@@ -436,22 +386,42 @@ public class Preferences extends AbstractPreferences {
 
         // Backup old preferences if there are old preferences
         if (initSuccessful && prefFile.exists() && prefFile.length() > 0) {
-            Utils.copyFile(prefFile, backupFile);
+            checkFileValidity(prefFile, f -> Utils.copyFile(f, backupFile));
         }
 
         try (PreferencesWriter writer = new PreferencesWriter(
-                new PrintWriter(new File(prefFile + "_tmp"), StandardCharsets.UTF_8.name()), false, defaults)) {
+                new PrintWriter(prefFile + "_tmp", StandardCharsets.UTF_8), false, defaults)) {
             writer.write(settings);
         } catch (SecurityException e) {
             throw new IOException(e);
         }
 
         File tmpFile = new File(prefFile + "_tmp");
-        Utils.copyFile(tmpFile, prefFile);
-        Utils.deleteFile(tmpFile, marktr("Unable to delete temporary file {0}"));
+        // Only replace the pref file if the _tmp file is valid
+        checkFileValidity(tmpFile, f -> Files.move(f.toPath(), prefFile.toPath(), StandardCopyOption.REPLACE_EXISTING));
 
         setCorrectPermissions(prefFile);
         setCorrectPermissions(backupFile);
+    }
+
+    /**
+     * Ensure that a preferences file is "ok" before copying/moving it over another preferences file
+     * @param file The file to check
+     * @param consumer The consumer that will perform the copy/move action
+     * @throws IOException If there is an issue reading/writing the file
+     */
+    private static void checkFileValidity(File file, ThrowingConsumer<File, IOException> consumer) throws IOException {
+        try {
+            // But don't back up if the current preferences are invalid.
+            // The validations are expensive (~2/3 CPU, ~1/3 memory), but this isn't a "hot" method
+            PreferencesReader.validateXML(file);
+            PreferencesReader reader = new PreferencesReader(file, false);
+            reader.parse();
+            consumer.accept(file);
+        } catch (SAXException | XMLStreamException e) {
+            Logging.trace(e);
+            Logging.debug("Invalid preferences file (" + file + ") due to: " + e.getMessage());
+        }
     }
 
     private static void setCorrectPermissions(File file) {
@@ -517,7 +487,7 @@ public class Preferences extends AbstractPreferences {
      * @throws XMLStreamException if any XML stream error occurs
      * @throws IOException if any I/O error occurs
      */
-    public void fromXML(Reader in) throws XMLStreamException, IOException {
+    public synchronized void fromXML(Reader in) throws XMLStreamException, IOException {
         PreferencesReader reader = new PreferencesReader(in, false);
         reader.parse();
         settingsMap.clear();
@@ -528,7 +498,7 @@ public class Preferences extends AbstractPreferences {
      * Initializes preferences.
      * @param reset if {@code true}, current settings file is replaced by the default one
      */
-    public void init(boolean reset) {
+    public synchronized void init(boolean reset) {
         initSuccessful = false;
         // get the preferences.
         File prefDir = dirs.getPreferencesDirectory(false);
@@ -670,7 +640,7 @@ public class Preferences extends AbstractPreferences {
     /**
      * Reset all values stored in this map to the default values. This clears the preferences.
      */
-    public final void resetToDefault() {
+    public final synchronized void resetToDefault() {
         settingsMap.clear();
     }
 
@@ -815,7 +785,7 @@ public class Preferences extends AbstractPreferences {
      * @param nopass if password must be excluded
      * @return XML
      */
-    public String toXML(boolean nopass) {
+    public synchronized String toXML(boolean nopass) {
         return toXML(settingsMap.entrySet(), nopass, false);
     }
 
@@ -900,6 +870,7 @@ public class Preferences extends AbstractPreferences {
             putBoolean("preferences.reset.draw.rawgps.lines", true);
             putInt("draw.rawgps.lines", -1);
         }
+        updateMapPaintKnownDefaults();
         if (modifiedDefault) {
             try {
                 saveDefaults();
@@ -909,6 +880,54 @@ public class Preferences extends AbstractPreferences {
             }
             modifiedDefault = false;
         }
+        // As of June 1st, 2024, the OSM.org instance no longer allows basic authentication.
+        if (JosmUrls.getInstance().getDefaultOsmApiUrl().equals(OsmApi.getOsmApi().getServerUrl()) && "basic".equals(OsmApi.getAuthMethod())) {
+            put("osm-server.auth-method", null);
+            put("osm-server.username", null);
+            put("osm-server.password", null);
+        }
+    }
+
+    /**
+     * Update the known defaults for the map paintstyles.
+     * This should be removed sometime after 2024-06-01.
+     */
+    private void updateMapPaintKnownDefaults() {
+        final String mapPaintStyleEntriesPrefEntry = "mappaint.style.entries";
+        final String url = "url";
+        final String active = "active";
+        final String potlatch2 = "resource://styles/standard/potlatch2.mapcss";
+        final String remotePotlatch2 = "https://josm.openstreetmap.de/josmfile?page=Styles/Potlatch2&zip=1";
+
+        // Remove potlatch2 from the known defaults
+        final List<String> knownDefaults = new ArrayList<>(getList("mappaint.style.known-defaults"));
+        // See #18866: Potlatch 2 internal theme removed in favor of remote theme by Stereo
+        knownDefaults.removeIf(potlatch2::equals);
+
+        // Moved from MapPaintPrefHelper for consistency
+        // XML style is not bundled anymore
+        knownDefaults.removeIf("resource://styles/standard/elemstyles.xml"::equals);
+        putList("mappaint.style.known-defaults", knownDefaults);
+
+        // If the user hasn't set the entries, don't go through the removal process for potlatch 2. There is an issue
+        // where it may clear all paintstyles (done when the user has never touched the style settings).
+        if (!this.settingsMap.containsKey(mapPaintStyleEntriesPrefEntry)) {
+            return;
+        }
+        // Replace potlatch2 in the current style entries, but only if it is enabled. Otherwise, remove it.
+        final List<Map<String, String>> styleEntries = new ArrayList<>(getListOfMaps(mapPaintStyleEntriesPrefEntry));
+        final boolean potlatchEnabled = styleEntries.stream().filter(map -> potlatch2.equals(map.get(url)))
+                .anyMatch(map -> Boolean.parseBoolean(map.get(active)));
+        final boolean remotePotlatch2Present = styleEntries.stream().anyMatch(map -> remotePotlatch2.equals(map.get(url)));
+        // Remove potlatch2 if it is not enabled _or_ the remote potlatch2 version is present
+        styleEntries.removeIf(map -> (!potlatchEnabled || remotePotlatch2Present) && potlatch2.equals(map.get(url)));
+        styleEntries.replaceAll(HashMap::new); // The maps are initially immutable.
+        for (Map<String, String> map : styleEntries) {
+            if (potlatch2.equals(map.get(url))) {
+                map.put(url, remotePotlatch2);
+            }
+        }
+        putListOfMaps(mapPaintStyleEntriesPrefEntry, styleEntries);
     }
 
     /**
@@ -921,5 +940,20 @@ public class Preferences extends AbstractPreferences {
         synchronized (this) {
             saveOnPut = enable;
         }
+    }
+
+    /**
+     * A consumer that can throw an exception
+     * @param <T> The object type to accept
+     * @param <E> The throwable type
+     */
+    @FunctionalInterface
+    private interface ThrowingConsumer<T, E extends Throwable> {
+        /**
+         * Accept an object
+         * @param object The object to accept
+         * @throws E The exception that can be thrown
+         */
+        void accept(T object) throws E;
     }
 }

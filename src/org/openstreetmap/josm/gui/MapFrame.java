@@ -38,12 +38,9 @@ import javax.swing.JToggleButton;
 import javax.swing.JToolBar;
 import javax.swing.KeyStroke;
 import javax.swing.SwingConstants;
-import javax.swing.border.Border;
 import javax.swing.event.PopupMenuEvent;
 import javax.swing.event.PopupMenuListener;
 import javax.swing.plaf.basic.BasicArrowButton;
-import javax.swing.plaf.basic.BasicSplitPaneDivider;
-import javax.swing.plaf.basic.BasicSplitPaneUI;
 
 import org.openstreetmap.josm.actions.ExpertToggleAction;
 import org.openstreetmap.josm.actions.mapmode.DeleteAction;
@@ -54,6 +51,7 @@ import org.openstreetmap.josm.actions.mapmode.MapMode;
 import org.openstreetmap.josm.actions.mapmode.ParallelWayAction;
 import org.openstreetmap.josm.actions.mapmode.SelectAction;
 import org.openstreetmap.josm.actions.mapmode.SelectLassoAction;
+import org.openstreetmap.josm.actions.mapmode.SplitMode;
 import org.openstreetmap.josm.actions.mapmode.ZoomAction;
 import org.openstreetmap.josm.data.ViewportData;
 import org.openstreetmap.josm.data.preferences.AbstractProperty;
@@ -216,17 +214,16 @@ public class MapFrame extends JPanel implements Destroyable, ActiveLayerChangeLi
         dialogsPanel = new DialogsPanel(splitPane);
         splitPane.setRightComponent(dialogsPanel);
 
-        /**
+        /*
          * All additional space goes to the mapView
          */
         splitPane.setResizeWeight(1.0);
 
-        /**
+        /*
          * Some beautifications.
          */
         splitPane.setDividerSize(5);
         splitPane.setBorder(null);
-        splitPane.setUI(new NoBorderSplitPaneUI());
 
         // JSplitPane supports F6, F8, Home and End shortcuts by default, but we need them for Audio and Image Mapping actions
         InputMap splitInputMap = splitPane.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT);
@@ -238,7 +235,7 @@ public class MapFrame extends JPanel implements Destroyable, ActiveLayerChangeLi
         add(splitPane, BorderLayout.CENTER);
 
         dialogsPanel.setLayout(new BoxLayout(dialogsPanel, BoxLayout.Y_AXIS));
-        dialogsPanel.setPreferredSize(new Dimension(TOGGLE_DIALOGS_WIDTH.get(), 0));
+        dialogsPanel.setPreferredSize(new Dimension(TOGGLE_DIALOGS_WIDTH.get() - splitPane.getDividerSize(), 0));
         dialogsPanel.setMinimumSize(new Dimension(24, 0));
         mapView.setMinimumSize(new Dimension(10, 0));
 
@@ -249,14 +246,15 @@ public class MapFrame extends JPanel implements Destroyable, ActiveLayerChangeLi
         mapModeZoom = new ZoomAction(this);
         mapModeDelete = new DeleteAction();
 
-        addMapMode(new IconToggleButton(mapModeSelect));
+        addMapMode(new IconToggleButton(mapModeSelect, false));
         addMapMode(new IconToggleButton(mapModeSelectLasso, true));
-        addMapMode(new IconToggleButton(mapModeDraw));
+        addMapMode(new IconToggleButton(mapModeDraw, false));
         addMapMode(new IconToggleButton(mapModeZoom, true));
         addMapMode(new IconToggleButton(mapModeDelete, true));
         addMapMode(new IconToggleButton(new ParallelWayAction(this), true));
         addMapMode(new IconToggleButton(new ExtrudeAction(), true));
         addMapMode(new IconToggleButton(new ImproveWayAccuracyAction(), false));
+        addMapMode(new IconToggleButton(new SplitMode(), false));
         toolBarActionsGroup.setSelected(allMapModeButtons.get(0).getModel(), true);
         toolBarActions.setFloatable(false);
 
@@ -312,7 +310,7 @@ public class MapFrame extends JPanel implements Destroyable, ActiveLayerChangeLi
      * @return <code>true</code> if it is selected
      */
     public boolean selectSelectTool(boolean onlyIfModeless) {
-        if (onlyIfModeless && !MODELESS.get())
+        if (onlyIfModeless && Boolean.FALSE.equals(MODELESS.get()))
             return false;
 
         return selectMapMode(mapModeSelect);
@@ -324,7 +322,7 @@ public class MapFrame extends JPanel implements Destroyable, ActiveLayerChangeLi
      * @return <code>true</code> if it is selected
      */
     public boolean selectDrawTool(boolean onlyIfModeless) {
-        if (onlyIfModeless && !MODELESS.get())
+        if (onlyIfModeless && Boolean.FALSE.equals(MODELESS.get()))
             return false;
 
         return selectMapMode(mapModeDraw);
@@ -336,7 +334,7 @@ public class MapFrame extends JPanel implements Destroyable, ActiveLayerChangeLi
      * @return <code>true</code> if it is selected
      */
     public boolean selectZoomTool(boolean onlyIfModeless) {
-        if (onlyIfModeless && !MODELESS.get())
+        if (onlyIfModeless && Boolean.FALSE.equals(MODELESS.get()))
             return false;
 
         return selectMapMode(mapModeZoom);
@@ -516,7 +514,7 @@ public class MapFrame extends JPanel implements Destroyable, ActiveLayerChangeLi
     public void fillPanel(Container panel) {
         panel.add(this, BorderLayout.CENTER);
 
-        /**
+        /*
          * sideToolBar: add map modes icons
          */
         if (Config.getPref().getBoolean("sidetoolbar.mapmodes.visible", true)) {
@@ -527,7 +525,7 @@ public class MapFrame extends JPanel implements Destroyable, ActiveLayerChangeLi
             sideToolBar.add(listAllMapModesAction.createButton());
         }
 
-        /**
+        /*
          * sideToolBar: add toggle dialogs icons
          */
         if (Config.getPref().getBoolean("sidetoolbar.toggledialogs.visible", true)) {
@@ -539,52 +537,33 @@ public class MapFrame extends JPanel implements Destroyable, ActiveLayerChangeLi
             sideToolBar.add(listAllDialogsAction.createButton());
         }
 
-        /**
+        /*
          * sideToolBar: add dynamic popup menu
          */
         sideToolBar.setComponentPopupMenu(new SideToolbarPopupMenu());
         ((JToolBar) sideToolBar).setFloatable(false);
         sideToolBar.setBorder(BorderFactory.createEmptyBorder(0, 1, 0, 1));
 
-        /**
+        /*
          * sideToolBar: decide scroll- and visibility
          */
         if (Config.getPref().getBoolean("sidetoolbar.scrollable", true)) {
-            final ScrollViewport svp = new ScrollViewport(sideToolBar, ScrollViewport.VERTICAL_DIRECTION);
-            sideToolBar = svp;
+            sideToolBar = new ScrollViewport(sideToolBar, ScrollViewport.VERTICAL_DIRECTION);
         }
         sideToolBar.setVisible(SIDE_TOOLBAR_VISIBLE.get());
         sidetoolbarPreferencesChangedListener = e -> sideToolBar.setVisible(e.getProperty().get());
         SIDE_TOOLBAR_VISIBLE.addListener(sidetoolbarPreferencesChangedListener);
 
-        /**
+        /*
          * sideToolBar: add it to the panel
          */
         panel.add(sideToolBar, BorderLayout.WEST);
 
-        /**
+        /*
          * statusLine: add to panel
          */
         if (statusLine != null && Config.getPref().getBoolean("statusline.visible", true)) {
             panel.add(statusLine, BorderLayout.SOUTH);
-        }
-    }
-
-    static final class NoBorderSplitPaneUI extends BasicSplitPaneUI {
-        static final class NoBorderBasicSplitPaneDivider extends BasicSplitPaneDivider {
-            NoBorderBasicSplitPaneDivider(BasicSplitPaneUI ui) {
-                super(ui);
-            }
-
-            @Override
-            public void setBorder(Border b) {
-                // Do nothing
-            }
-        }
-
-        @Override
-        public BasicSplitPaneDivider createDefaultDivider() {
-            return new NoBorderBasicSplitPaneDivider(this);
         }
     }
 
@@ -684,7 +663,7 @@ public class MapFrame extends JPanel implements Destroyable, ActiveLayerChangeLi
 
                         @Override
                         public void actionPerformed(ActionEvent e) {
-                            if ((Boolean) getValue(SELECTED_KEY)) {
+                            if (Boolean.TRUE.equals(getValue(SELECTED_KEY))) {
                                 t.showButton();
                             } else {
                                 t.hideButton();
@@ -744,7 +723,7 @@ public class MapFrame extends JPanel implements Destroyable, ActiveLayerChangeLi
      */
     public void rememberToggleDialogWidth() {
         if (dialogsPanel.isVisible()) {
-            TOGGLE_DIALOGS_WIDTH.put(splitPane.getWidth() - splitPane.getDividerLocation() - splitPane.getDividerSize() - 1);
+            TOGGLE_DIALOGS_WIDTH.put(splitPane.getWidth() - splitPane.getDividerLocation());
         }
     }
 

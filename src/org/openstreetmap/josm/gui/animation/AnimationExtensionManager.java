@@ -1,9 +1,9 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.animation;
 
-import java.util.Calendar;
-import java.util.Date;
-import java.util.GregorianCalendar;
+import java.time.LocalDate;
+import java.time.Month;
+import java.time.ZoneId;
 
 import org.openstreetmap.josm.data.preferences.BooleanProperty;
 
@@ -28,15 +28,37 @@ public final class AnimationExtensionManager {
      */
     public static AnimationExtension getExtension() {
         if (currentExtension == null) {
-            currentExtension = Boolean.TRUE.equals(PROP_ANIMATION.get()) && isChristmas() ? new ChristmasExtension()
-                    : new NoExtension();
+            final boolean isAnimated = Boolean.TRUE.equals(PROP_ANIMATION.get());
+            if (isAnimated && isChristmas()) {
+                currentExtension = new ChristmasExtension();
+            } else if (isAnimated && isBirthday()) {
+                currentExtension = new BirthdayExtension();
+            } else {
+                currentExtension = new NoExtension();
+            }
         }
         return currentExtension;
     }
 
+    /**
+     * Determines if an extension other than {@link NoExtension} is enabled.
+     * @return {@code true} if an extension other than {@code NoExtension} is enabled.
+     * @since 17322
+     */
+    public static boolean isExtensionEnabled() {
+        return !(getExtension() instanceof NoExtension);
+    }
+
     private static boolean isChristmas() {
-        Calendar c = new GregorianCalendar();
-        c.setTime(new Date());
-        return c.get(Calendar.DAY_OF_YEAR) > 350;
+        return LocalDate.now(ZoneId.systemDefault()).getDayOfYear() > 350;
+    }
+
+    /**
+     * The first commit of JOSM to svn (r1) was on 2005-09-27
+     * @return {@code true} if today is JOSM's birthday
+     */
+    private static boolean isBirthday() {
+        LocalDate l = LocalDate.now(ZoneId.systemDefault());
+        return l.getMonth() == Month.SEPTEMBER && l.getDayOfMonth() == 27;
     }
 }

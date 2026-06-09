@@ -1,44 +1,69 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.imagery;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.Arrays;
+import java.util.Collections;
 
-import org.junit.Rule;
-import org.junit.Test;
+import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.openstreetmap.gui.jmapviewer.interfaces.TemplatedTileSource;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.imagery.ImageryInfo.ImageryType;
 import org.openstreetmap.josm.data.projection.ProjectionRegistry;
 import org.openstreetmap.josm.data.projection.Projections;
 import org.openstreetmap.josm.spi.preferences.Config;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
+import org.openstreetmap.josm.testutils.annotations.BasicWiremock;
+import org.openstreetmap.josm.testutils.annotations.Projection;
 
 import com.github.tomakehurst.wiremock.client.WireMock;
-import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
-import com.github.tomakehurst.wiremock.junit.WireMockRule;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+@BasicPreferences(true)
+@BasicWiremock
+@Projection
+class WMSEndpointTileSourceTest implements TileSourceTest {
+    WireMockRuntimeInfo tileServer;
+    @BeforeEach
+    void setup(WireMockRuntimeInfo wireMockRuntimeInfo) {
+        this.tileServer = wireMockRuntimeInfo;
+    }
 
-public class WMSEndpointTileSourceTest {
-    /**
-     * Setup test
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().projection();
+    private void basicMock() {
+        final byte[] response = assertDoesNotThrow(() -> Files.readAllBytes(
+                Paths.get(TestUtils.getTestDataRoot() + "wms/geofabrik-osm-inspector.xml")));
+        tileServer.getWireMock().register(
+                WireMock.get(WireMock.urlEqualTo("/capabilities?SERVICE=WMS&REQUEST=GetCapabilities"))
+                        .willReturn(WireMock.aResponse().withBody(response))
+        );
+    }
 
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public WireMockRule tileServer = new WireMockRule(WireMockConfiguration.options().dynamicPort());
+    @Override
+    public ImageryInfo getInfo() {
+        this.basicMock();
+        final ImageryInfo info = new ImageryInfo("WMSEndpointTileSourceTest");
+        info.setExtendedUrl(tileServer.getHttpBaseUrl() + "/capabilities");
+        info.setDefaultLayers(Collections.singletonList(new DefaultLayer(ImageryType.WMS_ENDPOINT,
+                "single_node_in_way", "default", null)));
+        info.setImageryType(ImageryType.WMS_ENDPOINT);
+        return info;
+    }
+
+    @Override
+    public TemplatedTileSource getTileSource(ImageryInfo info) {
+        return new WMSEndpointTileSource(info, ProjectionRegistry.getProjection());
+    }
 
     @Test
-    public void testDefaultLayerSetInMaps() throws Exception {
+    void testDefaultLayerSetInMaps() throws Exception {
 
-        tileServer.stubFor(
+        tileServer.getWireMock().register(
                 WireMock.get(WireMock.urlEqualTo("/capabilities?SERVICE=WMS&REQUEST=GetCapabilities"))
                 .willReturn(
                         WireMock.aResponse()
@@ -46,14 +71,15 @@ public class WMSEndpointTileSourceTest {
                         )
                 );
 
-        tileServer.stubFor(WireMock.get(WireMock.urlEqualTo("//maps")).willReturn(WireMock.aResponse().withBody(
+        tileServer.getWireMock().register(WireMock.get(WireMock.urlEqualTo("/other/maps")).willReturn(WireMock.aResponse().withBody(
                 "<?xml version='1.0' encoding='UTF-8'?>\n" +
                 "<imagery xmlns=\"http://josm.openstreetmap.de/maps-1.0\">\n" +
                 "<entry>\n" +
                 "<name>OSM Inspector: Geometry</name>\n" +
                 "<id>OSM_Inspector-Geometry</id>\n" +
                 "<type>wms_endpoint</type>\n" +
-                "<url><![CDATA[" + tileServer.url("/capabilities") + "]]></url>\n" +
+                "<category>qa</category>\n" +
+                "<url><![CDATA[" + tileServer.getHttpBaseUrl() + "/capabilities]]></url>\n" +
                 "<icon>data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAsSAAALEgHS3X78AAAB5UlEQVQ4y4WTwWsTURDG" +
                 "fy8W1yYmXZOqtGJJFyGw6KF7CEigwYuS0kthrYUi4i0iORS9BU9hQdA/ILcixVBrwENKLz1FUBB0wWOwYFAqxUNYTZq6BfM8yC5d05iBObz3vfnmm3kz4sqDh/zP" +
                 "7szdlG5I+Of1zQ1xFA8xxI4GH2cjg4Cl+UUJcC4SJq6c7FPkKRlIoPQk0+NnuDwxHrhvuYd83+8OVuBlHouE/eDXzW8+/qO9DyHB0vyiVHoy2INSNiPdeg23XuPs" +
@@ -72,7 +98,7 @@ public class WMSEndpointTileSourceTest {
                 "</imagery>"
                 )));
 
-        Config.getPref().putList("imagery.layers.sites", Arrays.asList(tileServer.url("//maps")));
+        Config.getPref().putList("imagery.layers.sites", Collections.singletonList(tileServer.getHttpBaseUrl() + "/other/maps"));
         ImageryLayerInfo.instance.loadDefaults(true, null, false);
         assertEquals(1, ImageryLayerInfo.instance.getDefaultLayers().size());
         ImageryInfo wmsImageryInfo = ImageryLayerInfo.instance.getDefaultLayers().get(0);
@@ -86,8 +112,8 @@ public class WMSEndpointTileSourceTest {
     }
 
     @Test
-    public void testCustomHeaders() throws Exception {
-        tileServer.stubFor(
+    void testCustomHeadersServerSide() throws IOException {
+        tileServer.getWireMock().register(
                 WireMock.get(WireMock.urlEqualTo("/capabilities?SERVICE=WMS&REQUEST=GetCapabilities"))
                 .willReturn(
                         WireMock.aResponse()
@@ -95,7 +121,7 @@ public class WMSEndpointTileSourceTest {
                         )
                 );
 
-        tileServer.stubFor(WireMock.get(WireMock.urlEqualTo("//maps")).willReturn(WireMock.aResponse().withBody(
+        tileServer.getWireMock().register(WireMock.get(WireMock.urlEqualTo("/other/maps")).willReturn(WireMock.aResponse().withBody(
                 "<?xml version='1.0' encoding='UTF-8'?>\n" +
                 "<imagery xmlns=\"http://josm.openstreetmap.de/maps-1.0\">\n" +
                 "  <entry>\n" +
@@ -103,9 +129,10 @@ public class WMSEndpointTileSourceTest {
                 "        <name lang=\"nb\">Norge i Bilder (historisk)</name>\n" +
                 "        <id>geovekst-nib-historic</id>\n" +
                 "        <type>wms_endpoint</type>\n" +
+                "        <category>photo</category>\n" +
                 "        <country-code>NO</country-code>\n" +
                 "        <description lang=\"en\">Historic Norwegian orthophotos and maps, courtesy of Geovekst and Norkart.</description>\n" +
-                "        <url><![CDATA[" + tileServer.url("/capabilities?SERVICE=WMS&REQUEST=GetCapabilities") + "]]></url>\n" +
+                "        <url><![CDATA[" + tileServer.getHttpBaseUrl() + "/capabilities?SERVICE=WMS&REQUEST=GetCapabilities]]></url>\n" +
                 "        <custom-http-header header-name=\"X-WAAPI-TOKEN\" header-value=\"b8e36d51-119a-423b-b156-d744d54123d5\" />\n" +
                 "        <attribution-text>© Geovekst</attribution-text>\n" +
                 "        <attribution-url>https://www.norgeibilder.no/</attribution-url>\n" +
@@ -117,16 +144,16 @@ public class WMSEndpointTileSourceTest {
                 "</imagery>"
                 )));
 
-        Config.getPref().putList("imagery.layers.sites", Arrays.asList(tileServer.url("//maps")));
+        Config.getPref().putList("imagery.layers.sites", Collections.singletonList(tileServer.getHttpBaseUrl() + "/other/maps"));
         ImageryLayerInfo.instance.loadDefaults(true, null, false);
         ImageryInfo wmsImageryInfo = ImageryLayerInfo.instance.getDefaultLayers().get(0);
-        wmsImageryInfo.setDefaultLayers(Arrays.asList(new DefaultLayer(ImageryType.WMS_ENDPOINT, "historiske-ortofoto", "", "")));
+        wmsImageryInfo.setDefaultLayers(Collections.singletonList(new DefaultLayer(ImageryType.WMS_ENDPOINT, "historiske-ortofoto", "", "")));
         WMSEndpointTileSource tileSource = new WMSEndpointTileSource(wmsImageryInfo, ProjectionRegistry.getProjection());
         tileSource.initProjection(Projections.getProjectionByCode("EPSG:3857"));
         assertEquals("b8e36d51-119a-423b-b156-d744d54123d5", wmsImageryInfo.getCustomHttpHeaders().get("X-WAAPI-TOKEN"));
         assertEquals("b8e36d51-119a-423b-b156-d744d54123d5", tileSource.getHeaders().get("X-WAAPI-TOKEN"));
         assertTrue(wmsImageryInfo.isGeoreferenceValid());
-        tileServer.verify(
+        tileServer.getWireMock().verifyThat(
                 WireMock.getRequestedFor(WireMock.urlEqualTo("/capabilities?SERVICE=WMS&REQUEST=GetCapabilities"))
                 .withHeader("X-WAAPI-TOKEN", WireMock.equalTo("b8e36d51-119a-423b-b156-d744d54123d5")));
         assertEquals("http://waapi.webatlas.no/wms-orto-hist/?"

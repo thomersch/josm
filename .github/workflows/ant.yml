@@ -1,12 +1,8 @@
-name: Java CI
+name: Java CI Build
 env:
-  junit_platform_version: '1.7.0'
-  # ANT_HOME is also our ant version
-  ANT_HOME: 'apache-ant-1.10.9'
+  JAVAFX_VERSION: '17.0.18'
 on:
   push:
-    branches: [master]
-  pull_request:
     branches: [master]
 
 defaults:
@@ -14,7 +10,57 @@ defaults:
     shell: bash
 
 jobs:
+
+  createrelease:
+    name: Create Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Needed to create actual release
+    env:
+      LANG: en_US.UTF-8
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      josm_revision: ${{ steps.create_revision.outputs.josm_revision }}
+      josm_prerelease: ${{ steps.create_revision.outputs.josm_prerelease }}
+      josm_release_tag: ${{ steps.create_revision.outputs.josm_release_tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 256
+
+      - name: Set revision env variable
+        id: create_revision
+        # grab josm revision from last git-svn-id
+        run: |
+          josm_revision="$(git log -1 --grep 'git-svn-id: https://josm.openstreetmap.de/svn/trunk@' --pretty=format:%B | tail -1 | sed -n 's%git-svn-id: https://josm.openstreetmap.de/svn/trunk@\([0-9]*\) [-0-9a-f]*%\1%p')"
+          if [[ "$josm_revision" == "$(curl --silent https://josm.openstreetmap.de/tested)" ]]; then
+            echo "josm_prerelease=false" >> $GITHUB_ENV
+            echo "josm_prerelease=false" >> $GITHUB_OUTPUT
+            josm_release_tag=$josm_revision-tested
+          else
+            echo "josm_prerelease=true" >> $GITHUB_ENV
+            echo "josm_prerelease=true" >> $GITHUB_OUTPUT
+            josm_release_tag=$josm_revision
+          fi
+          echo "josm_revision=$josm_revision" >> $GITHUB_ENV
+          echo "josm_revision=$josm_revision" >> $GITHUB_OUTPUT
+          echo "josm_release_tag=$josm_release_tag" >> $GITHUB_ENV
+          echo "josm_release_tag=$josm_release_tag" >> $GITHUB_OUTPUT
+
+      - name: Create release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.josm_release_tag }}
+          name: JOSM release ${{ env.josm_release_tag }}
+          body: |
+            JOSM release ${{ env.josm_release_tag }}
+          draft: false
+          prerelease: ${{ env.josm_prerelease }}
+
   build:
+    needs: createrelease
     runs-on: ${{ matrix.os }}
     env:
       LANG: en_US.UTF-8
@@ -22,119 +68,214 @@ jobs:
       fail-fast: false
       matrix:
         # test against latest update of each major Java version, as well as specific updates of LTS versions:
-        java: [8, 11, 15]
+        java: [11, 21, 25]
         os: [ubuntu-latest, macos-latest, windows-latest]
-        headless: ["true", "false"]
-        exclude:
-          - java: 8
-            os: macos-latest
-          - java: 11
-            os: macos-latest
-          - headless: "false"
-            os: macos-latest
-          - headless: "false"
-            os: windows-latest
-    name: Java ${{ matrix.java }} on ${{ matrix.os }} with headless=${{ matrix.headless }}
+    name: Java ${{ matrix.java }} on ${{ matrix.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v6
         with:
-          fetch-depth: 128
+          fetch-depth: 256
+
       - name: Cache
-        uses: actions/cache@v2.0.0
+        uses: actions/cache@v5
         with:
-          path:  |
+          path: |
             ~/.ivy2/cache/
             ~/work/josm/josm/tools/
-          key: ${{ runner.os }}-ivy2-${{ hashFiles('ivy.xml') }}
-      - name: Setup java
-        uses: actions/setup-java@v1.4.3
+          key: ${{ runner.os }}-ivy2-${{ hashFiles('build.xml', 'ivy.xml', 'tools/ivy.xml') }}
+
+      - name: Setup Java ${{ matrix.java }}
+        uses: actions/setup-java@v5
         with:
+          distribution: 'zulu'
           java-version: ${{ matrix.java }}
-      - name: Install ant ${{ env.ANT_HOME }} and junit ${{ env.junit_platform_version }}
-        # Todo: cache ant and junit, saves 12 seconds.
-        run: |
-          curl -s https://downloads.apache.org/ant/binaries/${{ env.ANT_HOME }}-bin.tar.gz | tar -xz
-          curl -o ${{ env.ANT_HOME }}/lib/junit-platform-console-standalone-${{ env.junit_platform_version }}.jar  "https://repo1.maven.org/maven2/org/junit/platform/junit-platform-console-standalone/${{ env.junit_platform_version }}/junit-platform-console-standalone-${{ env.junit_platform_version }}.jar"
-      - name: Print ant version, expecting ${{ env.ANT_HOME }}
-        run: ${{ env.ANT_HOME }}/bin/ant -version
-      - name: Set revision env variable
-        run: |
-          ant create-revision
-          josm_revision=`awk '/Revision/{print $2}' resources/REVISION`
-          if [[ "$josm_revision" == `curl --silent https://josm.openstreetmap.de/tested` ]]; then
-            sed -i .bak '/Is-Local-Build/d' resources/REVISION
-            echo "josm_prerelease=false" >> $GITHUB_ENV
-          else
-            echo "josm_prerelease=true" >> $GITHUB_ENV
-          fi
-          echo "josm_revision=$josm_revision" >> $GITHUB_ENV
-      - name: Build with Ant, headless ${{ matrix.headless }}
-        run: |
-          ANT="${{ env.ANT_HOME }}/bin/ant -DnoJavaFX=true test-unit-hardfail"
-          if [ "${{ matrix.headless }}" == "true" ]; then
-            $ANT -Dtest.headless=true
-          else
-            xvfb-run $ANT -Dtest.headless=false
-          fi
-      - name: Dump errors if failed
-        if: ${{ failure() }}
-        run: "grep -L ', Failures: 0, Skipped: ' test/report/*.txt | xargs cat"
-      - name: Upload Ant reports
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v2
+
+      - name: Setup x64 Java (Mac) ${{ matrix.java }}
+        if: ${{ runner.os == 'macos' && runner.arch == 'ARM64' && always() }}
+        uses: actions/setup-java@v5
         with:
-          name: Ant reports for JOSM ${{ env.josm_revision }} on java ${{ matrix.java }} on ${{ matrix.os }} with headless=${{ matrix.headless }}
-          path: test/report/*.txt
+          distribution: 'zulu'
+          java-version: ${{ matrix.java }}
+          architecture: x64
+
+      - name: Install Ant
+        uses: JOSM/JOSMPluginAction/actions/setup-ant@v3
+
       - name: Optimise images
         if: ${{ runner.os == 'macos' && always() }}
         run: |
-          brew cask install imageoptim
+          brew install --cask imageoptim
           defaults write net.pornel.ImageOptim SvgoEnabled 1
           defaults write net.pornel.ImageOptim PngCrush2Enabled 1
           defaults write net.pornel.ImageOptim PngOutEnabled 1
           /Applications/ImageOptim.app/Contents/MacOS/ImageOptim resources/images
+
+      - name: Build with Ant
+        env:
+          SIGN_ALIAS: ${{ secrets.SIGN_ALIAS }}
+          SIGN_CERT: ${{ secrets.SIGN_CERT }}
+          SIGN_KEYPASS: ${{ secrets.SIGN_KEYPASS }}
+          SIGN_STOREPASS: ${{ secrets.SIGN_STOREPASS }}
+          SIGN_TSA: ${{ secrets.SIGN_TSA }}
+        # Calls ant with -Dreleasebuild=true if we're a 'tested' build
+        run: |
+          if [ ! -z "${SIGN_CERT}" ]; then
+            export SIGN_KEYSTORE=certificate.p12
+            echo "$SIGN_CERT" | base64 --decode > $SIGN_KEYSTORE
+          fi
+          if [ "${{ needs.createrelease.outputs.josm_prerelease }}" == "true" ]; then
+            ANT="ant"
+          else
+            ANT="ant -Dreleasebuild=true"
+          fi
+          $ANT dist
+          if [ ! -z "${SIGN_KEYSTORE}" ]; then rm $SIGN_KEYSTORE; fi
+
+      - name: Upload jar
+        if: ${{ always() && needs.createrelease.outputs.upload_url }}
+        env:
+          ASSET: dist/josm-custom.jar
+          ASSET_NAME: JOSM-${{ runner.os}}-java${{ matrix.java }}-${{ needs.createrelease.outputs.josm_revision }}.jar
+          CONTENT_TYPE: application/java-archive
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Use `gh api` instead of `gh release upload` so we can set the content type -- it also lets us avoid renaming files
+        run: |
+          gh api --verbose --method POST \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer ${{ env.GITHUB_TOKEN }}" \
+            --header "Content-Type: ${{ env.CONTENT_TYPE }}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "$(sed 's/{?name,label}/?name=${{ env.ASSET_NAME }}/g' <<< ${{ needs.createrelease.outputs.upload_url }})" \
+            --input "${{ env.ASSET }}"
+
       - name: Build and package for macOS
-        if: ${{ runner.os == 'macos' && always() }}
+        if: ${{ runner.os == 'macos' && matrix.java != '11' && always() }}
         env:
           CERT_MACOS_P12: ${{ secrets.CERT_MACOS_P12 }}
           CERT_MACOS_PW: ${{ secrets.CERT_MACOS_PW }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_ID_PW: ${{ secrets.APPLE_ID_PW }}
+          APPLE_ID_TEAM: ${{ secrets.APPLE_ID_TEAM }}
         run: |
-          $ANT_HOME/bin/ant -DnoErrorProne dist
-          ./native/macosx/macos-jpackage.sh ${{ env.josm_revision }}
-      - name: Create macOS release
-        if: ${{ runner.os == 'macos' && always() }}
-        id: create_release
-        uses: actions/create-release@v1
+          function setup_openjfx() {
+            if [ ! -f tools/openjfx-${JAVAFX_VERSION}_${{ runner.os }}_${2}-jmods.zip ]; then
+              curl -o tools/openjfx-${JAVAFX_VERSION}_${{ runner.os }}_${2}-jmods.zip https://download2.gluonhq.com/openjfx/${JAVAFX_VERSION}/openjfx-${JAVAFX_VERSION}_osx-${1}_bin-jmods.zip
+            fi
+            unzip tools/openjfx-${JAVAFX_VERSION}_${{ runner.os }}_${2}-jmods.zip
+            mv javafx-jmods-${JAVAFX_VERSION}/*.jmod $JAVA_HOME/jmods/
+          }
+
+          if [ ${{ runner.arch }} == "ARM64" ]; then
+            JAVA_HOME="${JAVA_HOME_${{ matrix.java }}_ARM64}" PATH="${JAVA_HOME_${{ matrix.java }}_ARM64}/bin:${PATH}" setup_openjfx aarch64 ARM64
+            JAVA_HOME="${JAVA_HOME_${{ matrix.java }}_X64}" PATH="${JAVA_HOME_${{ matrix.java }}_X64}/bin:${PATH}" setup_openjfx x64 X64
+            JAVA_HOME="${JAVA_HOME_${{ matrix.java }}_ARM64}" ./native/macosx/macos-jpackage.sh ${{ needs.createrelease.outputs.josm_revision }} "${JAVA_HOME_${{ matrix.java }}_X64}"
+          else
+            setup_openjfx x64 X64
+            ./native/macosx/macos-jpackage.sh ${{ needs.createrelease.outputs.josm_revision }}
+          fi
+
+      - name: Setup Windows PATH
+        if: ${{ runner.os == 'windows' && matrix.java != '11' && always() }}
+        run: |
+          echo "C:\Program Files (x86)\WiX Toolset v3.11\bin" >> $GITHUB_PATH
+          echo "C:\Program Files (x86)\Windows Kits\10\bin\x64" >> $GITHUB_PATH
+          echo "C:\Program Files (x86)\Windows Kits\10\App Certification Kit" >> $GITHUB_PATH
+
+      - name: Build and package for Windows
+        if: ${{ runner.os == 'windows' && matrix.java != '11' && always() }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions, you do not need to create your own token
-        with:
-          tag_name: ${{ env.josm_revision }}
-          release_name: JOSM.app release ${{ env.josm_revision }}
-          body: |
-            JOSM.app release ${{ env.josm_revision }}
-          draft: false
-          prerelease: ${{ env.josm_prerelease }}
-      - name: Upload app
-        if: ${{ runner.os == 'macos' && always() }}
-        id: upload-app
-        uses: actions/upload-release-asset@v1
+          SIGN_CERT: ${{ secrets.SIGN_CERT }}
+          SIGN_STOREPASS: ${{ secrets.SIGN_STOREPASS }}
+          SIGN_TSA: ${{ secrets.SIGN_TSA }}
+        run: |
+          if [ ! -f tools/openjfx-${JAVAFX_VERSION}_${{ runner.os }}-jmods.zip ]; then
+            curl -o tools/openjfx-${JAVAFX_VERSION}_${{ runner.os }}-jmods.zip https://download2.gluonhq.com/openjfx/${JAVAFX_VERSION}/openjfx-${JAVAFX_VERSION}_windows-x64_bin-jmods.zip
+          fi
+          unzip tools/openjfx-${JAVAFX_VERSION}_${{ runner.os }}-jmods.zip
+          mv javafx-jmods-${JAVAFX_VERSION}/*.jmod $JAVA_HOME/jmods/
+          ./native/windows/win-jpackage.sh ${{ needs.createrelease.outputs.josm_revision }}
+
+      - name: Upload macOS app
+        if: ${{ runner.os == 'macos' && matrix.java != '11' && always() && needs.createrelease.outputs.upload_url }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing its ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
-          asset_path: app/JOSM.zip
-          asset_name: JOSM-${{ runner.os}}-java${{ matrix.java }}.zip
-          asset_content_type: application/zip
-      - name: Upload jar
-        if: ${{ runner.os == 'macos' && always() }}
-        id: upload-jar
-        uses: actions/upload-release-asset@v1
+          CONTENT_TYPE: application/zip
+          ASSET_NAME: JOSM-${{ runner.os}}-java${{ matrix.java }}-${{ needs.createrelease.outputs.josm_revision }}.zip
+        run: |
+          curl --location \
+            --request POST \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer ${{ env.GITHUB_TOKEN }}" \
+            --header "Content-Type: ${{ env.CONTENT_TYPE }}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "$(sed 's/{?name,label}/?name=${{ env.ASSET_NAME }}/g' <<< ${{ needs.createrelease.outputs.upload_url }})" \
+            --data-binary "@app/JOSM.zip"
+
+      - name: Upload macOS app (x64)
+        if: ${{ runner.os == 'macos' && matrix.java != '11' && always() && runner.arch == 'ARM64' && needs.createrelease.outputs.upload_url }}
         env:
+          ASSET_NAME: JOSM-${{ runner.os}}-java${{ matrix.java }}-${{ needs.createrelease.outputs.josm_revision }}-x64.zip
+          CONTENT_TYPE: application/zip
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing its ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
-          asset_path: dist/josm-custom.jar
-          asset_name: josm-latest.jar
-          asset_content_type: application/java-archive
+        # Use `curl` instead of `gh release upload` so we can set the content type
+        run: |
+          curl --location \
+            --request POST \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer ${{ env.GITHUB_TOKEN }}" \
+            --header "Content-Type: ${{ env.CONTENT_TYPE }}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "$(sed 's/{?name,label}/?name=${{ env.ASSET_NAME }}/g' <<< ${{ needs.createrelease.outputs.upload_url }})" \
+            --data-binary "@app/JOSM_${{ matrix.java }}_x86_64.zip"
+
+      - name: Upload macOS app (aarch64)
+        if: ${{ runner.os == 'macos' && matrix.java != '11' && always() && runner.arch == 'ARM64' && needs.createrelease.outputs.upload_url }}
+        env:
+          ASSET_NAME: JOSM-${{ runner.os}}-java${{ matrix.java }}-${{ needs.createrelease.outputs.josm_revision }}-aarch64.zip
+          CONTENT_TYPE: application/zip
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Use `curl` instead of `gh release upload` so we can set the content type
+        run: |
+          curl --location \
+            --request POST \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer ${{ env.GITHUB_TOKEN }}" \
+            --header "Content-Type: ${{ env.CONTENT_TYPE }}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "$(sed 's/{?name,label}/?name=${{ env.ASSET_NAME }}/g' <<< ${{ needs.createrelease.outputs.upload_url }})" \
+            --data-binary "@app/JOSM_${{ matrix.java }}_arm64.zip"
+
+      - name: Upload Windows Installer executable
+        if: ${{ runner.os == 'windows' && matrix.java != '11' && always() && needs.createrelease.outputs.upload_url }}
+        env:
+          ASSET_NAME: JOSM-${{ runner.os}}-java${{ matrix.java }}-${{ needs.createrelease.outputs.josm_revision }}.exe
+          CONTENT_TYPE: application/vnd.microsoft.portable-executable
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Use `curl` instead of `gh release upload` so we can set the content type
+        run: |
+          curl --location \
+            --request POST \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer ${{ env.GITHUB_TOKEN }}" \
+            --header "Content-Type: ${{ env.CONTENT_TYPE }}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "$(sed 's/{?name,label}/?name=${{ env.ASSET_NAME }}/g' <<< ${{ needs.createrelease.outputs.upload_url }})" \
+            --data-binary "@app/JOSM.exe"
+
+      - name: Upload Windows Installer package
+        if: ${{ runner.os == 'windows' && matrix.java != '11' && always() && needs.createrelease.outputs.upload_url }}
+        env:
+          ASSET_NAME: JOSM-${{ runner.os}}-java${{ matrix.java }}-${{ needs.createrelease.outputs.josm_revision }}.msi
+          CONTENT_TYPE: application/x-ole-storage
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Use `curl` instead of `gh release upload` so we can set the content type
+        run: |
+          curl --location \
+            --request POST \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer ${{ env.GITHUB_TOKEN }}" \
+            --header "Content-Type: ${{ env.CONTENT_TYPE }}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "$(sed 's/{?name,label}/?name=${{ env.ASSET_NAME }}/g' <<< ${{ needs.createrelease.outputs.upload_url }})" \
+            --data-binary "@app/JOSM.msi"

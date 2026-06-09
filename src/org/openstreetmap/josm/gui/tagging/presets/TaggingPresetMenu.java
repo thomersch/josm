@@ -10,6 +10,7 @@ import java.awt.PointerInfo;
 import java.awt.event.ActionEvent;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
@@ -20,8 +21,10 @@ import javax.swing.JMenuItem;
 import javax.swing.JPopupMenu;
 import javax.swing.JSeparator;
 
+import org.openstreetmap.josm.actions.JosmAction;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.MainFrame;
+import org.openstreetmap.josm.gui.MainMenu;
 import org.openstreetmap.josm.tools.AlphanumComparator;
 import org.openstreetmap.josm.tools.Logging;
 
@@ -31,18 +34,23 @@ import org.openstreetmap.josm.tools.Logging;
  * Used, to create the nested directory structure in the preset main menu entry.
  */
 public class TaggingPresetMenu extends TaggingPreset {
+    /** The menu to show users */
     public JMenu menu; // set by TaggingPresets
 
-    private static class PresetTextComparator implements Comparator<JMenuItem>, Serializable {
+    private static final class PresetTextComparator implements Comparator<JMenuItem>, Serializable {
         private static final long serialVersionUID = 1L;
         @Override
         public int compare(JMenuItem o1, JMenuItem o2) {
-            if (MainApplication.getMenu().presetSearchAction.equals(o1.getAction()))
-                return -1;
-            else if (MainApplication.getMenu().presetSearchAction.equals(o2.getAction()))
-                return 1;
-            else
-                return AlphanumComparator.getInstance().compare(o1.getText(), o2.getText());
+            final MainMenu menu = MainApplication.getMenu();
+            // This is needed to keep the order of the search actions -> preferences
+            for (JosmAction action : Arrays.asList(menu.presetSearchAction, menu.presetSearchPrimitiveAction)) {
+                if (action.equals(o1.getAction())) {
+                    return -1;
+                } else if (action.equals(o2.getAction())) {
+                    return 1;
+                }
+            }
+            return AlphanumComparator.getInstance().compare(o1.getText(), o2.getText());
         }
     }
 
@@ -65,7 +73,7 @@ public class TaggingPresetMenu extends TaggingPreset {
     @Override
     public void setDisplayName() {
         putValue(Action.NAME, getName());
-        /** Tooltips should be shown for the toolbar buttons, but not in the menu. */
+        /* Tooltips should be shown for the toolbar buttons, but not in the menu. */
         putValue(OPTIONAL_TOOLTIP_TEXT, group != null ?
                 tr("Preset group {1} / {0}", getLocaleName(), group.getName()) :
                     tr("Preset group {0}", getLocaleName()));

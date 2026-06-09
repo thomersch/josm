@@ -1,18 +1,28 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.io;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.InputStream;
+import java.net.SocketException;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.Iterator;
+import java.util.function.Supplier;
+import java.util.stream.Stream;
 
-import org.junit.BeforeClass;
-import org.junit.Rule;
-import org.junit.Test;
+import jakarta.json.JsonException;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Node;
@@ -20,31 +30,15 @@ import org.openstreetmap.josm.data.osm.Relation;
 import org.openstreetmap.josm.data.osm.RelationMember;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.gui.progress.NullProgressMonitor;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-import org.openstreetmap.josm.tools.date.DateUtils;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
+import org.openstreetmap.josm.tools.ExceptionUtil;
+import org.openstreetmap.josm.tools.JosmRuntimeException;
 
 /**
  * Unit tests of {@link OsmReader} class.
  */
-public class OsmJsonReaderTest {
-
-    /**
-     * Setup rule
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
-    /**
-     * Setup test
-     */
-    @BeforeClass
-    public static void setUp() {
-        DateUtils.newIsoDateTimeFormat().setTimeZone(DateUtils.UTC);
-    }
-
+@BasicPreferences
+class OsmJsonReaderTest {
     /**
      * Parse JSON.
      * @param osm OSM data in JSON format, without header/footer
@@ -88,7 +82,7 @@ public class OsmJsonReaderTest {
      * @throws Exception never
      */
     @Test
-    public void testHeader() throws Exception {
+    void testHeader() throws Exception {
         DataSet ds = parse("");
         assertEquals("0.6", ds.getVersion());
     }
@@ -98,7 +92,7 @@ public class OsmJsonReaderTest {
      * @throws Exception never
      */
     @Test
-    public void testNodeSpatialData() throws Exception {
+    void testNodeSpatialData() throws Exception {
         DataSet ds = parse("{\n" +
                 "  \"type\": \"node\",\n" +
                 "  \"id\": 1,\n" +
@@ -115,7 +109,7 @@ public class OsmJsonReaderTest {
      * @throws Exception never
      */
     @Test
-    public void testNodeMetaData() throws Exception {
+    void testNodeMetaData() throws Exception {
         DataSet ds = parse("{\n" +
                 "  \"type\": \"node\",\n" +
                 "  \"id\": 1,\n" +
@@ -130,7 +124,7 @@ public class OsmJsonReaderTest {
         Node n = ds.getNodes().iterator().next();
         assertEquals(1, n.getUniqueId());
         assertEquals(new LatLon(2.0, -3.0), n.getCoor());
-        assertEquals("2018-01-01T00:00:00Z", DateUtils.newIsoDateTimeFormat().format(n.getTimestamp()));
+        assertEquals(Instant.parse("2018-01-01T00:00:00Z"), n.getInstant());
         assertEquals(4, n.getVersion());
         assertEquals(5, n.getChangesetId());
         assertEquals(6, n.getUser().getId());
@@ -142,7 +136,7 @@ public class OsmJsonReaderTest {
      * @throws Exception never
      */
     @Test
-    public void testNodeTags() throws Exception {
+    void testNodeTags() throws Exception {
         DataSet ds = parse("{\n" +
                 "  \"type\": \"node\",\n" +
                 "  \"id\": 1,\n" +
@@ -166,7 +160,7 @@ public class OsmJsonReaderTest {
      * @throws Exception never
      */
     @Test
-    public void testWay() throws Exception {
+    void testWay() throws Exception {
         DataSet ds = parse("{\n" +
                 "  \"type\": \"way\",\n" +
                 "  \"id\": 1,\n" +
@@ -198,7 +192,7 @@ public class OsmJsonReaderTest {
      * @throws Exception never
      */
     @Test
-    public void testRelation() throws Exception {
+    void testRelation() throws Exception {
         DataSet ds = parse("{\n" +
                 "  \"type\": \"relation\",\n" +
                 "  \"id\": 1,\n" +
@@ -243,7 +237,7 @@ public class OsmJsonReaderTest {
      * @throws Exception never
      */
     @Test
-    public void testEmptyRelation() throws Exception {
+    void testEmptyRelation() throws Exception {
         DataSet ds = parse("{\n" +
                 "  \"type\": \"relation\",\n" +
                 "  \"id\": 1,\n" +
@@ -259,9 +253,87 @@ public class OsmJsonReaderTest {
      * @throws Exception if any error occurs
      */
     @Test
-    public void testRemark() throws Exception {
+    void testRemark() throws Exception {
         DataSet ds = parse("", "," +
                 "  \"remark\": \"runtime error: Query ran out of memory in \\\"query\\\" at line 5.\"\n");
         assertEquals("runtime error: Query ran out of memory in \"query\" at line 5.", ds.getRemark());
+    }
+
+    static Stream<Arguments> testException() {
+        final byte[] smallJson = "{\"type\", \"node\", \"id\": 1, \"lat\": 1.0, \"lon\": 2.0}".getBytes(StandardCharsets.UTF_8);
+        return Stream.of(
+                // Check that a SocketException is properly reported
+                Arguments.of(IllegalDataException.class, new ThrowableInputStream<>(() -> new SocketException("Read timed out"), smallJson),
+                        "java.net.SocketException: Read timed out"),
+                // Check that a random JsonException is reported
+                Arguments.of(JsonException.class, new ThrowableInputStream<>(() -> new JsonException("Some random json exception"), smallJson),
+                        "Some random json exception"),
+                // Check that bad data still throws an IllegalDataException
+                Arguments.of(IllegalDataException.class, new ThrowableInputStream<>(() -> null, smallJson),
+                        "jakarta.json.stream.JsonParsingException: Invalid token=COMMA at (line no=1, column no=8, offset=7). " +
+                        "Expected tokens are: [COLON]"),
+                // Check that an IOException is properly thrown when the stream is closed
+                Arguments.of(IllegalDataException.class, new ThrowableInputStream<>(() -> new JsonException("I/O error while parsing JSON",
+                        new IOException("stream is closed")), smallJson), "java.io.IOException: stream is closed")
+        );
+    }
+
+    /**
+     * See #22680: Unexpected exception downloading from Overpass query
+     * The JSON parser throws {@link RuntimeException}s, specifically
+     * <ul>
+     *     <li>{@link jakarta.json.JsonException}</li>
+     *     <li>{@link jakarta.json.stream.JsonParsingException}, extends {@link jakarta.json.JsonException}</li>
+     *     <li>{@link jakarta.json.stream.JsonGenerationException}, extends {@link jakarta.json.JsonException}
+     *         (which we don't care about when we are <em>parsing</em> JSON)</li>
+     * </ul>
+     */
+    @ParameterizedTest
+    @MethodSource
+    <E extends Exception> void testException(Class<E> exceptionClass, ThrowableInputStream<?> exceptionStream, String exceptionMessage) {
+        E exception = assertThrows(exceptionClass, () -> OsmJsonReader.parseDataSet(exceptionStream, NullProgressMonitor.INSTANCE));
+        assertEquals(exceptionMessage, ExceptionUtil.explainException(exception));
+        assertDoesNotThrow(exceptionStream::close);
+    }
+
+    /**
+     * An {@link InputStream} that will throw a specified exception after the first byte is read
+     * @param <E> The exception to be thrown
+     */
+    private static class ThrowableInputStream<E extends Throwable> extends InputStream {
+        private final Supplier<E> exceptionSupplier;
+        private final ByteArrayInputStream bais;
+        private int read = 0; // Necessary, since otherwise the exception might not be wrapped in a Json exception
+
+        ThrowableInputStream(Supplier<E> exceptionSupplier, byte[] source) {
+            this.exceptionSupplier = exceptionSupplier;
+            this.bais = new ByteArrayInputStream(source);
+        }
+
+        @Override
+        public int read() throws IOException {
+            try {
+                if (read > 0) {
+                    E exception = this.exceptionSupplier.get();
+                    if (exception instanceof IOException) {
+                        throw (IOException) exception;
+                    } else if (exception instanceof RuntimeException) {
+                        throw (RuntimeException) exception;
+                    } else if (exception != null) {
+                        // This shouldn't be possible in actual code, so if something hits this, it is a failure.
+                        throw new JosmRuntimeException(exception);
+                    }
+                }
+                return bais.read();
+            } finally {
+                read++;
+            }
+        }
+
+        @Override
+        public void close() throws IOException {
+            this.bais.close();
+            super.close();
+        }
     }
 }

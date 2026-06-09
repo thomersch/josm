@@ -13,6 +13,7 @@ import org.openstreetmap.josm.command.Command;
 import org.openstreetmap.josm.command.conflict.CoordinateConflictResolveCommand;
 import org.openstreetmap.josm.command.conflict.DeletedStateConflictResolveCommand;
 import org.openstreetmap.josm.data.conflict.Conflict;
+import org.openstreetmap.josm.data.coor.ILatLon;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
@@ -178,13 +179,14 @@ public class PropertiesMergeModel extends ChangeNotifier {
      * have no coordinates or if the conflict is yet {@link MergeDecisionType#UNDECIDED}
      */
     public LatLon getMergedCoords() {
-        switch(coordMergeDecision) {
-        case KEEP_MINE: return myCoords;
-        case KEEP_THEIR: return theirCoords;
-        case UNDECIDED: return null;
+        switch (coordMergeDecision) {
+        case KEEP_MINE:
+            return myCoords;
+        case KEEP_THEIR:
+            return theirCoords;
+        default:
+            return null;
         }
-        // should not happen
-        return null;
     }
 
     /**
@@ -219,13 +221,14 @@ public class PropertiesMergeModel extends ChangeNotifier {
      * @return The state of deleted flag
      */
     public Boolean getMergedDeletedState() {
-        switch(deletedMergeDecision) {
-        case KEEP_MINE: return myDeletedState;
-        case KEEP_THEIR: return theirDeletedState;
-        case UNDECIDED: return null;
+        switch (deletedMergeDecision) {
+        case KEEP_MINE:
+            return myDeletedState;
+        case KEEP_THEIR:
+            return theirDeletedState;
+        default:
+            return null;
         }
-        // should not happen
-        return null;
     }
 
     /**
@@ -287,7 +290,7 @@ public class PropertiesMergeModel extends ChangeNotifier {
         if (myCoords == null && theirCoords != null) return true;
         if (myCoords != null && theirCoords == null) return true;
         if (myCoords == null && theirCoords == null) return false;
-        return myCoords != null && !myCoords.equalsEpsilon(theirCoords);
+        return myCoords != null && !myCoords.equalsEpsilon(theirCoords, ILatLon.MAX_SERVER_PRECISION);
     }
 
     /**

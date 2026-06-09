@@ -9,14 +9,16 @@ Installation notes
 To run JOSM, you need:
 
 * The JOSM .jar file, e.g., josm-tested.jar or josm-latest.jar
-* Java Runtime Environment (JRE) 8, or later.
+* Java Runtime Environment (JRE) 11, or later.
 
 
 How to get Java Runtime Environment
 -----------------------------------
-You need JRE Version 8, or later.
+You need JRE Version 11, or later.
 
-Microsoft Windows and Apple Mac OS X users should visit https://www.java.com
+Microsoft Windows and Apple macOS users should visit one of:
+- https://www.azul.com/downloads/?package=jdk#download-openjdk
+- https://bell-sw.com/pages/downloads/#mn
 and download the latest Java executable for their system.
 
 Linux users should visit http://www.oracle.com/technetwork/java/index.html
@@ -58,17 +60,14 @@ This is an overview of the files and directories in the JOSM code repository:
 - build.xml                 ant build file (standard way to create a JOSM binary)
 - CONTRIBUTION              list of major code contributors
 - gpl-2.0.txt, gpl-3.0.txt  full text of the GNU General Public License
-- ide                       IDE-specific files
-  - eclipse/                preconfigured Eclipse configuration files
-  - netbeans/               preconfigured Netbeans project
-- josm.jnlp                 Java Web Start launcher file (used on the website for the tested version)
-- josm-latest.jnlp          Java Web Start launcher file (used on the website for the latest version)
 - LICENSE                   the JOSM license terms
 - native/                   OS-specific files
   - linux/                  files useful for Linux distributions, including Appdata files, .desktop
                             files, Debian/Ubuntu scripts, man pages, icons, etc.
-  - macosx/                 files needed to create the MacOS X package
+  - macosx/                 files needed to create the MacOS package
   - windows/                files needed to create the Windows installer
+  - josm.jnlp               Java Web Start launcher file (used on the website for the tested version)
+  - josm-latest.jnlp        Java Web Start launcher file (used on the website for the latest version)
 - nodist/                   files not included in JOSM binary
   - data/                   data files that are useful for development, but not distributed
     - exif-direction-example.jpg
@@ -103,8 +102,6 @@ This is an overview of the files and directories in the JOSM code repository:
   - images/                 images, which are not for distribution, but may be useful later (e.g. high
                             resolution and vector versions)
   - styles/                 files needed for map style maintenance
-    - potlatch2/README      infos on how to update the Potlatch 2 style from upstream sources
-- patches/                  patches for external libraries used in JOSM (see below)
 - README                    this file
 - resources/                resource files that will be included in the JOSM jar file
   - data/                   data files that will be included in the JOSM jar file
@@ -148,32 +145,17 @@ This is an overview of the files and directories in the JOSM code repository:
     - lib/                  libraries needed for (some of) the tests, including JUnit
     - performance/          performance tests (source code)
     - unit/                 unit tests (source code)
-- tools/                    libraries and tools that help in the development process
-    - animal-sniffer-ant-tasks.jar
-                            used to build and check code signatures to ensure plugins binary compatibility 
-    - appbundler-1.0ea.jar  used to build Mac OS X package
+- tools/                    libraries, tools and configuration files that help in the development process
     - checkstyle/           libs and config files for checkstyle (automatically detects code style
                             problems in source code); can be launched as an ant target in build.xml
+    - eclipse/              preconfigured Eclipse configuration files
     - ivy/                  Apache Ivy binary, configuration file, and downloaded dependencies 
     - jacocoant.jar         used to include coverage data into JUnit test reports
     - japicc/               used to generate a compatibility report between optimized jar and normal one
+    - netbeans/             preconfigured Netbeans project
+    - pmd/                  config files for PMD (source code analyzer, finds common programming flaws)
     - spotbugs/             libs and config files for spotbugs (automatically detects common bugs and potential
                             problems in source code); can be launched as an ant target in build.xml
-    - xmltask.jar           used to edit XML files from Ant for the OSX package
-
-The 'patches' directory
------------------------
-Some libraries that JOSM depends on, are patched for various reasons. The
-files in the patches directory can be used to roll back these customizations.
-This is useful in order to
- * inspect the changes
- * update to a newer version of the library but keep the modifications
-
-You can use 'quilt' to manage the patches. E.g. the following command applies all of them:
-
- $ quilt push -a
-
-Of course, it is also possible to apply the patch files manually one by one.
 
 Third party libraries
 ---------------------
@@ -181,19 +163,16 @@ There are some third party libraries which are directly included in the source c
 
 * jmapviewer: Java component to browse a TMS map
     src/org/openstreetmap/gui (svn external)
-    -> http://svn.openstreetmap.org/applications/viewer/jmapviewer/
+    -> https://josm.openstreetmap.de/osmsvn/applications/viewer/jmapviewer/
 * Apache commons compress: Support for bzip2 compression when opening files
     -> https://github.com/apache/commons-compress
 * Apache commons validator: Improved validator routines
     src/org/openstreetmap/josm/data/validation/routines
     -> http://commons.apache.org/proper/commons-validator
 * SVG Salamander: Support for SVG image format
-    src/com/kitfox/svg
     -> https://github.com/blackears/svgSalamander
 * Metadata Extractor: Read EXIF Metadata of photos
     -> https://github.com/drewnoakes/metadata-extractor
-* Signpost: OAuth library
-    -> https://github.com/mttkay/signpost
 * MultiSplitPane: Small lib for GUI layout management
     src/org/openstreetmap/josm/gui/MultiSplitLayout.java, MultiSplitPane.java
     -> https://github.com/floscher/multi-split
@@ -201,7 +180,7 @@ There are some third party libraries which are directly included in the source c
 * swinghelper: Class CheckThreadViolationRepaintManager to find EDT violations
     src/org/openstreetmap/josm/gui/util/CheckThreadViolationRepaintManager.java
     -> https://github.com/floscher/swinghelper
-* xz extractor
+* xz extractor (0BSD)
     -> https://tukaani.org/xz/java.html
 * OpeningHoursParser (MIT license)
     -> https://github.com/simonpoole/OpeningHoursParser

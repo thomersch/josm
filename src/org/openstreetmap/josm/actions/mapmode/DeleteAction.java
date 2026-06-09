@@ -90,7 +90,7 @@ public class DeleteAction extends MapMode implements ModifierExListener {
         }
     }
 
-    private static class DeleteParameters {
+    private static final class DeleteParameters {
         private DeleteMode mode;
         private Node nearestNode;
         private WaySegment nearestSegment;
@@ -207,7 +207,7 @@ public class DeleteAction extends MapMode implements ModifierExListener {
      * handles everything related to highlighting primitives and way
      * segments for the given pointer position (via MouseEvent) and modifiers.
      * @param e current mouse event
-     * @param modifiers extended mouse modifiers, not necessarly taken from the given mouse event
+     * @param modifiers extended mouse modifiers, not necessarily taken from the given mouse event
      */
     private void addHighlighting(MouseEvent e, int modifiers) {
         if (!drawTargetHighlight)
@@ -255,7 +255,7 @@ public class DeleteAction extends MapMode implements ModifierExListener {
      * This function handles all work related to updating the cursor and highlights
      *
      * @param e current mouse event
-     * @param modifiers extended mouse modifiers, not necessarly taken from the given mouse event
+     * @param modifiers extended mouse modifiers, not necessarily taken from the given mouse event
      */
     private void updateCursor(MouseEvent e, int modifiers) {
         if (!MainApplication.isDisplayingMapView())
@@ -417,11 +417,11 @@ public class DeleteAction extends MapMode implements ModifierExListener {
         case segment:
             return DeleteCommand.deleteWaySegment(parameters.nearestSegment);
         case way:
-            return DeleteCommand.delete(Collections.singleton(parameters.nearestSegment.way), false, silent);
+            return DeleteCommand.delete(Collections.singleton(parameters.nearestSegment.getWay()), false, silent);
         case way_with_nodes:
-            return DeleteCommand.delete(Collections.singleton(parameters.nearestSegment.way), true, silent);
+            return DeleteCommand.delete(Collections.singleton(parameters.nearestSegment.getWay()), true, silent);
         case way_with_references:
-            return DeleteCommand.deleteWithReferences(Collections.singleton(parameters.nearestSegment.way), true);
+            return DeleteCommand.deleteWithReferences(Collections.singleton(parameters.nearestSegment.getWay()), true);
         default:
             return null;
         }

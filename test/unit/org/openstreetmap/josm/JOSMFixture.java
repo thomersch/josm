@@ -1,9 +1,9 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm;
 
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.File;
 import java.io.IOException;
@@ -36,6 +36,7 @@ import org.openstreetmap.josm.tools.I18n;
 import org.openstreetmap.josm.tools.JosmRuntimeException;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.PlatformManager;
+import org.openstreetmap.josm.tools.Utils;
 import org.openstreetmap.josm.tools.date.DateUtils;
 
 /**
@@ -114,14 +115,14 @@ public class JOSMFixture {
         pref.resetToInitialState();
         pref.enableSaveOnPut(false);
         I18n.init();
-        // initialize the plaform hook, and
-        // call the really early hook before we anything else
+        // initialize the platform hook, and
+        // call the really early hook before anything else
         PlatformManager.getPlatform().preStartupHook();
 
         Logging.setLogLevel(Logging.LEVEL_INFO);
         pref.init(false);
-        String url = Config.getPref().get("osm-server.url");
-        if (url == null || url.isEmpty() || isProductionApiUrl(url)) {
+        String url = OsmApi.getOsmApi().getServerUrl();
+        if (Utils.isEmpty(url) || isProductionApiUrl(url)) {
             Config.getPref().put("osm-server.url", "https://api06.dev.openstreetmap.org/api");
         }
         I18n.set(Config.getPref().get("language", "en"));
@@ -148,7 +149,7 @@ public class JOSMFixture {
         DeleteCommand.setDeletionCallback(DeleteAction.defaultDeletionCallback);
 
         if (createGui) {
-            GuiHelper.runInEDTAndWaitWithException(() -> setupGUI());
+            GuiHelper.runInEDTAndWaitWithException(this::setupGUI);
         }
     }
 

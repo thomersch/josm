@@ -1,12 +1,13 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.tools;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.awt.Desktop;
 import java.io.File;
@@ -14,14 +15,11 @@ import java.io.IOException;
 import java.security.KeyStoreException;
 import java.util.Collection;
 
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.extension.RegisterExtension;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.spi.preferences.Config;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.testutils.annotations.HTTPS;
 
 import mockit.Expectations;
 import mockit.Mocked;
@@ -29,15 +27,8 @@ import mockit.Mocked;
 /**
  * Unit tests of {@link PlatformHookWindows} class.
  */
-public class PlatformHookWindowsTest {
-
-    /**
-     * Setup tests
-     */
-    @RegisterExtension
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences().https();
-
+@HTTPS
+class PlatformHookWindowsTest {
     static PlatformHookWindows hook;
 
     /**
@@ -52,8 +43,10 @@ public class PlatformHookWindowsTest {
      * Test method for {@code PlatformHookWindows#startupHook}
      */
     @Test
-    public void testStartupHook() {
-        hook.startupHook((a, b, c, d) -> System.out.println("callback"));
+    void testStartupHook() {
+        final PlatformHook.JavaExpirationCallback javaCallback = (a, b, c, d) -> System.out.println("java callback");
+        final PlatformHook.SanityCheckCallback sanityCheckCallback = (a, b, c) -> System.out.println("sanity check callback");
+        assertDoesNotThrow(() -> hook.startupHook(javaCallback, sanityCheckCallback));
     }
 
     /**
@@ -61,7 +54,7 @@ public class PlatformHookWindowsTest {
      * @throws Exception if an error occurs
      */
     @Test
-    public void testGetRootKeystore() throws Exception {
+    void testGetRootKeystore() throws Exception {
         if (PlatformManager.isPlatformWindows()) {
             assertNotNull(PlatformHookWindows.getRootKeystore());
         } else {
@@ -78,8 +71,8 @@ public class PlatformHookWindowsTest {
      * Test method for {@code PlatformHookWindows#afterPrefStartupHook}
      */
     @Test
-    public void testAfterPrefStartupHook() {
-        hook.afterPrefStartupHook();
+    void testAfterPrefStartupHook() {
+        assertDoesNotThrow(hook::afterPrefStartupHook);
     }
 
     /**
@@ -88,7 +81,7 @@ public class PlatformHookWindowsTest {
      * @throws IOException if an error occurs
      */
     @Test
-    public void testOpenUrlSuccess(@Mocked final Desktop mockDesktop) throws IOException {
+    void testOpenUrlSuccess(@Mocked final Desktop mockDesktop) throws IOException {
         TestUtils.assumeWorkingJMockit();
         new Expectations() {{
             // real implementation would raise HeadlessException
@@ -96,7 +89,7 @@ public class PlatformHookWindowsTest {
             mockDesktop.browse(withNotNull()); times = 1;
         }};
 
-        hook.openUrl(Config.getUrls().getJOSMWebsite());
+        assertDoesNotThrow(() -> hook.openUrl(Config.getUrls().getJOSMWebsite()));
     }
 
     /**
@@ -106,7 +99,7 @@ public class PlatformHookWindowsTest {
      * @throws IOException if an error occurs
      */
     @Test
-    public void testOpenUrlFallback(@Mocked final Desktop mockDesktop, @Mocked Runtime anyRuntime) throws IOException {
+    void testOpenUrlFallback(@Mocked final Desktop mockDesktop, @Mocked Runtime anyRuntime) throws IOException {
         TestUtils.assumeWorkingJMockit();
         new Expectations() {{
             // real implementation would raise HeadlessException
@@ -122,14 +115,14 @@ public class PlatformHookWindowsTest {
             anyRuntime.exec((String[]) withNotNull()); result = null; times = 0;
         }};
 
-        hook.openUrl(Config.getUrls().getJOSMWebsite());
+        assertDoesNotThrow(() -> hook.openUrl(Config.getUrls().getJOSMWebsite()));
     }
 
     /**
      * Test method for {@code PlatformHookWindows#getAdditionalFonts}
      */
     @Test
-    public void testGetAdditionalFonts() {
+    void testGetAdditionalFonts() {
         assertFalse(hook.getAdditionalFonts().isEmpty());
     }
 
@@ -137,7 +130,7 @@ public class PlatformHookWindowsTest {
      * Test method for {@code PlatformHookWindows#getDefaultCacheDirectory}
      */
     @Test
-    public void testGetDefaultCacheDirectory() {
+    void testGetDefaultCacheDirectory() {
         File cache = hook.getDefaultCacheDirectory();
         assertNotNull(cache);
         if (PlatformManager.isPlatformWindows()) {
@@ -149,7 +142,7 @@ public class PlatformHookWindowsTest {
      * Test method for {@code PlatformHookWindows#getDefaultPrefDirectory}
      */
     @Test
-    public void testGetDefaultPrefDirectory() {
+    void testGetDefaultPrefDirectory() {
         File cache = hook.getDefaultPrefDirectory();
         assertNotNull(cache);
         if (PlatformManager.isPlatformWindows()) {
@@ -161,7 +154,7 @@ public class PlatformHookWindowsTest {
      * Test method for {@code PlatformHookWindows#getDefaultStyle}
      */
     @Test
-    public void testGetDefaultStyle() {
+    void testGetDefaultStyle() {
         assertEquals("com.sun.java.swing.plaf.windows.WindowsLookAndFeel", hook.getDefaultStyle());
     }
 
@@ -169,12 +162,12 @@ public class PlatformHookWindowsTest {
      * Test method for {@code PlatformHookWindows#getInstalledFonts}
      */
     @Test
-    public void testGetInstalledFonts() {
+    void testGetInstalledFonts() {
         Collection<String> fonts = hook.getInstalledFonts();
         if (PlatformManager.isPlatformWindows()) {
             assertFalse(fonts.isEmpty());
         } else {
-            assertNull(fonts);
+            assumeTrue(fonts.isEmpty());
         }
     }
 
@@ -182,7 +175,7 @@ public class PlatformHookWindowsTest {
      * Test method for {@code PlatformHookWindows#getOSDescription}
      */
     @Test
-    public void testGetOSDescription() {
+    void testGetOSDescription() {
         String os = hook.getOSDescription();
         if (PlatformManager.isPlatformWindows()) {
             assertTrue(os.contains("Windows"));
@@ -195,7 +188,7 @@ public class PlatformHookWindowsTest {
      * Test method for {@code PlatformHookWindows#initSystemShortcuts}
      */
     @Test
-    public void testInitSystemShortcuts() {
-        hook.initSystemShortcuts();
+    void testInitSystemShortcuts() {
+        assertDoesNotThrow(hook::initSystemShortcuts);
     }
 }

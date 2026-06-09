@@ -7,6 +7,7 @@ import java.awt.geom.Area;
 import java.awt.geom.Point2D;
 import java.text.MessageFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -15,9 +16,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.function.IntFunction;
-import java.util.function.IntSupplier;
-import java.util.regex.PatternSyntaxException;
 import java.util.stream.Collectors;
 
 import org.openstreetmap.josm.data.osm.INode;
@@ -47,7 +45,7 @@ import org.openstreetmap.josm.tools.Utils;
 
 /**
  * MapCSS selector.
- *
+ * <p>
  * A rule has two parts, a selector and a declaration block
  * e.g.
  * <pre>
@@ -56,7 +54,7 @@ import org.openstreetmap.josm.tools.Utils;
  * </pre>
  *
  * The selector decides, if the declaration block gets applied or not.
- *
+ * <p>
  * All implementing classes of Selector are immutable.
  */
 public interface Selector {
@@ -207,15 +205,23 @@ public interface Selector {
                 throw new AssertionError();
             }
 
-            private <T extends IPrimitive> void doVisit(T parent, IntSupplier counter, IntFunction<IPrimitive> getter) {
+            private void doVisit(IPrimitive parent) {
                 // If e.parent is already set to the first matching referrer.
                 // We skip any following referrer injected into the visitor.
                 if (e.parent != null) return;
 
-                if (!left.matches(e.withPrimitive(parent)))
-                    return;
-                int count = counter.getAsInt();
-                if (link.conds == null || link.conds.isEmpty()) {
+                IPrimitive osm = e.osm;
+                try {
+                    e.osm = parent;
+                    if (!left.matches(e))
+                        return;
+                } finally {
+                    e.osm = osm;
+                }
+                int count = parent instanceof IWay<?>
+                        ? ((IWay<?>) parent).getNodesCount()
+                        : ((IRelation<?>) parent).getMembersCount();
+                if (link.getConditions().isEmpty()) {
                     // index is not needed, we can avoid the sequential search below
                     e.parent = parent;
                     e.count = count;
@@ -224,7 +230,10 @@ public interface Selector {
                 // see #18964
                 int step = firstAndLastOnly() ? count - 1 : 1;
                 for (int i = 0; i < count; i += step) {
-                    if (getter.apply(i).equals(e.osm)
+                    IPrimitive o = parent instanceof IWay<?>
+                            ? ((IWay<?>) parent).getNode(i)
+                            : ((IRelation<?>) parent).getMember(i).getMember();
+                    if (Objects.equals(o, e.osm)
                             && link.matches(e.withParentAndIndexAndLinkContext(parent, i, count))) {
                         e.parent = parent;
                         e.index = i;
@@ -235,17 +244,17 @@ public interface Selector {
             }
 
             private boolean firstAndLastOnly() {
-                return link.conds.stream().allMatch(c -> c instanceof IndexCondition && ((IndexCondition) c).isFirstOrLast);
+                return link.getConditions().stream().allMatch(c -> c instanceof IndexCondition && ((IndexCondition) c).isFirstOrLast);
             }
 
             @Override
             public void visit(IWay<?> w) {
-                doVisit(w, w::getNodesCount, w::getNode);
+                doVisit(w);
             }
 
             @Override
             public void visit(IRelation<?> r) {
-                doVisit(r, r::getMembersCount, i -> r.getMember(i).getMember());
+                doVisit(r);
             }
         }
 
@@ -345,7 +354,7 @@ public interface Selector {
 
             private Map<List<Way>, List<WaySegment>> findCrossings(IPrimitive area,
                     Map<Point2D, List<WaySegment>> cellSegments) {
-                /** The detected crossing ways */
+                /* The detected crossing ways */
                 Map<List<Way>, List<WaySegment>> crossingWays = new HashMap<>(50);
                 if (area instanceof Way) {
                     CrossingWays.findIntersectingWay((Way) area, cellSegments, crossingWays, false);
@@ -368,8 +377,10 @@ public interface Selector {
                 } else {
                     toIgnore = null;
                 }
-
+                boolean filterWithTested = e.toMatchForSurrounding != null && !e.toMatchForSurrounding.isEmpty();
                 for (IPrimitive p : primitives) {
+                    if (filterWithTested && !e.toMatchForSurrounding.contains(p))
+                        continue;
                     if (isPrimitiveUsable(p) && Objects.equals(layer, OsmUtils.getLayer(p))
                             && left.matches(new Environment(p).withParent(e.osm)) && isArea(p)
                             && (toIgnore == null || !toIgnore.contains(p))) {
@@ -448,7 +459,7 @@ public interface Selector {
             }
 
             void execGeometryTests() {
-                if (toCheck == null || toCheck.isEmpty())
+                if (Utils.isEmpty(toCheck))
                     return;
                 for (IPrimitive p : Geometry.filterInsideAnyPolygon(toCheck, e.osm)) {
                     addToChildren(e, p);
@@ -479,7 +490,7 @@ public interface Selector {
             public void visit(IRelation<?> r) {
                 if (r instanceof Relation && r.isMultipolygon() && r.getBBox().bounds(e.osm.getBBox())
                         && left.matches(new Environment(r).withParent(e.osm))
-                        && !Geometry.filterInsideMultipolygon(Collections.singletonList(e.osm), (Relation) r).isEmpty()) {
+                        && !Geometry.filterInsideMultipolygon(Collections.singletonList(e.osm), (Relation) r, e.mpJoinedAreaCache).isEmpty()) {
                     addToChildren(e, r);
                 }
             }
@@ -534,7 +545,7 @@ public interface Selector {
 
             } else if (ChildOrParentSelectorType.SUPERSET_OR_EQUAL == type || ChildOrParentSelectorType.NOT_SUPERSET_OR_EQUAL == type) {
 
-                if (e.osm.getDataSet() == null || (e.osm instanceof INode && ((INode) e.osm).getCoor() == null)
+                if (e.osm.getDataSet() == null || (e.osm instanceof INode && !((INode) e.osm).isLatLonKnown())
                         || (!(e.osm instanceof INode) && !isArea(e.osm))) {
                     return ChildOrParentSelectorType.NOT_SUPERSET_OR_EQUAL == type;
                 }
@@ -574,8 +585,8 @@ public interface Selector {
                     }
                 }
             } else if (ChildOrParentSelectorType.CHILD == type
-                    && link.conds != null && !link.conds.isEmpty()
-                    && link.conds.get(0) instanceof OpenEndPseudoClassCondition) {
+                    && !link.getConditions().isEmpty()
+                    && link.getConditions().get(0) instanceof OpenEndPseudoClassCondition) {
                 if (e.osm instanceof INode) {
                     e.osm.visitReferrers(new MultipolygonOpenEndFinder(e));
                     return e.parent != null;
@@ -638,10 +649,10 @@ public interface Selector {
      */
     abstract class AbstractSelector implements Selector {
 
-        protected final List<Condition> conds;
+        private final Condition[] conds;
 
         protected AbstractSelector(List<Condition> conditions) {
-            this.conds = Utils.toUnmodifiableList(conditions);
+            this.conds = conditions.toArray(new Condition[0]);
         }
 
         /**
@@ -652,19 +663,21 @@ public interface Selector {
         @Override
         public boolean matches(Environment env) {
             CheckParameterUtil.ensureParameterNotNull(env, "env");
-            return conds.stream().allMatch(c -> {
+            // Avoid `conds.stream().allMatch(...)` for its high heap allocations
+            for (Condition c : conds) {
                 try {
-                    return c.applies(env);
-                } catch (PatternSyntaxException e) {
-                    Logging.log(Logging.LEVEL_ERROR, "PatternSyntaxException while applying condition" + c + ':', e);
+                    if (!c.applies(env)) return false;
+                } catch (RuntimeException e) {
+                    Logging.log(Logging.LEVEL_ERROR, "Exception while applying condition" + c + ':', e);
                     return false;
                 }
-            });
+            }
+            return true;
         }
 
         @Override
         public List<Condition> getConditions() {
-            return conds;
+            return Arrays.asList(conds);
         }
     }
 
@@ -701,7 +714,7 @@ public interface Selector {
 
         @Override
         public String toString() {
-            return "LinkSelector{conditions=" + conds + '}';
+            return "LinkSelector{conditions=" + super.getConditions() + '}';
         }
     }
 
@@ -747,7 +760,7 @@ public interface Selector {
          * @throws IllegalArgumentException if value is not knwon
          */
         private static String checkBase(String base) {
-            switch(base) {
+            switch (base) {
             case "*": return BASE_ANY;
             case "node": return BASE_NODE;
             case "way": return BASE_WAY;
@@ -830,7 +843,7 @@ public interface Selector {
         public String toString() {
             return base
                     + (Range.ZERO_TO_INFINITY.equals(range) ? "" : range)
-                    + (conds != null ? conds.stream().map(String::valueOf).collect(Collectors.joining("")) : "")
+                    + super.getConditions().stream().map(String::valueOf).collect(Collectors.joining(""))
                     + (subpart != null && subpart != Subpart.DEFAULT_SUBPART ? ("::" + subpart) : "");
         }
     }

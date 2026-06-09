@@ -1,20 +1,19 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.gui.dialogs.changeset;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.GraphicsEnvironment;
 import java.awt.event.ActionEvent;
-import javax.swing.JButton;
-import javax.swing.JDialog;
-
 import java.util.Collections;
 import java.util.List;
 
-import org.junit.Rule;
-import org.junit.Test;
+import javax.swing.JButton;
+import javax.swing.JDialog;
+
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.osm.Changeset;
 import org.openstreetmap.josm.gui.dialogs.changeset.ChangesetCacheManager.CancelAction;
@@ -27,7 +26,7 @@ import org.openstreetmap.josm.gui.dialogs.changeset.ChangesetCacheManager.QueryA
 import org.openstreetmap.josm.gui.dialogs.changeset.ChangesetCacheManager.RemoveFromCacheAction;
 import org.openstreetmap.josm.gui.dialogs.changeset.ChangesetCacheManager.ShowDetailAction;
 import org.openstreetmap.josm.gui.dialogs.changeset.query.ChangesetQueryDialog;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.BasicPreferences;
 import org.openstreetmap.josm.testutils.mockers.HelpAwareOptionPaneMocker;
 import org.openstreetmap.josm.testutils.mockers.WindowMocker;
 
@@ -35,25 +34,16 @@ import mockit.Invocation;
 import mockit.Mock;
 import mockit.MockUp;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-
 /**
  * Unit tests of {@link ChangesetCacheManager} class.
  */
-public class ChangesetCacheManagerTest {
-
-    /**
-     * Setup tests
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().preferences();
-
+@BasicPreferences
+class ChangesetCacheManagerTest {
     /**
      * Unit test of {@link ChangesetCacheManager#destroyInstance}.
      */
     @Test
-    public void testDestroyInstance() {
+    void testDestroyInstance() {
         ChangesetCacheManager.destroyInstance();
     }
 
@@ -63,7 +53,7 @@ public class ChangesetCacheManagerTest {
      *              {@link ChangesetCacheManager#buildModel}.
      */
     @Test
-    public void testBuild() {
+    void testBuild() {
         assertNotNull(ChangesetCacheManager.buildButtonPanel());
         assertNotNull(ChangesetCacheManager.buildToolbarPanel());
         assertNotNull(ChangesetCacheManager.buildModel());
@@ -73,7 +63,7 @@ public class ChangesetCacheManagerTest {
      * Unit test of {@link ChangesetCacheManager.ChangesetDetailViewSynchronizer} class.
      */
     @Test
-    public void testChangesetDetailViewSynchronizer() {
+    void testChangesetDetailViewSynchronizer() {
         new ChangesetDetailViewSynchronizer(new ChangesetCacheManagerModel(null) {
             @Override
             public List<Changeset> getSelectedChangesets() {
@@ -93,7 +83,7 @@ public class ChangesetCacheManagerTest {
      * Unit test of {@link ChangesetCacheManager.CancelAction} class.
      */
     @Test
-    public void testCancelAction() {
+    void testCancelAction() {
         new CancelAction().actionPerformed(null);
     }
 
@@ -101,7 +91,7 @@ public class ChangesetCacheManagerTest {
      * Unit test of {@link ChangesetCacheManager.CloseSelectedChangesetsAction} class.
      */
     @Test
-    public void testCloseSelectedChangesetsAction() {
+    void testCloseSelectedChangesetsAction() {
         CloseSelectedChangesetsAction action = new CloseSelectedChangesetsAction(new ChangesetCacheManagerModel(null) {
             @Override
             public List<Changeset> getSelectedChangesets() {
@@ -116,7 +106,7 @@ public class ChangesetCacheManagerTest {
      * Unit test of {@link ChangesetCacheManager.DownloadMyChangesets} class.
      */
     @Test
-    public void testDownloadMyChangesets() {
+    void testDownloadMyChangesets() {
         TestUtils.assumeWorkingJMockit();
         final HelpAwareOptionPaneMocker haMocker = new HelpAwareOptionPaneMocker(
             Collections.singletonMap(
@@ -139,14 +129,14 @@ public class ChangesetCacheManagerTest {
      * Unit test of {@link ChangesetCacheManager.DownloadSelectedChangesetContentAction} class.
      */
     @Test
-    public void testDownloadSelectedChangesetContentAction() {
+    void testDownloadSelectedChangesetContentAction() {
         if (GraphicsEnvironment.isHeadless()) {
             TestUtils.assumeWorkingJMockit();
             // to allow us to construct a JDialog
             new WindowMocker();
         }
 
-        DownloadSelectedChangesetContentAction action = new DownloadSelectedChangesetContentAction(ChangesetCacheManager.buildModel());
+        DownloadSelectedChangesetContentAction action = new DownloadSelectedChangesetContentAction(buildModel());
         action.valueChanged(null);
         action.actionPerformed(new ActionEvent(new JDialog().getComponent(0), ActionEvent.ACTION_PERFORMED, "foo"));
     }
@@ -155,14 +145,14 @@ public class ChangesetCacheManagerTest {
      * Unit test of {@link ChangesetCacheManager.DownloadSelectedChangesetsAction} class.
      */
     @Test
-    public void testDownloadSelectedChangesetsAction() {
+    void testDownloadSelectedChangesetsAction() {
         if (GraphicsEnvironment.isHeadless()) {
             TestUtils.assumeWorkingJMockit();
             // to allow us to construct a JDialog
             new WindowMocker();
         }
 
-        DownloadSelectedChangesetsAction action = new DownloadSelectedChangesetsAction(ChangesetCacheManager.buildModel());
+        DownloadSelectedChangesetsAction action = new DownloadSelectedChangesetsAction(buildModel());
         action.valueChanged(null);
         action.actionPerformed(new ActionEvent(new JDialog().getComponent(0), ActionEvent.ACTION_PERFORMED, "foo"));
     }
@@ -171,7 +161,7 @@ public class ChangesetCacheManagerTest {
      * Unit test of {@link ChangesetCacheManager.QueryAction} class.
      */
     @Test
-    public void testQueryAction() {
+    void testQueryAction() {
         TestUtils.assumeWorkingJMockit();
 
         // set up mockers to simulate the dialog being cancelled
@@ -216,8 +206,8 @@ public class ChangesetCacheManagerTest {
      * Unit test of {@link ChangesetCacheManager.RemoveFromCacheAction} class.
      */
     @Test
-    public void testRemoveFromCacheAction() {
-        RemoveFromCacheAction action = new RemoveFromCacheAction(ChangesetCacheManager.buildModel());
+    void testRemoveFromCacheAction() {
+        RemoveFromCacheAction action = new RemoveFromCacheAction(buildModel());
         action.valueChanged(null);
         action.actionPerformed(null);
     }
@@ -226,7 +216,13 @@ public class ChangesetCacheManagerTest {
      * Unit test of {@link ChangesetCacheManager.ShowDetailAction} class.
      */
     @Test
-    public void testShowDetailAction() {
-        new ShowDetailAction(ChangesetCacheManager.buildModel()).actionPerformed(null);
+    void testShowDetailAction() {
+        new ShowDetailAction(buildModel()).actionPerformed(null);
+    }
+
+    private static ChangesetCacheManagerModel buildModel() {
+        ChangesetCacheManagerModel model = ChangesetCacheManager.buildModel();
+        model.setChangesetCacheTableRowSorter(new ChangesetCacheTableRowSorter(model));
+        return model;
     }
 }

@@ -7,7 +7,6 @@ import java.awt.Rectangle;
 import java.awt.Stroke;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.stream.IntStream;
 
 import org.openstreetmap.josm.data.osm.INode;
 import org.openstreetmap.josm.data.osm.IPrimitive;
@@ -75,7 +74,7 @@ public class NodeElement extends StyleElement {
         // have to allocate a node element style.
         if (!allowDefault && symbol == null && mapImage == null) return null;
 
-        Cascade c = env.mc.getCascade(env.layer);
+        Cascade c = env.getCascade();
         RotationAngle rotationAngle = createRotationAngle(env);
         return new NodeElement(c, mapImage, symbol, defaultMajorZindex, rotationAngle);
     }
@@ -101,7 +100,7 @@ public class NodeElement extends StyleElement {
     }
 
     private static RotationAngle createRotationAngle(Environment env, String key) {
-        Cascade c = env.mc.getCascade(env.layer);
+        Cascade c = env.getCascade();
 
         RotationAngle rotationAngle = RotationAngle.NO_ROTATION;
         final Float angle = c.get(key, null, Float.class, true);
@@ -144,13 +143,13 @@ public class NodeElement extends StyleElement {
         CheckParameterUtil.ensureParameterNotNull(env, "env");
         CheckParameterUtil.ensureParameterNotNull(keys, "keys");
 
-        Cascade c = env.mc.getCascade(env.layer);
+        Cascade c = env.getCascade();
 
         final IconReference iconRef = c.get(keys[ICON_IMAGE_IDX], null, IconReference.class, true);
         if (iconRef == null)
             return null;
 
-        Cascade cDef = env.mc.getCascade("default");
+        Cascade cDef = env.getCascade("default");
 
         Float widthOnDefault = cDef.get(keys[ICON_WIDTH_IDX], null, Float.class);
         if (widthOnDefault != null && widthOnDefault <= 0) {
@@ -195,7 +194,7 @@ public class NodeElement extends StyleElement {
      * @return The symbol.
      */
     private static Symbol createSymbol(Environment env) {
-        Cascade c = env.mc.getCascade(env.layer);
+        Cascade c = env.getCascade();
 
         Keyword shapeKW = c.get("symbol-shape", null, Keyword.class);
         if (shapeKW == null)
@@ -205,7 +204,7 @@ public class NodeElement extends StyleElement {
             return null;
         }
 
-        Cascade cDef = env.mc.getCascade("default");
+        Cascade cDef = env.getCascade("default");
         Float sizeOnDefault = cDef.get("symbol-size", null, Float.class);
         if (sizeOnDefault != null && sizeOnDefault <= 0) {
             sizeOnDefault = null;
@@ -350,8 +349,14 @@ public class NodeElement extends StyleElement {
         }
     }
 
-    private static int max(int... elements) {
-        return IntStream.of(elements).max().orElseThrow(IllegalStateException::new);
+    private static int max(int a, int b, int c, int d) {
+        // Profile before switching to a stream/int[] array
+        // This was 66% give or take for painting nodes in terms of memory allocations
+        // and was ~17% of the CPU allocations. By not using a vararg method call, we avoid
+        // the creation of an array. By avoiding both streams and arrays, the cost for this method is negligible.
+        // This means that this saves about 7% of the CPU cycles during map paint, and about 20%
+        // of the memory allocations during map paint.
+        return Math.max(a, Math.max(b, Math.max(c, d)));
     }
 
     @Override
@@ -374,13 +379,13 @@ public class NodeElement extends StyleElement {
     public String toString() {
         StringBuilder s = new StringBuilder(64).append("NodeElement{").append(super.toString());
         if (mapImage != null) {
-            s.append(" icon=[" + mapImage + ']');
+            s.append(" icon=[").append(mapImage).append(']');
         }
         if (mapImage != null && mapImageAngle != null) {
-            s.append(" mapImageAngle=[" + mapImageAngle + ']');
+            s.append(" mapImageAngle=[").append(mapImageAngle).append(']');
         }
         if (symbol != null) {
-            s.append(" symbol=[" + symbol + ']');
+            s.append(" symbol=[").append(symbol).append(']');
         }
         s.append('}');
         return s.toString();

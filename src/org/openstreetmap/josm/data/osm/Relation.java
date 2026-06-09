@@ -147,9 +147,9 @@ public final class Relation extends OsmPrimitive implements IRelation<RelationMe
         checkDatasetNotReadOnly();
         boolean locked = writeLock();
         try {
-            List<RelationMember> members = getMembers();
-            RelationMember result = members.remove(index);
-            setMembers(members);
+            List<RelationMember> currentMembers = getMembers();
+            RelationMember result = currentMembers.remove(index);
+            setMembers(currentMembers);
             return result;
         } finally {
             writeUnlock(locked);
@@ -193,7 +193,8 @@ public final class Relation extends OsmPrimitive implements IRelation<RelationMe
     }
 
     /**
-     * Constructs an identical clone of the argument.
+     * Constructs an identical clone of the argument and links members to it.
+     * See #19885 for possible memory leaks.
      * @param clone The relation to clone
      * @param clearMetadata If {@code true}, clears the OSM id and other metadata as defined by {@link #clearOsmMetadata}.
      * If {@code false}, does nothing
@@ -209,7 +210,8 @@ public final class Relation extends OsmPrimitive implements IRelation<RelationMe
     }
 
     /**
-     * Constructs an identical clone of the argument.
+     * Constructs an identical clone of the argument and links members to it.
+     * See #19885 for possible memory leaks.
      * @param clone The relation to clone
      * @param clearMetadata If {@code true}, clears the OSM id and other metadata as defined by {@link #clearOsmMetadata}.
      * If {@code false}, does nothing
@@ -219,7 +221,8 @@ public final class Relation extends OsmPrimitive implements IRelation<RelationMe
     }
 
     /**
-     * Create an identical clone of the argument (including the id)
+     * Create an identical clone of the argument (including the id) and links members to it.
+     * See #19885 for possible memory leaks.
      * @param clone The relation to clone, including its id
      */
     public Relation(Relation clone) {
@@ -381,25 +384,23 @@ public final class Relation extends OsmPrimitive implements IRelation<RelationMe
      */
     public void removeMembersFor(Collection<? extends OsmPrimitive> primitives) {
         checkDatasetNotReadOnly();
-        if (primitives == null || primitives.isEmpty())
+        if (Utils.isEmpty(primitives))
             return;
 
         boolean locked = writeLock();
         try {
-            List<RelationMember> members = getMembers();
-            members.removeAll(getMembersFor(primitives));
-            setMembers(members);
+            List<RelationMember> currentMembers = getMembers();
+            currentMembers.removeAll(getMembersFor(primitives));
+            setMembers(currentMembers);
         } finally {
             writeUnlock(locked);
         }
     }
 
     /**
-     * Replies the set of  {@link OsmPrimitive}s referred to by at least one
-     * member of this relation
+     * Replies the set of {@link OsmPrimitive}s referred to by at least one member of this relation.
      *
-     * @return the set of  {@link OsmPrimitive}s referred to by at least one
-     * member of this relation
+     * @return the set of {@link OsmPrimitive}s referred to by at least one member of this relation
      * @see #getMemberPrimitivesList()
      */
     public Set<OsmPrimitive> getMemberPrimitives() {
@@ -426,6 +427,11 @@ public final class Relation extends OsmPrimitive implements IRelation<RelationMe
     }
 
     @Override
+    public List<OsmPrimitive> getChildren() {
+        return getMemberPrimitivesList();
+    }
+
+    @Override
     public OsmPrimitiveType getType() {
         return OsmPrimitiveType.RELATION;
     }
@@ -437,18 +443,21 @@ public final class Relation extends OsmPrimitive implements IRelation<RelationMe
 
     @Override
     public BBox getBBox() {
-        if (getDataSet() != null && bbox != null)
-            return new BBox(bbox); // use cached value
+        if (getDataSet() != null && bbox != null) {
+            return this.bbox; // use cached immutable value
+        }
 
         BBox box = new BBox();
-        addToBBox(box, new HashSet<PrimitiveId>());
-        if (getDataSet() != null)
-            setBBox(box); // set cache
-        return new BBox(box);
+        addToBBox(box, new HashSet<>());
+        if (getDataSet() == null) {
+            return box;
+        }
+        setBBox(box); // set cached immutable value
+        return this.bbox;
     }
 
     private void setBBox(BBox bbox) {
-        this.bbox = bbox;
+        this.bbox = bbox == null ? null : bbox.toImmutable();
     }
 
     @Override
@@ -489,7 +498,7 @@ public final class Relation extends OsmPrimitive implements IRelation<RelationMe
             if (Config.getPref().getBoolean("debug.checkDeleteReferenced", true)) {
                 for (RelationMember rm: members) {
                     if (rm.getMember().isDeleted())
-                        throw new DataIntegrityProblemException("Deleted member referenced: " + toString(), null, this, rm.getMember());
+                        throw new DataIntegrityProblemException("Deleted member referenced: " + this, null, this, rm.getMember());
                 }
             }
         }
@@ -520,8 +529,8 @@ public final class Relation extends OsmPrimitive implements IRelation<RelationMe
     @Override
     public Collection<OsmPrimitive> getIncompleteMembers() {
         return Arrays.stream(members)
-                .filter(rm -> rm.getMember().isIncomplete())
                 .map(RelationMember::getMember)
+                .filter(OsmPrimitive::isIncomplete)
                 .collect(Collectors.toSet());
     }
 
@@ -555,8 +564,8 @@ public final class Relation extends OsmPrimitive implements IRelation<RelationMe
     @Override
     public List<? extends OsmPrimitive> findRelationMembers(String role) {
         return IRelation.super.findRelationMembers(role).stream()
-                .filter(m -> m instanceof OsmPrimitive)
-                .map(m -> (OsmPrimitive) m).collect(Collectors.toList());
+                .filter(OsmPrimitive.class::isInstance)
+                .map(OsmPrimitive.class::cast).collect(Collectors.toList());
     }
 
     @Override

@@ -11,6 +11,7 @@ import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Way;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * Auxiliary class for the {@link SelectNonBranchingWaySequencesAction}.
@@ -54,10 +55,11 @@ public class SelectNonBranchingWaySequences {
      */
     private void addNodes(Node node) {
         if (node == null) return;
-        else if (!nodes.add(node))
+        if (!nodes.add(node)) {
             outerNodes.remove(node);
-        else
+        } else {
             outerNodes.add(node);
+        }
     }
 
     /**
@@ -76,7 +78,7 @@ public class SelectNonBranchingWaySequences {
      * @return true if the selection can be extended
      */
     public boolean canExtend() {
-        return outerNodes != null && !outerNodes.isEmpty();
+        return !Utils.isEmpty(outerNodes);
     }
 
     /**

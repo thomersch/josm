@@ -1,32 +1,20 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.osm;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for class {@link DataIntegrityProblemException}.
  */
-public class DataIntegrityProblemExceptionTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+class DataIntegrityProblemExceptionTest {
     /**
      * Unit test of {@link DataIntegrityProblemException} constructor.
      */
     @Test
-    public void testDataIntegrityException() {
+    void testDataIntegrityException() {
         DataIntegrityProblemException e1 = new DataIntegrityProblemException("foo");
         assertEquals("foo", e1.getMessage());
         assertNull(e1.getHtmlMessage());

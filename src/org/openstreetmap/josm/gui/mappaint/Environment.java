@@ -8,12 +8,16 @@ import java.util.Map;
 import java.util.Set;
 
 import org.openstreetmap.josm.data.osm.IPrimitive;
+import org.openstreetmap.josm.data.osm.IRelation;
+import org.openstreetmap.josm.data.osm.MultipolygonBuilder;
 import org.openstreetmap.josm.data.osm.Relation;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.data.osm.WaySegment;
 import org.openstreetmap.josm.gui.mappaint.mapcss.Condition.Context;
+import org.openstreetmap.josm.gui.mappaint.mapcss.Selector;
 import org.openstreetmap.josm.gui.mappaint.mapcss.Selector.LinkSelector;
 import org.openstreetmap.josm.tools.CheckParameterUtil;
+import org.openstreetmap.josm.tools.Pair;
 
 /**
  * Environment is a data object to provide access to various "global" parameters.
@@ -40,6 +44,9 @@ public class Environment {
      */
     public StyleSource source;
     private Context context = Context.PRIMITIVE;
+
+    /** The selector that is currently being evaluated */
+    private final Selector selector;
 
     /**
      * The name of the default layer. It is used if no layer is specified in the MapCSS rule
@@ -86,12 +93,22 @@ public class Environment {
      * Cache for multipolygon areas, can be null, used with CrossingFinder
      */
     public Map<IPrimitive, Area> mpAreaCache;
+    /**
+     * Cache for multipolygon areas as calculated by {@link MultipolygonBuilder#joinWays(Relation)}, can be {@code null}
+     */
+    public Map<IRelation<?>, Pair<List<MultipolygonBuilder.JoinedPolygon>, List<MultipolygonBuilder.JoinedPolygon>>> mpJoinedAreaCache;
+
+    /**
+     * Can be null, may contain primitives when surrounding objects of the primitives are tested
+     */
+    public Set<IPrimitive> toMatchForSurrounding;
 
     /**
      * Creates a new uninitialized environment.
      */
     public Environment() {
         // environment can be initialized later through with* methods
+        this.selector = null;
     }
 
     /**
@@ -101,7 +118,7 @@ public class Environment {
      * @since 13810 (signature)
      */
     public Environment(IPrimitive osm) {
-        this.osm = osm;
+        this(osm, null, null, null);
     }
 
     /**
@@ -117,6 +134,7 @@ public class Environment {
         this.mc = mc;
         this.layer = layer;
         this.source = source;
+        this.selector = null;
     }
 
     /**
@@ -126,6 +144,17 @@ public class Environment {
      * @throws IllegalArgumentException if {@code param} is {@code null}
      */
     public Environment(Environment other) {
+        this(other, other.selector);
+    }
+
+    /**
+     * Creates a clone of the environment {@code other}.
+     *
+     * @param other the other environment. Must not be null.
+     * @param selector the selector for this environment. May be null.
+     * @throws IllegalArgumentException if {@code param} is {@code null}
+     */
+    private Environment(Environment other, Selector selector) {
         CheckParameterUtil.ensureParameterNotNull(other);
         this.osm = other.osm;
         this.mc = other.mc;
@@ -140,6 +169,9 @@ public class Environment {
         this.intersections = other.intersections;
         this.crossingWaysMap = other.crossingWaysMap;
         this.mpAreaCache = other.mpAreaCache;
+        this.mpJoinedAreaCache = other.mpJoinedAreaCache;
+        this.toMatchForSurrounding = other.toMatchForSurrounding;
+        this.selector = selector;
     }
 
     /**
@@ -257,6 +289,16 @@ public class Environment {
     }
 
     /**
+     * Creates a clone of this environment, with the selector set
+     * @param selector The selector to use
+     * @return A clone of this environment, with the specified selector
+     * @since 18757
+     */
+    public Environment withSelector(Selector selector) {
+        return new Environment(this, selector);
+    }
+
+    /**
      * Determines if the context of this environment is {@link Context#LINK}.
      * @return {@code true} if the context of this environment is {@code Context#LINK}, {@code false} otherwise
      */
@@ -298,6 +340,15 @@ public class Environment {
     }
 
     /**
+     * Get the selector for this environment
+     * @return The selector. May be {@code null}.
+     * @since 18757
+     */
+    public Selector selector() {
+        return this.selector;
+    }
+
+    /**
      * Clears all matching context information
      * @return this
      */
@@ -310,6 +361,14 @@ public class Environment {
         intersections = null;
         crossingWaysMap = null;
         return this;
+    }
+
+    /**
+     * Gets the current cascade for the current layer of this environment
+     * @return The cascade
+     */
+    public Cascade getCascade() {
+        return getCascade(null);
     }
 
     /**

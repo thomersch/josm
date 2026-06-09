@@ -2,10 +2,11 @@
 package org.openstreetmap.josm.data.osm.history;
 
 import java.text.MessageFormat;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 import org.openstreetmap.josm.data.osm.OsmPrimitiveType;
@@ -85,8 +86,8 @@ public class History {
      * @param fromDate the starting date
      * @return a new partial copy of this history, from the given date
      */
-    public History from(final Date fromDate) {
-        return filter(this, primitive -> primitive.getTimestamp().compareTo(fromDate) >= 0);
+    public History from(final Instant fromDate) {
+        return filter(this, primitive -> primitive.getInstant().compareTo(fromDate) >= 0);
     }
 
     /**
@@ -94,8 +95,8 @@ public class History {
      * @param untilDate the end date
      * @return a new partial copy of this history, until the given date
      */
-    public History until(final Date untilDate) {
-        return filter(this, primitive -> primitive.getTimestamp().compareTo(untilDate) <= 0);
+    public History until(final Instant untilDate) {
+        return filter(this, primitive -> primitive.getInstant().compareTo(untilDate) <= 0);
     }
 
     /**
@@ -104,7 +105,7 @@ public class History {
      * @param untilDate the end date
      * @return a new partial copy of this history, between the given dates
      */
-    public History between(Date fromDate, Date untilDate) {
+    public History between(Instant fromDate, Instant untilDate) {
         return this.from(fromDate).until(untilDate);
     }
 
@@ -127,7 +128,7 @@ public class History {
     }
 
     /**
-     * Returns a new partial copy of this history, betwwen the given version numbers
+     * Returns a new partial copy of this history, between the given version numbers
      * @param fromVersion the starting version number
      * @param untilVersion the ending version number
      * @return a new partial copy of this history, between the given version numbers
@@ -189,22 +190,43 @@ public class History {
     }
 
     /**
+     * Replies the history primitive which changed the given key.
+     * @param primitive the reference primitive (the history up to and including this primitive is considered)
+     * @param key the OSM key
+     * @param isLatest whether this relates to a not yet committed changeset
+     * @return the history primitive which changed the given key
+     */
+    public HistoryOsmPrimitive getWhichChangedTag(HistoryOsmPrimitive primitive, String key, boolean isLatest) {
+        if (primitive == null) {
+            return null;
+        } else if (isLatest && !Objects.equals(getLatest().get(key), primitive.get(key))) {
+            return primitive;
+        }
+        for (int i = versions.indexOf(primitive); i > 0; i--) {
+            if (!Objects.equals(versions.get(i).get(key), versions.get(i - 1).get(key))) {
+                return versions.get(i);
+            }
+        }
+        return versions.get(0);
+    }
+
+    /**
      * Replies the history primitive at given <code>date</code>. null,
      * if no such primitive exists.
      *
      * @param date the date
      * @return the history primitive at given <code>date</code>
      */
-    public HistoryOsmPrimitive getByDate(Date date) {
+    public HistoryOsmPrimitive getByDate(Instant date) {
         History h = sortAscending();
 
         if (h.versions.isEmpty())
             return null;
-        if (h.get(0).getTimestamp().compareTo(date) > 0)
+        if (h.get(0).getInstant().compareTo(date) > 0)
             return null;
         for (int i = 1; i < h.versions.size(); i++) {
-            if (h.get(i-1).getTimestamp().compareTo(date) <= 0
-                    && h.get(i).getTimestamp().compareTo(date) >= 0)
+            if (h.get(i-1).getInstant().compareTo(date) <= 0
+                    && h.get(i).getInstant().compareTo(date) >= 0)
                 return h.get(i);
         }
         return h.getLatest();
@@ -271,8 +293,11 @@ public class History {
 
     @Override
     public String toString() {
-        StringBuilder result = new StringBuilder("History ["
-                + (type != null ? ("type=" + type + ", ") : "") + "id=" + id);
+        StringBuilder result = new StringBuilder("History [");
+        if (type != null) {
+            result.append("type=").append(type).append(", ");
+        }
+        result.append("id=").append(id);
         if (versions != null) {
             result.append(", versions=\n");
             for (HistoryOsmPrimitive v : versions) {

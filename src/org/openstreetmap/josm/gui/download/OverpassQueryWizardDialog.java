@@ -14,6 +14,8 @@ import org.openstreetmap.josm.data.osm.search.SearchSetting;
 import org.openstreetmap.josm.data.preferences.ListProperty;
 import org.openstreetmap.josm.gui.dialogs.SearchDialog;
 import org.openstreetmap.josm.gui.download.overpass.OverpassWizardRegistration.OverpassWizardCallbacks;
+import org.openstreetmap.josm.gui.tagging.ac.AutoCompComboBoxModel;
+import org.openstreetmap.josm.gui.widgets.JosmComboBoxModel;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.SearchCompilerQueryWizard;
 import org.openstreetmap.josm.tools.UncheckedParseException;
@@ -27,7 +29,7 @@ import org.openstreetmap.josm.tools.Utils;
 public final class OverpassQueryWizardDialog extends SearchDialog {
 
     private static final ListProperty OVERPASS_WIZARD_HISTORY =
-            new ListProperty("download.overpass.wizard", new ArrayList<String>());
+            new ListProperty("download.overpass.wizard", new ArrayList<>());
     private final OverpassWizardCallbacks callbacks;
 
     // dialog buttons
@@ -35,18 +37,26 @@ public final class OverpassQueryWizardDialog extends SearchDialog {
     private static final int BUILD_AN_EXECUTE_QUERY = 1;
     private static final int CANCEL = 2;
 
+    private final AutoCompComboBoxModel<SearchSetting> model;
+
+    /** preferences reader/writer with automatic transmogrification to and from String */
+    private final JosmComboBoxModel<SearchSetting>.Preferences prefs;
+
     /**
      * Create a new {@link OverpassQueryWizardDialog}
      * @param callbacks The Overpass download source panel.
      */
     public OverpassQueryWizardDialog(OverpassWizardCallbacks callbacks) {
-        super(new SearchSetting(), OVERPASS_WIZARD_HISTORY.get(), new PanelOptions(false, true), callbacks.getParent(),
+        super(new SearchSetting(), new AutoCompComboBoxModel<>(), new PanelOptions(false, true), callbacks.getParent(),
                 tr("Overpass Query Wizard"),
                 tr("Build query"), tr("Build query and execute"), tr("Cancel"));
         this.callbacks = callbacks;
+        model = hcbSearchString.getModel();
         setButtonIcons("dialogs/magic-wand", "download-overpass", "cancel");
         setCancelButton(CANCEL + 1);
         setDefaultButton(BUILD_AN_EXECUTE_QUERY + 1);
+        prefs = model.prefs(SearchSetting::fromString, SearchSetting::toString);
+        prefs.load(OVERPASS_WIZARD_HISTORY);
     }
 
     @Override
@@ -68,7 +78,6 @@ public final class OverpassQueryWizardDialog extends SearchDialog {
                 break;
             default:
                 super.buttonAction(buttonIndex, evt);
-
         }
     }
 
@@ -76,8 +85,9 @@ public final class OverpassQueryWizardDialog extends SearchDialog {
      * Saves the latest, successfully parsed search term.
      */
     private void saveHistory() {
-        hcbSearchString.addCurrentItemToHistory();
-        OVERPASS_WIZARD_HISTORY.put(hcbSearchString.getHistory());
+        Optional.ofNullable(SearchSetting.fromString(hcbSearchString.getText()))
+            .ifPresent(model::addTopElement);
+        prefs.save(OVERPASS_WIZARD_HISTORY);
     }
 
     /**
@@ -90,7 +100,7 @@ public final class OverpassQueryWizardDialog extends SearchDialog {
      */
     private Optional<String> tryParseSearchTerm(String searchTerm) {
         try {
-            return Optional.of(SearchCompilerQueryWizard.getInstance().constructQuery(searchTerm));
+            return Optional.of(SearchCompilerQueryWizard.constructQuery(searchTerm));
         } catch (UncheckedParseException | IllegalStateException ex) {
             Logging.error(ex);
             JOptionPane.showMessageDialog(
@@ -111,9 +121,7 @@ public final class OverpassQueryWizardDialog extends SearchDialog {
      * @return {@code true} if the query successfully built, {@code false} otherwise.
      */
     private boolean buildQueryAction() {
-        final String wizardSearchTerm = getSearchSettings().text;
-
-        Optional<String> q = this.tryParseSearchTerm(wizardSearchTerm);
+        Optional<String> q = tryParseSearchTerm(getSearchSettings().text);
         q.ifPresent(callbacks::submitWizardResult);
         return q.isPresent();
     }

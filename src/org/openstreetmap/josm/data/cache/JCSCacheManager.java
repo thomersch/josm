@@ -7,6 +7,7 @@ import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Properties;
 import java.util.logging.Handler;
 import java.util.logging.Level;
@@ -16,7 +17,6 @@ import java.util.logging.SimpleFormatter;
 
 import org.apache.commons.jcs3.JCS;
 import org.apache.commons.jcs3.access.CacheAccess;
-import org.apache.commons.jcs3.auxiliary.AuxiliaryCache;
 import org.apache.commons.jcs3.auxiliary.AuxiliaryCacheFactory;
 import org.apache.commons.jcs3.auxiliary.disk.behavior.IDiskCacheAttributes;
 import org.apache.commons.jcs3.auxiliary.disk.block.BlockDiskCacheAttributes;
@@ -41,12 +41,16 @@ import org.openstreetmap.josm.tools.Utils;
  * @since 8168
  */
 public final class JCSCacheManager {
-    private static final long maxObjectTTL = -1;
+    private static final long MAX_OBJECT_TTL = -1;
     private static final String PREFERENCE_PREFIX = "jcs.cache";
+
+    /**
+     * Property that determines the disk cache implementation
+     */
     public static final BooleanProperty USE_BLOCK_CACHE = new BooleanProperty(PREFERENCE_PREFIX + ".use_block_cache", true);
 
-    private static final AuxiliaryCacheFactory DISK_CACHE_FACTORY =
-            USE_BLOCK_CACHE.get() ? new BlockDiskCacheFactory() : new IndexedDiskCacheFactory();
+    private static final AuxiliaryCacheFactory DISK_CACHE_FACTORY = getDiskCacheFactory();
+    private static FileChannel cacheDirChannel;
     private static FileLock cacheDirLock;
 
     /**
@@ -114,7 +118,8 @@ public final class JCSCacheManager {
                     if (!cacheDirLockPath.exists() && !cacheDirLockPath.createNewFile()) {
                         Logging.warn("Cannot create cache dir lock file");
                     }
-                    cacheDirLock = FileChannel.open(cacheDirLockPath.toPath(), StandardOpenOption.WRITE).tryLock();
+                    cacheDirChannel = FileChannel.open(cacheDirLockPath.toPath(), StandardOpenOption.WRITE);
+                    cacheDirLock = cacheDirChannel.tryLock();
 
                     if (cacheDirLock == null)
                         Logging.warn("Cannot lock cache directory. Will not use disk cache");
@@ -138,8 +143,8 @@ public final class JCSCacheManager {
         props.setProperty("jcs.default.cacheattributes.DiskUsagePatternName", "UPDATE"); // store elements on disk on put
         props.setProperty("jcs.default.elementattributes",                    CacheEntryAttributes.class.getCanonicalName());
         props.setProperty("jcs.default.elementattributes.IsEternal",          "false");
-        props.setProperty("jcs.default.elementattributes.MaxLife",            Long.toString(maxObjectTTL));
-        props.setProperty("jcs.default.elementattributes.IdleTime",           Long.toString(maxObjectTTL));
+        props.setProperty("jcs.default.elementattributes.MaxLife",            Long.toString(MAX_OBJECT_TTL));
+        props.setProperty("jcs.default.elementattributes.IdleTime",           Long.toString(MAX_OBJECT_TTL));
         props.setProperty("jcs.default.elementattributes.IsSpool",            "true");
         // CHECKSTYLE.ON: SingleSpaceSeparator
         try {
@@ -147,6 +152,19 @@ public final class JCSCacheManager {
         } catch (Exception e) {
             Logging.log(Logging.LEVEL_WARN, "Unable to initialize JCS", e);
         }
+    }
+
+    private static AuxiliaryCacheFactory getDiskCacheFactory() {
+        try {
+            return useBlockCache() ? new BlockDiskCacheFactory() : new IndexedDiskCacheFactory();
+        } catch (SecurityException | LinkageError e) {
+            Logging.error(e);
+            return null;
+        }
+    }
+
+    private static boolean useBlockCache() {
+        return Boolean.TRUE.equals(USE_BLOCK_CACHE.get());
     }
 
     /**
@@ -157,7 +175,7 @@ public final class JCSCacheManager {
      * @return cache access object
      */
     public static <K, V> CacheAccess<K, V> getCache(String cacheName) {
-        return getCache(cacheName, DEFAULT_MAX_OBJECTS_IN_MEMORY.get().intValue(), 0, null);
+        return getCache(cacheName, DEFAULT_MAX_OBJECTS_IN_MEMORY.get(), 0, null);
     }
 
     /**
@@ -170,40 +188,56 @@ public final class JCSCacheManager {
      * @param cachePath         path to disk cache. if null, no disk cache will be created
      * @return cache access object
      */
-    @SuppressWarnings("unchecked")
     public static <K, V> CacheAccess<K, V> getCache(String cacheName, int maxMemoryObjects, int maxDiskObjects, String cachePath) {
-        CacheAccess<K, V> cacheAccess = JCS.getInstance(cacheName, getCacheAttributes(maxMemoryObjects));
-        CompositeCache<K, V> cc = cacheAccess.getCacheControl();
+        CacheAccess<K, V> cacheAccess = getCacheAccess(cacheName, getCacheAttributes(maxMemoryObjects));
 
-        if (cachePath != null && cacheDirLock != null) {
-            IDiskCacheAttributes diskAttributes = getDiskCacheAttributes(maxDiskObjects, cachePath, cacheName);
+        if (cachePath != null && cacheDirLock != null && cacheAccess != null && DISK_CACHE_FACTORY != null) {
+            CompositeCache<K, V> cc = cacheAccess.getCacheControl();
             try {
-                if (cc.getAuxCaches().length == 0) {
-                    cc.setAuxCaches(new AuxiliaryCache[]{DISK_CACHE_FACTORY.createCache(
-                            diskAttributes, null, null, new StandardSerializer())});
+                IDiskCacheAttributes diskAttributes = getDiskCacheAttributes(maxDiskObjects, cachePath, cacheName);
+                if (cc.getAuxCacheList().isEmpty()) {
+                    cc.setAuxCaches(Collections.singletonList(DISK_CACHE_FACTORY.createCache(
+                            diskAttributes, null, null, new StandardSerializer())));
                 }
-            } catch (Exception e) { // NOPMD
+            } catch (Exception e) {
                 // in case any error in setting auxiliary cache, do not use disk cache at all - only memory
-                cc.setAuxCaches(new AuxiliaryCache[0]);
+                cc.setAuxCaches(Collections.emptyList());
                 Logging.debug(e);
             }
         }
         return cacheAccess;
     }
 
+    private static <K, V> CacheAccess<K, V> getCacheAccess(String cacheName, CompositeCacheAttributes cacheAttributes) {
+        try {
+            return JCS.getInstance(cacheName, cacheAttributes);
+        } catch (SecurityException | LinkageError e) {
+            Logging.error(e);
+            return null;
+        }
+    }
+
     /**
      * Close all files to ensure, that all indexes and data are properly written
      */
     public static void shutdown() {
+        try {
+            if (cacheDirLock != null)
+                cacheDirLock.release();
+            if (cacheDirChannel != null)
+                cacheDirChannel.close();
+        } catch (IOException e) {
+            Logging.error(e);
+        }
         JCS.shutdown();
     }
 
     private static IDiskCacheAttributes getDiskCacheAttributes(int maxDiskObjects, String cachePath, String cacheName) {
         IDiskCacheAttributes ret;
-        removeStaleFiles(cachePath + File.separator + cacheName, USE_BLOCK_CACHE.get() ? "_INDEX_v2" : "_BLOCK_v2");
-        String newCacheName = cacheName + (USE_BLOCK_CACHE.get() ? "_BLOCK_v2" : "_INDEX_v2");
+        removeStaleFiles(cachePath + File.separator + cacheName, useBlockCache() ? "_INDEX_v2" : "_BLOCK_v2");
+        String newCacheName = cacheName + (useBlockCache() ? "_BLOCK_v2" : "_INDEX_v2");
 
-        if (USE_BLOCK_CACHE.get()) {
+        if (useBlockCache()) {
             BlockDiskCacheAttributes blockAttr = new BlockDiskCacheAttributes();
             /*
              * BlockDiskCache never optimizes the file, so when file size is reduced, it will never be truncated to desired size.

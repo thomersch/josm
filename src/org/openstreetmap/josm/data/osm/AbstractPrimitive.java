@@ -4,10 +4,11 @@ package org.openstreetmap.josm.data.osm;
 import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.text.MessageFormat;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
@@ -16,8 +17,9 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 import java.util.function.BiPredicate;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 import org.openstreetmap.josm.data.gpx.GpxConstants;
 import org.openstreetmap.josm.spi.preferences.Config;
@@ -28,7 +30,7 @@ import org.openstreetmap.josm.tools.Utils;
  *
  * @since 4099
  */
-public abstract class AbstractPrimitive implements IPrimitive {
+public abstract class AbstractPrimitive implements IPrimitive, IFilterablePrimitive {
 
     /**
      * This flag shows, that the properties have been changed by the user
@@ -72,7 +74,7 @@ public abstract class AbstractPrimitive implements IPrimitive {
      * filter mechanism (i.e.&nbsp;FLAG_DISABLED is set).
      * Then it indicates, whether it is completely hidden or
      * just shown in gray color.
-     *
+     * <p>
      * When the primitive is not disabled, this flag should be
      * unset as well (for efficient access).
      */
@@ -127,10 +129,21 @@ public abstract class AbstractPrimitive implements IPrimitive {
     protected static final short FLAG_PRESERVED = 1 << 13;
 
     /**
+     * Determines if the primitive has all of its referrers
+     */
+    protected static final short FLAG_ALL_REFERRERS_DOWNLOADED = 1 << 14;
+
+    /**
      * Put several boolean flags to one short int field to save memory.
      * Other bits of this field are used in subclasses.
      */
     protected volatile short flags = FLAG_VISIBLE;   // visible per default
+
+    /**
+     * The mappaint cache index for this primitive.
+     * This field belongs to {@code OsmPrimitive}, but due to Java's memory layout alignment, see #20830.
+     */
+    protected short mappaintCacheIdx;
 
     /*-------------------
      * OTHER PROPERTIES
@@ -295,8 +308,8 @@ public abstract class AbstractPrimitive implements IPrimitive {
     }
 
     @Override
-    public void setTimestamp(Date timestamp) {
-        this.timestamp = (int) TimeUnit.MILLISECONDS.toSeconds(timestamp.getTime());
+    public void setInstant(Instant timestamp) {
+        this.timestamp = (int) timestamp.getEpochSecond();
     }
 
     @Override
@@ -305,8 +318,8 @@ public abstract class AbstractPrimitive implements IPrimitive {
     }
 
     @Override
-    public Date getTimestamp() {
-        return new Date(TimeUnit.SECONDS.toMillis(Integer.toUnsignedLong(timestamp)));
+    public Instant getInstant() {
+        return Instant.ofEpochSecond(Integer.toUnsignedLong(timestamp));
     }
 
     @Override
@@ -331,6 +344,18 @@ public abstract class AbstractPrimitive implements IPrimitive {
         }
     }
 
+    /**
+     * Update flags
+     * @param flag The flag to update
+     * @param value The value to set
+     * @return {@code true} if the flags have changed
+     */
+    protected boolean updateFlagsChanged(short flag, boolean value) {
+        int oldFlags = flags;
+        updateFlags(flag, value);
+        return oldFlags != flags;
+    }
+
     @Override
     public void setModified(boolean modified) {
         updateFlags(FLAG_MODIFIED, modified);
@@ -344,6 +369,11 @@ public abstract class AbstractPrimitive implements IPrimitive {
     @Override
     public boolean isDeleted() {
         return (flags & FLAG_DELETED) != 0;
+    }
+
+    @Override
+    public void setReferrersDownloaded(boolean referrersDownloaded) {
+        this.updateFlags(FLAG_ALL_REFERRERS_DOWNLOADED, referrersDownloaded);
     }
 
     @Override
@@ -374,6 +404,51 @@ public abstract class AbstractPrimitive implements IPrimitive {
         setModified(deleted ^ !isVisible());
     }
 
+    @Override
+    public boolean hasDirectionKeys() {
+        return (flags & FLAG_HAS_DIRECTIONS) != 0;
+    }
+
+    @Override
+    public boolean reversedDirection() {
+        return (flags & FLAG_DIRECTION_REVERSED) != 0;
+    }
+
+    @Override
+    public boolean isTagged() {
+        return (flags & FLAG_TAGGED) != 0;
+    }
+
+    @Override
+    public boolean isAnnotated() {
+        return (flags & FLAG_ANNOTATED) != 0;
+    }
+
+    @Override
+    public boolean isHighlighted() {
+        return (flags & FLAG_HIGHLIGHTED) != 0;
+    }
+
+    @Override
+    public boolean isDisabled() {
+        return (flags & FLAG_DISABLED) != 0;
+    }
+
+    @Override
+    public boolean isDisabledAndHidden() {
+        return ((flags & FLAG_DISABLED) != 0) && ((flags & FLAG_HIDE_IF_DISABLED) != 0);
+    }
+
+    @Override
+    public boolean isPreserved() {
+        return (flags & FLAG_PRESERVED) != 0;
+    }
+
+    @Override
+    public boolean isReferrersDownloaded() {
+        return isNew() || (flags & FLAG_ALL_REFERRERS_DOWNLOADED) != 0;
+    }
+
     /**
      * If set to true, this object is incomplete, which means only the id
      * and type is known (type is the objects instance class)
@@ -386,6 +461,47 @@ public abstract class AbstractPrimitive implements IPrimitive {
     @Override
     public boolean isIncomplete() {
         return (flags & FLAG_INCOMPLETE) != 0;
+    }
+
+    @Override
+    public boolean getHiddenType() {
+        return (flags & FLAG_HIDDEN_TYPE) != 0;
+    }
+
+    @Override
+    public boolean getDisabledType() {
+        return (flags & FLAG_DISABLED_TYPE) != 0;
+    }
+
+    @Override
+    public boolean setDisabledState(boolean hidden) {
+        // Store as variables to avoid short circuit boolean return
+        final boolean flagDisabled = updateFlagsChanged(FLAG_DISABLED, true);
+        final boolean flagHideIfDisabled = updateFlagsChanged(FLAG_HIDE_IF_DISABLED, hidden);
+        return flagDisabled || flagHideIfDisabled;
+    }
+
+    @Override
+    public boolean unsetDisabledState() {
+        // Store as variables to avoid short circuit boolean return
+        final boolean flagDisabled = updateFlagsChanged(FLAG_DISABLED, false);
+        final boolean flagHideIfDisabled = updateFlagsChanged(FLAG_HIDE_IF_DISABLED, false);
+        return flagDisabled || flagHideIfDisabled;
+    }
+
+    @Override
+    public void setDisabledType(boolean isExplicit) {
+        updateFlags(FLAG_DISABLED_TYPE, isExplicit);
+    }
+
+    @Override
+    public void setHiddenType(boolean isExplicit) {
+        updateFlags(FLAG_HIDDEN_TYPE, isExplicit);
+    }
+
+    @Override
+    public boolean isDrawable() {
+        return (flags & (FLAG_DELETED + FLAG_INCOMPLETE + FLAG_HIDE_IF_DISABLED)) == 0;
     }
 
     protected String getFlagsAsString() {
@@ -445,9 +561,10 @@ public abstract class AbstractPrimitive implements IPrimitive {
 
     @Override
     public void visitKeys(KeyValueVisitor visitor) {
-        if (keys != null) {
-            for (int i = 0; i < keys.length; i += 2) {
-                visitor.visitKeyValue(this, keys[i], keys[i + 1]);
+        String[] tKeys = this.keys;
+        if (tKeys != null) {
+            for (int i = 0; i < tKeys.length; i += 2) {
+                visitor.visitKeyValue(this, tKeys[i], tKeys[i + 1]);
             }
         }
     }
@@ -465,7 +582,7 @@ public abstract class AbstractPrimitive implements IPrimitive {
     @Override
     public void setKeys(Map<String, String> keys) {
         Map<String, String> originalKeys = getKeys();
-        if (keys == null || keys.isEmpty()) {
+        if (Utils.isEmpty(keys)) {
             this.keys = null;
             keysChangedImpl(originalKeys);
             return;
@@ -516,7 +633,7 @@ public abstract class AbstractPrimitive implements IPrimitive {
         Map<String, String> originalKeys = getKeys();
         if (key == null || Utils.isStripEmpty(key))
             return;
-        else if (value == null) {
+        if (value == null) {
             remove(key);
         } else if (keys == null) {
             keys = new String[] {key, value};
@@ -539,6 +656,39 @@ public abstract class AbstractPrimitive implements IPrimitive {
             keys = newKeys;
             keysChangedImpl(originalKeys);
         }
+    }
+
+    @Override
+    public void putAll(Map<String, String> tags) {
+        if (tags == null || tags.isEmpty()) {
+            return;
+        }
+        // Defensive copy of keys
+        final String[] tKeys = this.keys; // Used to avoid highly unlikely NPE (from a race) during clone operation.
+        String[] newKeys = tKeys == null ? null : tKeys.clone();
+        Map<String, String> originalKeys = getKeys();
+        List<Map.Entry<String, String>> tagsToAdd = new ArrayList<>(tags.size());
+        for (Map.Entry<String, String> tag : tags.entrySet()) {
+            if (!Utils.isStripEmpty(tag.getKey())) {
+                int keyIndex = indexOfKey(newKeys, tag.getKey());
+                // Realistically, we will not hit the newKeys == null branch. If it is null, keyIndex is always < 0
+                if (keyIndex < 0 || newKeys == null) {
+                    tagsToAdd.add(tag);
+                } else {
+                    newKeys[keyIndex + 1] = tag.getValue();
+                }
+            }
+        }
+        if (!tagsToAdd.isEmpty()) {
+            int index = newKeys != null ? newKeys.length : 0;
+            newKeys = newKeys != null ? Arrays.copyOf(newKeys, newKeys.length + 2 * tagsToAdd.size()) : new String[2 * tagsToAdd.size()];
+            for (Map.Entry<String, String> tag : tagsToAdd) {
+                newKeys[index++] = tag.getKey();
+                newKeys[index++] = tag.getValue();
+            }
+        }
+        keys = newKeys;
+        keysChangedImpl(originalKeys);
     }
 
     /**
@@ -644,18 +794,31 @@ public abstract class AbstractPrimitive implements IPrimitive {
 
     @Override
     public final Collection<String> keySet() {
-        if (keys == null) {
+        String[] tKeys = this.keys;
+        if (tKeys == null) {
             return Collections.emptySet();
         }
-        if (keys.length == 1) {
-            return Collections.singleton(keys[0]);
+        if (tKeys.length == 2) {
+            return Collections.singleton(tKeys[0]);
         }
 
-        final Set<String> result = new HashSet<>(Utils.hashMapInitialCapacity(keys.length / 2));
-        for (int i = 0; i < keys.length; i += 2) {
-            result.add(keys[i]);
+        final Set<String> result = new HashSet<>(Utils.hashMapInitialCapacity(tKeys.length / 2));
+        for (int i = 0; i < tKeys.length; i += 2) {
+            result.add(tKeys[i]);
         }
         return result;
+    }
+
+    @Override
+    public Stream<String> keys() {
+        final String[] k = this.keys;
+        if (k == null) {
+            return Stream.empty();
+        } else if (k.length == 2) {
+            return Stream.of(k[0]);
+        } else {
+            return IntStream.range(0, k.length / 2).mapToObj(i -> k[i * 2]);
+        }
     }
 
     /**
@@ -687,7 +850,14 @@ public abstract class AbstractPrimitive implements IPrimitive {
      * @since 11587
      */
     public boolean hasKey(String... keys) {
-        return keys != null && Arrays.stream(keys).anyMatch(this::hasKey);
+        if (keys != null) {
+            for (String key : keys) {
+                if (this.hasKey(key)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**
@@ -714,7 +884,7 @@ public abstract class AbstractPrimitive implements IPrimitive {
     public static Collection<String> getUninterestingKeys() {
         if (uninteresting == null) {
             List<String> l = new LinkedList<>(Arrays.asList(
-                "source", "source_ref", "source:", "comment",
+                "source", "source_ref", "source:", "comment", "import",
                 "watch", "watch:", "description", "attribution", GpxConstants.GPX_PREFIX));
             l.addAll(getDiscardableKeys());
             l.addAll(getWorkInProgressKeys());
@@ -733,8 +903,7 @@ public abstract class AbstractPrimitive implements IPrimitive {
             discardable = new HashSet<>(Config.getPref().getList("tags.discardable",
                     Arrays.asList(
                             "created_by",
-                            "converted_by",
-                            "current_id",
+                            "current_id", /* prevent export of this JOSM internal information, see OsmReader */
                             "geobase:datasetName",
                             "geobase:uuid",
                             "KSJ2:ADS",
@@ -761,6 +930,14 @@ public abstract class AbstractPrimitive implements IPrimitive {
                             "KSJ2:lat",
                             "KSJ2:long",
                             "KSJ2:river_id",
+                            "LINZ:dataset",
+                            "LINZ:layer",
+                            "LINZ:source_version",
+                            "LINZ2OSM:dataset",
+                            "LINZ2OSM:layer",
+                            "linz2osm:objectid",
+                            "LINZ2OSM:source_version",
+                            "fid",
                             "odbl",
                             "odbl:note",
                             "osmarender:nameDirection",
@@ -773,6 +950,8 @@ public abstract class AbstractPrimitive implements IPrimitive {
                             "tiger:separated",
                             "tiger:tlid",
                             "tiger:upload_uuid",
+                            "import_uuid",
+                            "gnis:import_uuid",
                             "yh:LINE_NAME",
                             "yh:LINE_NUM",
                             "yh:STRUCTURE",

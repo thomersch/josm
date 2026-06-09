@@ -1,11 +1,11 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.tools;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.openstreetmap.josm.gui.mappaint.MapCSSRendererTest.assertImageEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.openstreetmap.josm.testutils.ImageTestUtils.assertImageEquals;
 
 import java.awt.Dimension;
 import java.awt.Image;
@@ -24,38 +24,27 @@ import java.util.logging.Logger;
 
 import javax.swing.ImageIcon;
 
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.openstreetmap.josm.JOSMFixture;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPreset;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPresets;
 import org.openstreetmap.josm.gui.tagging.presets.items.Key;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.FunctionalTest;
 import org.xml.sax.SAXException;
 
 import com.kitfox.svg.SVGConst;
-
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
  * Unit tests of {@link ImageProvider} class.
  */
-public class ImageProviderTest {
-
-    /**
-     * Setup test.
-     */
-    @RegisterExtension
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+@FunctionalTest
+class ImageProviderTest {
     private static final class LogHandler14319 extends Handler {
         boolean failed;
 
@@ -75,14 +64,6 @@ public class ImageProviderTest {
         }
     }
 
-    /**
-     * Setup test.
-     */
-    @BeforeAll
-    public static void setUp() {
-        JOSMFixture.createUnitTestFixture().init();
-    }
-
     @BeforeEach
     public void resetPixelDensity() {
         GuiSizesHelper.setPixelDensity(1.0f);
@@ -93,7 +74,7 @@ public class ImageProviderTest {
      * @throws IOException if an error occurs during reading
      */
     @Test
-    public void testTicket9984() throws IOException {
+    void testTicket9984() throws IOException {
         File file = new File(TestUtils.getRegressionDataFile(9984, "tile.png"));
         assertEquals(Transparency.TRANSLUCENT, ImageProvider.read(file, true, true).getTransparency());
         assertEquals(Transparency.TRANSLUCENT, ImageProvider.read(file, false, true).getTransparency());
@@ -107,7 +88,7 @@ public class ImageProviderTest {
      * @throws IOException if an error occurs during reading
      */
     @Test
-    public void testTicket10030() throws IOException {
+    void testTicket10030() throws IOException {
         File file = new File(TestUtils.getRegressionDataFile(10030, "tile.jpg"));
         BufferedImage img = ImageProvider.read(file, true, true);
         assertNotNull(img);
@@ -119,7 +100,7 @@ public class ImageProviderTest {
      */
     @Test
     @SuppressFBWarnings(value = "LG_LOST_LOGGER_DUE_TO_WEAK_REFERENCE")
-    public void testTicket14319() throws IOException {
+    void testTicket14319() throws IOException {
         LogHandler14319 handler = new LogHandler14319();
         Logger.getLogger(SVGConst.SVG_LOGGER).addHandler(handler);
         ImageIcon img = new ImageProvider(
@@ -133,7 +114,7 @@ public class ImageProviderTest {
      * @throws SAXException If the type cannot be set (shouldn't throw)
      */
     @Test
-    public void testTicket19551() throws SAXException {
+    void testTicket19551() throws SAXException {
         TaggingPreset badPreset = new TaggingPreset();
         badPreset.setType("node,way,relation,closedway");
         Key key = new Key();
@@ -154,7 +135,7 @@ public class ImageProviderTest {
      * Test fetching an image using {@code data:} URL.
      */
     @Test
-    public void testDataUrl() {
+    void testDataUrl() {
         // Red dot image, taken from https://en.wikipedia.org/wiki/Data_URI_scheme#HTML
         assertNotNull(ImageProvider.get("data:image/png;base64," +
                 "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4"+
@@ -166,7 +147,7 @@ public class ImageProviderTest {
      * @throws IOException if an I/O error occurs
      */
     @Test
-    public void testImageIcon() throws IOException {
+    void testImageIcon() throws IOException {
         ImageResource resource = new ImageProvider("presets/misc/housenumber_small").getResource();
         testImage(12, 9, "housenumber_small-AUTO-null", resource.getImageIcon());
         testImage(12, 9, "housenumber_small-AUTO-default", resource.getImageIcon(ImageResource.DEFAULT_DIMENSION));
@@ -181,7 +162,7 @@ public class ImageProviderTest {
      * @throws IOException if an I/O error occurs
      */
     @Test
-    public void testImageIconBounded() throws IOException {
+    void testImageIconBounded() throws IOException {
         ImageResource resource = new ImageProvider("presets/misc/housenumber_small").getResource();
         testImage(8, 6, "housenumber_small-BOUNDED-08x08", resource.getImageIconBounded(new Dimension(8, 8)));
         testImage(12, 9, "housenumber_small-BOUNDED-16x16", resource.getImageIconBounded(new Dimension(16, 16)));
@@ -193,7 +174,7 @@ public class ImageProviderTest {
      * @throws IOException if an I/O error occurs
      */
     @Test
-    public void testImageIconPadded() throws IOException {
+    void testImageIconPadded() throws IOException {
         ImageResource resource = new ImageProvider("presets/misc/housenumber_small").getResource();
         testImage(8, 8, "housenumber_small-PADDED-08x08", resource.getPaddedIcon(new Dimension(8, 8)));
         testImage(16, 16, "housenumber_small-PADDED-16x16", resource.getPaddedIcon(new Dimension(16, 16)));
@@ -203,14 +184,14 @@ public class ImageProviderTest {
     private static void testImage(int width, int height, String reference, ImageIcon icon) throws IOException {
         final BufferedImage image = (BufferedImage) icon.getImage();
         final File referenceFile = getReferenceFile(reference);
-        assertEquals("width", width, image.getWidth(null));
-        assertEquals("height", height, image.getHeight(null));
+        assertEquals(width, image.getWidth(null), "width");
+        assertEquals(height, image.getHeight(null), "height");
         assertImageEquals(reference, referenceFile, image, 0, 0, null);
     }
 
     private static File getReferenceFile(String reference) {
-        // Java 8 renders SVG images differently, thus, use separate reference files
-        final String javaSuffix = Utils.getJavaVersion() == 8 ? "-java8" : "";
+        // Java 11-17 and Java 21 render SVG images differently, thus, use separate reference files
+        final String javaSuffix = Utils.getJavaVersion() == 21 ? "-java21" : "";
         return new File(TestUtils.getTestDataRoot() + "/" + ImageProviderTest.class.getSimpleName() + javaSuffix + "/" + reference + ".png");
     }
 
@@ -218,7 +199,7 @@ public class ImageProviderTest {
      * Test getting a bounded icon given some UI scaling configured.
      */
     @Test
-    public void testGetImageIconBounded() {
+    void testGetImageIconBounded() {
         int scale = 2;
         GuiSizesHelper.setPixelDensity(scale);
 
@@ -239,10 +220,12 @@ public class ImageProviderTest {
 
     /**
      * Test getting an image for a crosshair cursor.
+     * @param guiScale coefficient of monitor pixel density to be set
+     * @throws IOException in case of I/O error
      */
     @ParameterizedTest
     @ValueSource(floats = {1.0f, 1.5f, 3.0f})
-    public void testGetCursorImageForCrosshair(float guiScale) throws IOException {
+    void testGetCursorImageForCrosshair(float guiScale) throws IOException {
         GuiSizesHelper.setPixelDensity(guiScale);
         Point hotSpot = new Point();
         final UnaryOperator<Dimension> bestCursorSizeFunction = dim -> dim;
@@ -254,10 +237,12 @@ public class ImageProviderTest {
 
     /**
      * Test getting an image for a custom cursor with overlay.
+     * @param guiScale coefficient of monitor pixel density to be set
+     * @throws IOException in case of I/O error
      */
     @ParameterizedTest
     @ValueSource(floats = {1.0f, 1.5f, 3.0f})
-    public void testGetCursorImageWithOverlay(float guiScale) throws IOException {
+    void testGetCursorImageWithOverlay(float guiScale) throws IOException {
         GuiSizesHelper.setPixelDensity(guiScale);
         Point hotSpot = new Point();
         UnaryOperator<Dimension> bestCursorSizeFunction = dim -> dim;

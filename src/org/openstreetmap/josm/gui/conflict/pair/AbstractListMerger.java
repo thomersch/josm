@@ -88,7 +88,7 @@ implements PropertyChangeListener, ChangeListener, IConflictResolver {
 
     protected abstract JScrollPane buildTheirElementsTable();
 
-    protected JScrollPane embeddInScrollPane(JTable table) {
+    protected JScrollPane embedInScrollPane(JTable table) {
         JScrollPane pane = new JScrollPane(table);
         if (adjustmentSynchronizer == null) {
             adjustmentSynchronizer = new AdjustmentSynchronizer();
@@ -774,7 +774,7 @@ implements PropertyChangeListener, ChangeListener, IConflictResolver {
         }
 
         /**
-         * Java 1.5 doesn't known Action.SELECT_KEY. Wires a toggle button to this action
+         * Java 1.5 doesn't know Action.SELECT_KEY. Wires a toggle button to this action
          * such that the action gets notified about item state changes and the button gets
          * notified about selection state changes of the action.
          *

@@ -7,7 +7,6 @@ import java.util.List;
 
 import org.openstreetmap.josm.data.ProjectionBounds;
 import org.openstreetmap.josm.io.UrlPattern;
-import org.openstreetmap.josm.io.XmlWriter;
 
 /**
  * Common abstract implementation of other download tasks.
@@ -61,8 +60,7 @@ public abstract class AbstractDownloadTask<T> implements DownloadTask {
     }
 
     protected static <T extends Enum<T> & UrlPattern> String[] patterns(Class<T> urlPatternEnum) {
-        // Do not use a method reference until we switch to Java 11, as we face JDK-8141508 with Java 8
-        return Arrays.stream(urlPatternEnum.getEnumConstants()).map(/* JDK-8141508 */ t -> t.pattern()).toArray(String[]::new);
+        return Arrays.stream(urlPatternEnum.getEnumConstants()).map(UrlPattern::pattern).toArray(String[]::new);
     }
 
     protected final void rememberErrorMessage(String message) {
@@ -95,30 +93,10 @@ public abstract class AbstractDownloadTask<T> implements DownloadTask {
         return errorMessages;
     }
 
-    @Override
-    public String acceptsDocumentationSummary() {
-        StringBuilder buff = new StringBuilder(128)
-            .append("<tr><td>")
-            .append(getTitle())
-            .append(":</td><td>");
-        String[] patterns = getPatterns();
-        if (patterns.length > 0) {
-            buff.append("<ul>");
-            for (String pattern: patterns) {
-                buff.append("<li>")
-                    .append(XmlWriter.encode(pattern))
-                    .append("</li>");
-            }
-            buff.append("</ul>");
-        }
-        buff.append("</td></tr>");
-        return buff.toString();
-    }
-
     /**
      * Determines if the given URL is accepted by {@link #getPatterns}.
      * Can be overridden for more complex checking logic.
-     * @param url URL to donwload
+     * @param url URL to download
      * @return {@code true} if this URL is accepted
      */
     public boolean acceptsUrl(String url) {
@@ -127,12 +105,12 @@ public abstract class AbstractDownloadTask<T> implements DownloadTask {
 
     /**
      * Check / decide if the task is safe for remotecontrol.
-     *
+     * <p>
      * Keep in mind that a potential attacker has full control over the content
      * of the file that will be downloaded.
      * If it is possible to run arbitrary code or write to the local file
      * system, then the task is (obviously) not save for remote execution.
-     *
+     * <p>
      * The default value is false = unsafe. Override in a subclass to
      * allow running the task via remotecontol.
      *

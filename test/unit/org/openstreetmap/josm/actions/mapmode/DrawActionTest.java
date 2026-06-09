@@ -1,9 +1,9 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.actions.mapmode;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.event.InputEvent;
 import java.awt.event.MouseEvent;
@@ -13,8 +13,8 @@ import java.util.Collection;
 
 import javax.swing.JList;
 
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.openstreetmap.josm.data.UndoRedoHandler;
 import org.openstreetmap.josm.data.coor.EastNorth;
 import org.openstreetmap.josm.data.osm.DataSet;
@@ -25,32 +25,24 @@ import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.MapFrame;
 import org.openstreetmap.josm.gui.PrimitiveRenderer;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.testutils.annotations.Main;
+import org.openstreetmap.josm.testutils.annotations.Projection;
 
 /**
  * Unit tests for class {@link DrawAction}.
  */
-public class DrawActionTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().main().projection().timeout(20000);
-
+@Main
+@Projection
+@Timeout(20)
+class DrawActionTest {
     /**
      * Non regression test case for bug #12011.
      * Add a new node in the middle of way then undo. The rendering of the node, selected, must not cause any crash in PrimitiveRenderer.
      * @throws SecurityException see {@link Class#getDeclaredField} for details
-     * @throws NoSuchFieldException see {@link Class#getDeclaredField} for details
-     * @throws IllegalAccessException see {@link Field#set} for details
      * @throws IllegalArgumentException see {@link Field#set} for details
      */
     @Test
-    public void testTicket12011() throws IllegalArgumentException, IllegalAccessException, NoSuchFieldException, SecurityException {
+    void testTicket12011() throws IllegalArgumentException, SecurityException {
         DataSet dataSet = new DataSet();
         OsmDataLayer layer = new OsmDataLayer(dataSet, OsmDataLayer.createNewName(), null);
         MainApplication.getLayerManager().addLayer(layer);
@@ -66,7 +58,7 @@ public class DrawActionTest {
         dataSet.addPrimitive(n2);
 
         Way w = new Way();
-        w.setNodes(Arrays.asList(new Node[] {n1, n2}));
+        w.setNodes(Arrays.asList(n1, n2));
         dataSet.addPrimitive(w);
 
         try {

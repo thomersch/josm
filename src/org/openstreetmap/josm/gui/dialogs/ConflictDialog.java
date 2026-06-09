@@ -195,20 +195,27 @@ public final class ConflictDialog extends ToggleDialog implements ActiveLayerCha
      * Launches a conflict resolution dialog for the first selected conflict
      */
     private void resolve() {
+        final ConflictResolutionDialog dialog;
+        int index;
         synchronized (this) {
             if (conflicts == null || model.getSize() == 0)
                 return;
 
-            int index = lstConflicts.getSelectedIndex();
+            index = lstConflicts.getSelectedIndex();
             if (index < 0) {
                 index = 0;
             }
 
             Conflict<? extends OsmPrimitive> c = conflicts.get(index);
-            ConflictResolutionDialog dialog = new ConflictResolutionDialog(MainApplication.getMainFrame());
+            dialog = new ConflictResolutionDialog(MainApplication.getMainFrame());
             dialog.getConflictResolver().populate(c);
-            dialog.showDialog();
-
+        }
+        // This must not be synchronized. See #23079.
+        // On macOS, under some instances, the AppKit thread may want to lock this (`ConflictDialog`) in order to add a
+        // property change listener. This dialog currently locks the UI thread, so it *should* be safe to have outside
+        // of the synchronized lock.
+        dialog.showDialog();
+        synchronized (this) {
             if (index < conflicts.size() - 1) {
                 lstConflicts.setSelectedIndex(index);
             } else {
@@ -237,9 +244,9 @@ public final class ConflictDialog extends ToggleDialog implements ActiveLayerCha
         if (conflictsCount > 0) {
             setTitle(trn("Conflict: {0} unresolved", "Conflicts: {0} unresolved", conflictsCount, conflictsCount) +
                     " ("+tr("Rel.:{0} / Ways:{1} / Nodes:{2}",
-                            conflicts.getRelationConflicts().size(),
-                            conflicts.getWayConflicts().size(),
-                            conflicts.getNodeConflicts().size())+')');
+                            conflicts.getNumberOfRelationConflicts(),
+                            conflicts.getNumberOfWayConflicts(),
+                            conflicts.getNumberOfNodeConflicts())+')');
         } else {
             setTitle(tr("Conflict"));
         }
@@ -314,7 +321,13 @@ public final class ConflictDialog extends ToggleDialog implements ActiveLayerCha
 
     private synchronized boolean isConflictSelected() {
         final ListSelectionModel selModel = lstConflicts.getSelectionModel();
-        return selModel.getMinSelectionIndex() >= 0 && selModel.getMaxSelectionIndex() >= selModel.getMinSelectionIndex();
+        final int minSelectionIndex = selModel.getMinSelectionIndex();
+        final int maxSelectionIndex = selModel.getMaxSelectionIndex();
+        final int maxIndex = conflicts.size();
+        // if minSelectionIndex < 0, nothing is selected
+        // if minSelectionIndex > maxIndex, then nothing is selected (we are operating with an old selection context, most likely)
+        // if maxSelectionIndex < minSelectionIndex, _something_ funny is going on. Or there was a typo in the original code.
+        return minSelectionIndex >= 0 && maxIndex > minSelectionIndex && maxSelectionIndex >= minSelectionIndex;
     }
 
     @Override
@@ -361,6 +374,8 @@ public final class ConflictDialog extends ToggleDialog implements ActiveLayerCha
         public void popupMenuWillBecomeVisible(PopupMenuEvent e) {
             btnResolveMy.setVisible(ExpertToggleAction.isExpert());
             btnResolveTheir.setVisible(ExpertToggleAction.isExpert());
+            ((ResolveAction) btnResolveMy.getAction()).valueChanged(null);
+            ((ResolveAction) btnResolveTheir.getAction()).valueChanged(null);
         }
 
         @Override

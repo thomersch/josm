@@ -1,17 +1,16 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.actions;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.util.Collections;
 
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.openstreetmap.josm.TestUtils;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.gui.ExtendedDialog;
@@ -19,24 +18,17 @@ import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.layer.LayerManagerTest.TestLayer;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.gui.widgets.JosmComboBox;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import org.openstreetmap.josm.testutils.annotations.Main;
+import org.openstreetmap.josm.testutils.annotations.Projection;
 import org.openstreetmap.josm.testutils.mockers.ExtendedDialogMocker;
 import org.openstreetmap.josm.testutils.mockers.JOptionPaneSimpleMocker;
-
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 /**
  * Unit tests for class {@link MergeLayerAction}.
  */
+@Main
+@Projection
 public class MergeLayerActionTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules().main().projection();
-
     /**
      * MergeLayerExtendedDialog mocker.
      */
@@ -57,7 +49,7 @@ public class MergeLayerActionTest {
     /**
      * Setup test.
      */
-    @Before
+    @BeforeEach
     public void setUp() {
         if (action == null) {
             action = new MergeLayerAction();
@@ -71,7 +63,7 @@ public class MergeLayerActionTest {
      * Tests that no error occurs when no source layer exists.
      */
     @Test
-    public void testMergeNoSourceLayer() {
+    void testMergeNoSourceLayer() {
         assertNull(MainApplication.getLayerManager().getActiveLayer());
         action.actionPerformed(null);
         assertEquals(0, MainApplication.getLayerManager().getLayers().size());
@@ -81,7 +73,7 @@ public class MergeLayerActionTest {
      * Tests that no error occurs when no target layer exists.
      */
     @Test
-    public void testMergeNoTargetLayer() {
+    void testMergeNoTargetLayer() {
         TestUtils.assumeWorkingJMockit();
         final JOptionPaneSimpleMocker jopsMocker = new JOptionPaneSimpleMocker(
             Collections.singletonMap("<html>There are no layers the source layer<br>'onion'<br>could be merged to.</html>", 0)
@@ -104,7 +96,7 @@ public class MergeLayerActionTest {
      * @throws Exception if any error occurs
      */
     @Test
-    public void testMergeTwoEmptyLayers() throws Exception {
+    void testMergeTwoEmptyLayers() throws Exception {
         TestUtils.assumeWorkingJMockit();
         final MergeLayerExtendedDialogMocker edMocker = new MergeLayerExtendedDialogMocker();
         edMocker.getMockResultMap().put("Please select the target layer.", "Merge layer");

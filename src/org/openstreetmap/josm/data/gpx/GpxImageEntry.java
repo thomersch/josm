@@ -1,39 +1,42 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.gpx;
 
+import java.awt.Dimension;
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.URI;
+import java.nio.file.Files;
+import java.time.Instant;
 import java.util.Date;
 import java.util.List;
 import java.util.Objects;
-import java.util.function.Consumer;
 
+import javax.imageio.IIOParam;
+
+import org.openstreetmap.josm.data.IQuadBucketType;
 import org.openstreetmap.josm.data.coor.CachedLatLon;
+import org.openstreetmap.josm.data.coor.ILatLon;
 import org.openstreetmap.josm.data.coor.LatLon;
-import org.openstreetmap.josm.tools.ExifReader;
-import org.openstreetmap.josm.tools.JosmRuntimeException;
-import org.openstreetmap.josm.tools.Logging;
-
-import com.drew.imaging.jpeg.JpegMetadataReader;
-import com.drew.lang.CompoundException;
-import com.drew.metadata.Directory;
-import com.drew.metadata.Metadata;
-import com.drew.metadata.MetadataException;
-import com.drew.metadata.exif.ExifIFD0Directory;
-import com.drew.metadata.exif.GpsDirectory;
-import com.drew.metadata.iptc.IptcDirectory;
-import com.drew.metadata.jpeg.JpegDirectory;
+import org.openstreetmap.josm.data.imagery.street_level.Projections;
+import org.openstreetmap.josm.data.osm.BBox;
+import org.openstreetmap.josm.gui.layer.geoimage.ImageMetadata;
 
 /**
  * Stores info about each image
  * @since 14205 (extracted from gui.layer.geoimage.ImageEntry)
  */
-public class GpxImageEntry implements Comparable<GpxImageEntry> {
+public class GpxImageEntry implements Comparable<GpxImageEntry>, IQuadBucketType, ImageMetadata {
     private File file;
     private Integer exifOrientation;
     private LatLon exifCoor;
     private Double exifImgDir;
-    private Date exifTime;
+    private Double exifGpsTrack;
+    private Double exifHPosErr;
+    private Double exifGpsDop;
+    private Instant exifTime;
+    private Projections cameraProjection = Projections.UNKNOWN;
     /**
      * Flag isNewGpsData indicates that the GPS data of the image is new or has changed.
      * GPS data includes the position, speed, elevation, time (e.g. as extracted from the GPS track).
@@ -41,7 +44,7 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
      */
     private boolean isNewGpsData;
     /** Temporary source of GPS time if not correlated with GPX track. */
-    private Date exifGpsTime;
+    private Instant exifGpsTime;
 
     private String iptcCaption;
     private String iptcHeadline;
@@ -57,8 +60,16 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
     private Double speed;
     /** Elevation (altitude) in meters */
     private Double elevation;
+    /** GPS Differential mode */
+    private Integer gpsDiffMode;
+    /** GPS Measure mode */
+    private Integer gps2d3dMode;
+    /** GPS Datum */
+    private String exifGpsDatum;
+    /** GPS processing method */
+    private String exifGpsProcMethod;
     /** The time after correlation with a gpx track */
-    private Date gpsTime;
+    private Instant gpsTime;
 
     private int width;
     private int height;
@@ -88,6 +99,13 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
         exifOrientation = other.exifOrientation;
         exifCoor = other.exifCoor;
         exifImgDir = other.exifImgDir;
+        exifGpsTrack = other.exifGpsTrack;
+        exifHPosErr = other.exifHPosErr;
+        gpsDiffMode = other.gpsDiffMode;
+        gps2d3dMode = other.gps2d3dMode;
+        exifGpsDop = other.exifGpsDop;
+        exifGpsDatum = other.exifGpsDatum;
+        exifGpsProcMethod = other.exifGpsProcMethod;
         exifTime = other.exifTime;
         isNewGpsData = other.isNewGpsData;
         exifGpsTime = other.exifGpsTime;
@@ -108,11 +126,17 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
         setFile(file);
     }
 
+    @Override
+    public URI getImageURI() {
+        return this.getFile().toURI();
+    }
+
     /**
      * Returns width of the image this GpxImageEntry represents.
      * @return width of the image this GpxImageEntry represents
      * @since 13220
      */
+    @Override
     public int getWidth() {
         return width;
     }
@@ -122,6 +146,7 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
      * @return height of the image this GpxImageEntry represents
      * @since 13220
      */
+    @Override
     public int getHeight() {
         return height;
     }
@@ -131,6 +156,7 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
      * is returned if that copy exists.
      * @return the position value
      */
+    @Override
     public CachedLatLon getPos() {
         if (tmp != null)
             return tmp.pos;
@@ -142,6 +168,7 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
      * returned if that copy exists.
      * @return the speed value
      */
+    @Override
     public Double getSpeed() {
         if (tmp != null)
             return tmp.speed;
@@ -153,6 +180,7 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
      * copy is returned if that copy exists.
      * @return the elevation value
      */
+    @Override
     public Double getElevation() {
         if (tmp != null)
             return tmp.elevation;
@@ -160,14 +188,76 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
     }
 
     /**
+     * Return the GPS Differential mode value. The GPS Differential mode value from the temporary
+     * copy is returned if that copy exists. 
+     * @return the differential mode value
+     * @since 19387
+     */
+    @Override
+    public Integer getGpsDiffMode() {
+        if (tmp != null)
+            return tmp.gpsDiffMode;
+        return gpsDiffMode;
+    }
+
+    /**
+     * Return the GPS 2d or 3d mode value. The GPS mode value form the temporary
+     * copy is returned if that copy exists. 
+     * @return the GPS 2d/3d mode value
+     * @since 19387
+     */
+    @Override
+    public Integer getGps2d3dMode() {
+        if (tmp != null)
+            return tmp.gps2d3dMode;
+        return gps2d3dMode;
+    }
+
+    /**
+     * Return the GPS DOP value. The GPS DOP value from the temporary
+     * copy is returned if that copy exists. 
+     * @return the DOP value
+     * @since 19387
+     */
+    @Override
+    public Double getExifGpsDop() {
+        if (tmp != null)
+            return tmp.exifGpsDop;
+        return exifGpsDop;
+    }
+
+    /**
+     * Return the EXIF GPS coordinates datum value.
+     * @return The datum value
+     * @since 19387
+     */
+    @Override
+    public String getExifGpsDatum() {
+        if (tmp != null)
+            return tmp.exifGpsDatum;
+        return exifGpsDatum;
+    }
+
+    /**
+     * Return the EXIF GPS processing method string
+     * @return the processing method string
+     * @since 19387
+     */
+    @Override
+    public String getExifGpsProcMethod() {
+        if (tmp != null)
+            return tmp.exifGpsProcMethod;
+        return exifGpsProcMethod;
+    }
+
+    /**
      * Returns the GPS time value. The GPS time value from the temporary copy
      * is returned if that copy exists.
      * @return the GPS time value
      */
-    public Date getGpsTime() {
-        if (tmp != null)
-            return getDefensiveDate(tmp.gpsTime);
-        return getDefensiveDate(gpsTime);
+    @Override
+    public Instant getGpsInstant() {
+        return tmp != null ? tmp.gpsTime : gpsTime;
     }
 
     /**
@@ -175,6 +265,7 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
      * @return {@code true} if this entry has a GPS time
      * @since 6450
      */
+    @Override
     public boolean hasGpsTime() {
         return (tmp != null && tmp.gpsTime != null) || gpsTime != null;
     }
@@ -188,9 +279,19 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
     }
 
     /**
+     * Returns a display name for this entry
+     * @return a display name for this entry
+     */
+    @Override
+    public String getDisplayName() {
+        return file == null ? "" : file.getName();
+    }
+
+    /**
      * Returns EXIF orientation
      * @return EXIF orientation
      */
+    @Override
     public Integer getExifOrientation() {
         return exifOrientation != null ? exifOrientation : 1;
     }
@@ -198,9 +299,11 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
     /**
      * Returns EXIF time
      * @return EXIF time
+     * @since 17715
      */
-    public Date getExifTime() {
-        return getDefensiveDate(exifTime);
+    @Override
+    public Instant getExifInstant() {
+        return exifTime;
     }
 
     /**
@@ -208,6 +311,7 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
      * @return {@code true} if this entry has a EXIF time
      * @since 6450
      */
+    @Override
     public boolean hasExifTime() {
         return exifTime != null;
     }
@@ -215,10 +319,11 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
     /**
      * Returns the EXIF GPS time.
      * @return the EXIF GPS time
-     * @since 6392
+     * @since 17715
      */
-    public Date getExifGpsTime() {
-        return getDefensiveDate(exifGpsTime);
+    @Override
+    public Instant getExifGpsInstant() {
+        return exifGpsTime;
     }
 
     /**
@@ -226,24 +331,73 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
      * @return {@code true} if this entry has a EXIF GPS time
      * @since 6450
      */
+    @Override
     public boolean hasExifGpsTime() {
         return exifGpsTime != null;
     }
 
-    private static Date getDefensiveDate(Date date) {
-        if (date == null)
-            return null;
-        return new Date(date.getTime());
+    /**
+     * Return the time value selected with the parameter.
+     * @param timeSource the wanted time value, exifCamTime or exifGpsTime
+     * @return exifInstant or exifGpsInstant value
+     * @since 19426
+     */
+    @Override
+    public Instant getTimeSourceInstant(TimeSource timeSource) {
+        if (timeSource == TimeSource.EXIFGPSTIME)
+            return getExifGpsInstant();
+        else if (timeSource == TimeSource.EXIFCAMTIME)
+            return getExifInstant();
+        return null;
     }
 
+    private static Date getDefensiveDate(Instant date) {
+        if (date == null)
+            return null;
+        return Date.from(date);
+    }
+
+    @Override
     public LatLon getExifCoor() {
         return exifCoor;
     }
 
+    @Override
     public Double getExifImgDir() {
         if (tmp != null)
             return tmp.exifImgDir;
         return exifImgDir;
+    }
+    
+    /**
+     * Convenient way to determine if this entry has a EXIF GPS track angle value,
+     * without the cost of building a defensive copy.
+     * @return {@code true} if this entry has a EXIF track angle value
+     * @since 19387
+     */
+    @Override
+    public Double getExifGpsTrack() {
+        if (tmp != null)
+            return tmp.exifGpsTrack;
+        return exifGpsTrack;
+    }
+
+    /**
+     * Convenient way to determine if this entry has a EXIF GPS horizontal positionning error value,
+     * without the cost of building a defensive copy.
+     * @return {@code true} if this entry has a EXIF GPS horizontal positionning error value
+     * @since 19387
+     */
+    @Override
+    public Double getExifHPosErr() {
+        if (tmp != null)
+            return tmp.exifHPosErr;
+        return exifHPosErr;
+    }
+
+    @Override
+    public Instant getLastModified() {
+        return Instant.ofEpochMilli(this.getFile().lastModified());
     }
 
     /**
@@ -251,6 +405,7 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
      * @param width set the width of this GpxImageEntry
      * @since 13220
      */
+    @Override
     public void setWidth(int width) {
         this.width = width;
     }
@@ -260,6 +415,7 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
      * @param height set the height of this GpxImageEntry
      * @since 13220
      */
+    @Override
     public void setHeight(int height) {
         this.height = height;
     }
@@ -280,10 +436,24 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
         setPos(pos != null ? new CachedLatLon(pos) : null);
     }
 
+    @Override
+    public void setPos(ILatLon pos) {
+        if (pos instanceof CachedLatLon) {
+            this.setPos((CachedLatLon) pos);
+        } else if (pos instanceof LatLon) {
+            this.setPos((LatLon) pos);
+        } else if (pos != null) {
+            this.setPos(new LatLon(pos));
+        } else {
+            this.setPos(null);
+        }
+    }
+
     /**
      * Sets the speed.
      * @param speed speed
      */
+    @Override
     public void setSpeed(Double speed) {
         this.speed = speed;
     }
@@ -292,8 +462,59 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
      * Sets the elevation.
      * @param elevation elevation
      */
+    @Override
     public void setElevation(Double elevation) {
         this.elevation = elevation;
+    }
+
+    /**
+     * Sets GPS Differential mode.
+     * @param gpsDiffMode GPS Differential mode
+     * @since 19387
+     */
+    @Override
+    public void setGpsDiffMode(Integer gpsDiffMode) {
+        this.gpsDiffMode = gpsDiffMode;
+    }
+
+    /**
+     * Sets GPS 2d/3d mode.
+     * @param gps2d3dMode GPS 2d/3d mode value
+     * @since 19387
+     */
+    @Override
+    public void setGps2d3dMode(Integer gps2d3dMode) {
+        this.gps2d3dMode = gps2d3dMode;
+    }
+
+    /**
+     * Sets GPS DOP value.
+     * @param exifGpsDop GPS DOP value
+     * @since 19387
+     */
+    @Override
+    public void setExifGpsDop(Double exifGpsDop) {
+        this.exifGpsDop = exifGpsDop;
+    }
+
+    /**
+     * Sets the GPS Datum.
+     * @param exifGpsDatum GPS Datum
+     * @since 19387
+     */
+    @Override
+    public void setExifGpsDatum(String exifGpsDatum) {
+        this.exifGpsDatum = exifGpsDatum;
+    }
+
+    /**
+     * Sets the GPS Processing Method.
+     * @param exifGpsProcMethod GPS Processing Method
+     * @since 19387
+     */
+    @Override
+    public void setExifGpsProcMethod(String exifGpsProcMethod) {
+        this.exifGpsProcMethod = exifGpsProcMethod;
     }
 
     /**
@@ -308,6 +529,7 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
      * Sets EXIF orientation.
      * @param exifOrientation EXIF orientation
      */
+    @Override
     public void setExifOrientation(Integer exifOrientation) {
         this.exifOrientation = exifOrientation;
     }
@@ -315,30 +537,75 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
     /**
      * Sets EXIF time.
      * @param exifTime EXIF time
+     * @since 17715
      */
-    public void setExifTime(Date exifTime) {
-        this.exifTime = getDefensiveDate(exifTime);
+    @Override
+    public void setExifTime(Instant exifTime) {
+        this.exifTime = exifTime;
     }
 
     /**
      * Sets the EXIF GPS time.
      * @param exifGpsTime the EXIF GPS time
-     * @since 6392
+     * @since 17715
      */
-    public void setExifGpsTime(Date exifGpsTime) {
-        this.exifGpsTime = getDefensiveDate(exifGpsTime);
+    @Override
+    public void setExifGpsTime(Instant exifGpsTime) {
+        this.exifGpsTime = exifGpsTime;
     }
 
-    public void setGpsTime(Date gpsTime) {
-        this.gpsTime = getDefensiveDate(gpsTime);
+    /**
+     * Sets the GPS time.
+     * @param gpsTime the GPS time
+     * @since 17715
+     */
+    @Override
+    public void setGpsTime(Instant gpsTime) {
+        this.gpsTime = gpsTime;
     }
 
+    /**
+     * Sets the EXIF coordinate.
+     * @param exifCoor the coordinate
+     */
     public void setExifCoor(LatLon exifCoor) {
         this.exifCoor = exifCoor;
     }
 
+    @Override
+    public void setExifCoor(ILatLon exifCoor) {
+        if (exifCoor instanceof LatLon) {
+            this.exifCoor = (LatLon) exifCoor;
+        } else if (exifCoor != null) {
+            this.exifCoor = new LatLon(exifCoor);
+        } else {
+            this.exifCoor = null;
+        }
+    }
+
+    @Override
     public void setExifImgDir(Double exifDir) {
         this.exifImgDir = exifDir;
+    }
+
+    /**
+     * Sets the EXIF GPS track (move direction angle)
+     * @param exifGpsTrack the EXIF GPS track angle
+     * @since 19387
+     */
+    @Override
+    public void setExifGpsTrack(Double exifGpsTrack) {
+        this.exifGpsTrack = exifGpsTrack;
+    }
+
+    /**
+     * Sets the EXIF horizontal positioning error
+     * @param exifHPosErr the EXIF horizontal positionning error
+     * @since 19387
+     */
+    @Override
+    public void setExifHPosErr(Double exifHPosErr) {
+        this.exifHPosErr = exifHPosErr;
     }
 
     /**
@@ -346,6 +613,7 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
      * @param iptcCaption the IPTC caption
      * @since 15219
      */
+    @Override
     public void setIptcCaption(String iptcCaption) {
         this.iptcCaption = iptcCaption;
     }
@@ -355,6 +623,7 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
      * @param iptcHeadline the IPTC headline
      * @since 15219
      */
+    @Override
     public void setIptcHeadline(String iptcHeadline) {
         this.iptcHeadline = iptcHeadline;
     }
@@ -364,6 +633,7 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
      * @param iptcKeywords the IPTC keywords
      * @since 15219
      */
+    @Override
     public void setIptcKeywords(List<String> iptcKeywords) {
         this.iptcKeywords = iptcKeywords;
     }
@@ -373,6 +643,7 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
      * @param iptcObjectName the IPTC object name
      * @since 15219
      */
+    @Override
     public void setIptcObjectName(String iptcObjectName) {
         this.iptcObjectName = iptcObjectName;
     }
@@ -382,6 +653,7 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
      * @return the IPTC caption
      * @since 15219
      */
+    @Override
     public String getIptcCaption() {
         return iptcCaption;
     }
@@ -391,6 +663,7 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
      * @return the IPTC headline
      * @since 15219
      */
+    @Override
     public String getIptcHeadline() {
         return iptcHeadline;
     }
@@ -400,6 +673,7 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
      * @return the IPTC keywords
      * @since 15219
      */
+    @Override
     public List<String> getIptcKeywords() {
         return iptcKeywords;
     }
@@ -409,6 +683,7 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
      * @return the IPTC object name
      * @since 15219
      */
+    @Override
     public String getIptcObjectName() {
         return iptcObjectName;
     }
@@ -428,9 +703,10 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
     @Override
     public int hashCode() {
         return Objects.hash(height, width, isNewGpsData,
-            elevation, exifCoor, exifGpsTime, exifImgDir, exifOrientation, exifTime,
-            iptcCaption, iptcHeadline, iptcKeywords, iptcObjectName,
-            file, gpsTime, pos, speed, tmp);
+            elevation, exifCoor, exifGpsTime, exifImgDir, exifGpsTrack, exifHPosErr,
+            exifGpsDop, gpsDiffMode, gps2d3dMode, exifGpsDatum, exifGpsProcMethod,
+            exifOrientation, exifTime, iptcCaption, iptcHeadline, iptcKeywords,
+            iptcObjectName, file, gpsTime, pos, speed, tmp, cameraProjection);
     }
 
     @Override
@@ -447,6 +723,13 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
             && Objects.equals(exifCoor, other.exifCoor)
             && Objects.equals(exifGpsTime, other.exifGpsTime)
             && Objects.equals(exifImgDir, other.exifImgDir)
+            && Objects.equals(exifGpsTrack, other.exifGpsTrack)
+            && Objects.equals(exifHPosErr, other.exifHPosErr)
+            && Objects.equals(gpsDiffMode, other.gpsDiffMode)
+            && Objects.equals(gps2d3dMode, other.gps2d3dMode)
+            && Objects.equals(exifGpsDop, other.exifGpsDop)
+            && Objects.equals(exifGpsDatum, other.exifGpsDatum)
+            && Objects.equals(exifGpsProcMethod, other.exifGpsProcMethod)
             && Objects.equals(exifOrientation, other.exifOrientation)
             && Objects.equals(exifTime, other.exifTime)
             && Objects.equals(iptcCaption, other.iptcCaption)
@@ -457,17 +740,20 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
             && Objects.equals(gpsTime, other.gpsTime)
             && Objects.equals(pos, other.pos)
             && Objects.equals(speed, other.speed)
-            && Objects.equals(tmp, other.tmp);
+            && Objects.equals(tmp, other.tmp)
+            && cameraProjection == other.cameraProjection;
     }
 
     /**
      * Make a fresh copy and save it in the temporary variable. Use
      * {@link #applyTmp()} or {@link #discardTmp()} if the temporary variable
      * is not needed anymore.
+     * @return the fresh copy.
      */
-    public void createTmp() {
+    public GpxImageEntry createTmp() {
         tmp = new GpxImageEntry(this);
         tmp.tmp = null;
+        return tmp;
     }
 
     /**
@@ -488,6 +774,7 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
      * Copy the values from the temporary variable to the main instance. The
      * temporary variable is deleted.
      * @see #discardTmp()
+     * @since 19387 exifGpsTrack, exifHPosErr, gpsDiffMode, gps2d3dMode, exifGpsDop, exifGpsDatum, exifGpsProcMethod added
      */
     public void applyTmp() {
         if (tmp != null) {
@@ -496,9 +783,17 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
             elevation = tmp.elevation;
             gpsTime = tmp.gpsTime;
             exifImgDir = tmp.exifImgDir;
-            isNewGpsData = tmp.isNewGpsData;
+            exifGpsTrack = tmp.exifGpsTrack;
+            exifHPosErr = tmp.exifHPosErr;
+            gpsDiffMode = tmp.gpsDiffMode;
+            gps2d3dMode = tmp.gps2d3dMode;
+            exifGpsDop = tmp.exifGpsDop;
+            exifGpsDatum = tmp.exifGpsDatum;
+            exifGpsProcMethod = tmp.exifGpsProcMethod;
+            isNewGpsData = isNewGpsData || tmp.isNewGpsData;
             tmp = null;
         }
+        tmpUpdated();
     }
 
     /**
@@ -507,6 +802,7 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
      */
     public void discardTmp() {
         tmp = null;
+        tmpUpdated();
     }
 
     /**
@@ -540,6 +836,22 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
    }
 
     /**
+     * Indicate that the temporary copy has been updated. Mostly used to prevent UI issues.
+     * By default, this is a no-op. Override when needed in subclasses.
+     * @since 17579
+     */
+    protected void tmpUpdated() {
+        // No-op by default
+    }
+
+    @Override
+    public BBox getBBox() {
+        // new BBox(LatLon) is null safe.
+        // Use `getPos` instead of `getExifCoor` since the image may be correlated against a GPX track
+        return new BBox(this.getPos());
+    }
+
+    /**
      * Remove the flag that indicates new GPS data.
      * The flag is cleared by a new GPS data consumer.
      */
@@ -565,93 +877,58 @@ public class GpxImageEntry implements Comparable<GpxImageEntry> {
      * If successful, fills in the LatLon, speed, elevation, image direction, and other attributes
      * @since 9270
      */
+    @Override
     public void extractExif() {
-
-        Metadata metadata;
-
-        if (file == null) {
-            return;
-        }
-
-        try {
-            metadata = JpegMetadataReader.readMetadata(file);
-        } catch (CompoundException | IOException ex) {
-            Logging.error(ex);
-            setExifTime(null);
-            setExifCoor(null);
-            setPos(null);
-            return;
-        }
-
-        // Changed to silently cope with no time info in exif. One case
-        // of person having time that couldn't be parsed, but valid GPS info
-        try {
-            setExifTime(ExifReader.readTime(metadata));
-        } catch (JosmRuntimeException | IllegalArgumentException | IllegalStateException ex) {
-            Logging.warn(ex);
-            setExifTime(null);
-        }
-
-        final Directory dir = metadata.getFirstDirectoryOfType(JpegDirectory.class);
-        final Directory dirExif = metadata.getFirstDirectoryOfType(ExifIFD0Directory.class);
-        final GpsDirectory dirGps = metadata.getFirstDirectoryOfType(GpsDirectory.class);
-
-        try {
-            if (dirExif != null) {
-                setExifOrientation(dirExif.getInt(ExifIFD0Directory.TAG_ORIENTATION));
-            }
-        } catch (MetadataException ex) {
-            Logging.debug(ex);
-        }
-
-        try {
-            if (dir != null) {
-                // there are cases where these do not match width and height stored in dirExif
-                setWidth(dir.getInt(JpegDirectory.TAG_IMAGE_WIDTH));
-                setHeight(dir.getInt(JpegDirectory.TAG_IMAGE_HEIGHT));
-            }
-        } catch (MetadataException ex) {
-            Logging.debug(ex);
-        }
-
-        if (dirGps == null) {
-            setExifCoor(null);
-            setPos(null);
-            return;
-        }
-
-        ifNotNull(ExifReader.readSpeed(dirGps), this::setSpeed);
-        ifNotNull(ExifReader.readElevation(dirGps), this::setElevation);
-
-        try {
-            setExifCoor(ExifReader.readLatLon(dirGps));
-            setPos(getExifCoor());
-        } catch (MetadataException | IndexOutOfBoundsException ex) { // (other exceptions, e.g. #5271)
-            Logging.error("Error reading EXIF from file: " + ex);
-            setExifCoor(null);
-            setPos(null);
-        }
-
-        try {
-            ifNotNull(ExifReader.readDirection(dirGps), this::setExifImgDir);
-        } catch (IndexOutOfBoundsException ex) { // (other exceptions, e.g. #5271)
-            Logging.debug(ex);
-        }
-
-        ifNotNull(dirGps.getGpsDate(), this::setExifGpsTime);
-
-        IptcDirectory dirIptc = metadata.getFirstDirectoryOfType(IptcDirectory.class);
-        if (dirIptc != null) {
-            ifNotNull(ExifReader.readCaption(dirIptc), this::setIptcCaption);
-            ifNotNull(ExifReader.readHeadline(dirIptc), this::setIptcHeadline);
-            ifNotNull(ExifReader.readKeywords(dirIptc), this::setIptcKeywords);
-            ifNotNull(ExifReader.readObjectName(dirIptc), this::setIptcObjectName);
-        }
+        ImageMetadata.super.extractExif();
     }
 
-    private static <T> void ifNotNull(T value, Consumer<T> setter) {
-        if (value != null) {
-            setter.accept(value);
+    @Override
+    public InputStream getInputStream() throws IOException {
+        return Files.newInputStream(this.getFile().toPath());
+    }
+
+    /**
+     * Reads the image represented by this entry in the given target dimension.
+     * @param target the desired dimension used for {@linkplain IIOParam#setSourceSubsampling subsampling} or {@code null}
+     * @return the read image, or {@code null}
+     * @throws IOException if any I/O error occurs
+     * @since 18246
+     */
+    public BufferedImage read(Dimension target) throws IOException {
+        throw new UnsupportedOperationException("read not implemented for " + this.getClass().getSimpleName());
+    }
+
+    /**
+     * Get the projection type for this entry
+     * @return The projection type
+     * @since 18246
+     */
+    @Override
+    public Projections getProjectionType() {
+        return this.cameraProjection;
+    }
+
+    @Override
+    public void setProjectionType(Projections newProjection) {
+        this.cameraProjection = newProjection;
+    }
+
+    /**
+     * Returns a {@link WayPoint} representation of this GPX image entry.
+     * @return a {@code WayPoint} representation of this GPX image entry (containing position, instant and elevation)
+     * @since 18065
+     */
+    public WayPoint asWayPoint() {
+        CachedLatLon position = getPos();
+        WayPoint wpt = null;
+        if (position != null) {
+            wpt = new WayPoint(position);
+            wpt.setInstant(exifTime);
+            Double ele = getElevation();
+            if (ele != null) {
+                wpt.put(GpxConstants.PT_ELE, ele.toString());
+            }
         }
+        return wpt;
     }
 }

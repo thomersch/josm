@@ -1,6 +1,7 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.data.imagery;
 
+import static java.util.function.Predicate.not;
 import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.io.IOException;
@@ -166,6 +167,9 @@ public class ImageryLayerInfo {
                 reader = new ImageryReader(source);
                 reader.setFastFail(fastFail);
                 Collection<ImageryInfo> result = reader.parse();
+                // See #23485 (remove invalid source entries)
+                result.stream().filter(not(ImageryInfo::isValid)).forEach(info -> Logging.error("Not adding invalid imagery: {0}", info));
+                result.removeIf(not(ImageryInfo::isValid));
                 newLayers.addAll(result);
             } catch (IOException ex) {
                 loadError = true;
@@ -332,7 +336,7 @@ public class ImageryLayerInfo {
 
     // some additional checks to respect extended URLs in preferences (legacy workaround)
     private static boolean isSimilar(String a, String b) {
-        return Objects.equals(a, b) || (a != null && b != null && !a.isEmpty() && !b.isEmpty() && (a.contains(b) || b.contains(a)));
+        return Objects.equals(a, b) || (!Utils.isEmpty(a) && !Utils.isEmpty(b) && (a.contains(b) || b.contains(a)));
     }
 
     /**

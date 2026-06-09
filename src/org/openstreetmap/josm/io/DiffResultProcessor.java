@@ -5,9 +5,9 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.io.IOException;
 import java.io.StringReader;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -104,7 +104,7 @@ public class DiffResultProcessor {
 
     /**
      * Postprocesses the diff result read and parsed from the server.
-     *
+     * <p>
      * Uploaded objects are assigned their new id (if they got assigned a new
      * id by the server), their new version (if the version was incremented),
      * and the id of the changeset to which they were uploaded.
@@ -130,7 +130,7 @@ public class DiffResultProcessor {
             ds.beginUpdate();
         }
         try {
-            monitor.beginTask("Postprocessing uploaded data ...");
+            monitor.beginTask(tr("Postprocessing uploaded data..."));
             monitor.setTicksCount(primitives.size());
             monitor.setTicks(0);
             for (OsmPrimitive p : primitives) {
@@ -141,7 +141,11 @@ public class DiffResultProcessor {
                 }
                 processed.add(p);
                 if (!p.isDeleted()) {
+                    boolean isNew = p.isNew();
                     p.setOsmId(entry.newId, entry.newVersion);
+                    if (isNew) {
+                        p.setReferrersDownloaded(true);
+                    }
                     p.setVisible(true);
                 } else {
                     p.setVisible(false);
@@ -150,7 +154,8 @@ public class DiffResultProcessor {
                     p.setChangesetId(cs.getId());
                     p.setUser(cs.getUser());
                     // TODO is there a way to obtain the timestamp for non-closed changesets?
-                    p.setTimestamp(Utils.firstNonNull(cs.getClosedAt(), new Date()));
+                    Instant instant = Utils.firstNonNull(cs.getClosedAt(), Instant.now());
+                    p.setInstant(instant);
                 }
             }
             return processed;
@@ -165,7 +170,7 @@ public class DiffResultProcessor {
         }
     }
 
-    private class Parser extends DefaultHandler {
+    private final class Parser extends DefaultHandler {
         private Locator locator;
 
         @Override
@@ -173,7 +178,7 @@ public class DiffResultProcessor {
             this.locator = locator;
         }
 
-        protected void throwException(String msg) throws XmlParsingException {
+        void throwException(String msg) throws XmlParsingException {
             throw new XmlParsingException(msg).rememberLocation(locator);
         }
 

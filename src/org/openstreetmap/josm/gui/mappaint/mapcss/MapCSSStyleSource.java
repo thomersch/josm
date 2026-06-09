@@ -94,8 +94,7 @@ public class MapCSSStyleSource extends StyleSource {
      */
     static final Set<String> SUPPORTED_KEYS = new HashSet<>();
     static {
-        Field[] declaredFields = StyleKeys.class.getDeclaredFields();
-        for (Field f : declaredFields) {
+        for (Field f : StyleKeys.class.getDeclaredFields()) {
             try {
                 SUPPORTED_KEYS.add((String) f.get(null));
                 if (!f.getName().toLowerCase(Locale.ENGLISH).replace('_', '-').equals(f.get(null))) {
@@ -210,18 +209,21 @@ public class MapCSSStyleSource extends StyleSource {
         if (css != null) {
             return new ByteArrayInputStream(css.getBytes(StandardCharsets.UTF_8));
         }
-        CachedFile cf = getCachedFile();
-        if (isZip) {
-            File file = cf.getFile();
-            zipFile = new ZipFile(file, StandardCharsets.UTF_8);
-            zipIcons = file;
-            I18n.addTexts(zipIcons);
-            ZipEntry zipEntry = zipFile.getEntry(zipEntryPath);
-            return zipFile.getInputStream(zipEntry);
-        } else {
-            zipFile = null;
-            zipIcons = null;
-            return cf.getInputStream();
+        // This just closes any open http connections. It does not (with the current CachedFile implementation) close
+        // streams that it provides via getInputStream.
+        try (CachedFile cf = getCachedFile()) {
+            if (isZip) {
+                File file = cf.getFile();
+                zipFile = new ZipFile(file, StandardCharsets.UTF_8);
+                zipIcons = file;
+                I18n.addTexts(zipIcons);
+                ZipEntry zipEntry = zipFile.getEntry(zipEntryPath);
+                return zipFile.getInputStream(zipEntry);
+            } else {
+                zipFile = null;
+                zipIcons = null;
+                return cf.getInputStream();
+            }
         }
     }
 
@@ -431,6 +433,7 @@ public class MapCSSStyleSource extends StyleSource {
 
     @Override
     public String toString() {
-        return rules.stream().map(MapCSSRule::toString).collect(Collectors.joining("\n"));
+        // Avoids ConcurrentModificationException
+        return new ArrayList<>(rules).stream().map(MapCSSRule::toString).collect(Collectors.joining("\n"));
     }
 }

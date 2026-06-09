@@ -15,6 +15,7 @@ import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.InputMapUtils;
+import org.openstreetmap.josm.tools.Utils;
 
 /**
  * Cancel the updates and close the dialog
@@ -46,10 +47,10 @@ public class CancelAction extends SavingAction {
         if ((!getMemberTableModel().hasSameMembersAs(snapshot) || getTagModel().isDirty())
          && !(snapshot == null && getTagModel().getTags().isEmpty())) {
             //give the user a chance to save the changes
-            int ret = confirmClosingByCancel();
+            int ret = confirmClosingByCancel(this.editorAccess.wouldRelationBeUseful());
             if (ret == 0) { //Yes, save the changes
                 //copied from OKAction.run()
-                Config.getPref().put("relation.editor.generic.lastrole", tfRole.getText());
+                Config.getPref().put("relation.editor.generic.lastrole", Utils.strip(tfRole.getText()));
                 if (!applyChanges())
                     return;
             } else if (ret == 2 || ret == JOptionPane.CLOSED_OPTION) //Cancel, continue editing
@@ -59,7 +60,7 @@ public class CancelAction extends SavingAction {
         hideEditor();
     }
 
-    protected int confirmClosingByCancel() {
+    protected int confirmClosingByCancel(boolean isUseful) {
         ButtonSpec[] options = {
                 new ButtonSpec(
                         tr("Yes, save the changes and close"),
@@ -80,6 +81,10 @@ public class CancelAction extends SavingAction {
                         null /* no specific help topic */
                 )
         };
+
+        // Keep users from saving invalid relations -- a relation MUST have at least a tag with the key "type"
+        // AND must contain at least one other OSM object.
+        options[0].setEnabled(isUseful);
 
         return HelpAwareOptionPane.showOptionDialog(
                 MainApplication.getMainFrame(),

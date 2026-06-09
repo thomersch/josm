@@ -1,35 +1,23 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.tools;
 
-import org.junit.Assert;
-import org.junit.Rule;
-import org.junit.Test;
-import org.openstreetmap.josm.data.Bounds;
-import org.openstreetmap.josm.testutils.JOSMTestRules;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import org.openstreetmap.josm.data.Bounds;
+
+import org.junit.jupiter.api.Test;
 
 /**
   * Unit tests of {@link OsmUrlToBounds} class.
 */
-public class OsmUrlToBoundsTest {
-
-    /**
-     * Setup test.
-     */
-    @Rule
-    @SuppressFBWarnings(value = "URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
-    public JOSMTestRules test = new JOSMTestRules();
-
+class OsmUrlToBoundsTest {
     /**
      * Test for {@link OsmUrlToBounds#positionToBounds}.
      */
     @Test
-    public void testPositionToBounds() {
-        Assert.assertEquals(new Bounds(51.7167359, 8.7573485, 51.720724, 8.7659315),
-                OsmUrlToBounds.positionToBounds(51.71873, 8.76164, 17));
-        Assert.assertEquals(new Bounds(40.8609329, -75.7523458, 40.8633671, -75.7480542),
-                OsmUrlToBounds.positionToBounds(40.86215, -75.75020, 18));
+    void testPositionToBounds() {
+        assertEquals(new Bounds(51.7167359, 8.7573485, 51.720724, 8.7659315), OsmUrlToBounds.positionToBounds(51.71873, 8.76164, 17));
+        assertEquals(new Bounds(40.8609329, -75.7523458, 40.8633671, -75.7480542), OsmUrlToBounds.positionToBounds(40.86215, -75.75020, 18));
     }
 
     /**
@@ -90,7 +78,7 @@ public class OsmUrlToBoundsTest {
      * Test URL parsing
      */
     @Test
-    public void testParse() {
+    void testParse() {
         for (ParseTestItem item : parseTestData) {
             Bounds bounds = null;
             try {
@@ -99,7 +87,7 @@ public class OsmUrlToBoundsTest {
                 // Ignore. check if bounds is null after
                 Logging.trace(e);
             }
-            Assert.assertEquals(item.url, item.bounds, bounds);
+            assertEquals(item.bounds, bounds, item.url);
         }
     }
 
@@ -107,9 +95,9 @@ public class OsmUrlToBoundsTest {
      * Test for {@link OsmUrlToBounds#getZoom}.
      */
     @Test
-    public void testGetZoom() {
-        Assert.assertEquals(4, OsmUrlToBounds.getZoom(OsmUrlToBounds.positionToBounds(0, 0, 4)));
-        Assert.assertEquals(10, OsmUrlToBounds.getZoom(OsmUrlToBounds.positionToBounds(5, 5, 10)));
-        Assert.assertEquals(18, OsmUrlToBounds.getZoom(OsmUrlToBounds.positionToBounds(40, 20, 18)));
+    void testGetZoom() {
+        assertEquals(4, OsmUrlToBounds.getZoom(OsmUrlToBounds.positionToBounds(0, 0, 4)));
+        assertEquals(10, OsmUrlToBounds.getZoom(OsmUrlToBounds.positionToBounds(5, 5, 10)));
+        assertEquals(18, OsmUrlToBounds.getZoom(OsmUrlToBounds.positionToBounds(40, 20, 18)));
     }
 }

@@ -4,6 +4,7 @@ package org.openstreetmap.josm.gui.preferences.map;
 import static org.openstreetmap.josm.tools.I18n.marktr;
 import static org.openstreetmap.josm.tools.I18n.tr;
 
+import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -23,6 +24,7 @@ import org.openstreetmap.josm.data.preferences.sources.SourceProvider;
 import org.openstreetmap.josm.data.preferences.sources.SourceType;
 import org.openstreetmap.josm.gui.ExtendedDialog;
 import org.openstreetmap.josm.gui.MainApplication;
+import org.openstreetmap.josm.gui.help.HelpUtil;
 import org.openstreetmap.josm.gui.preferences.DefaultTabPreferenceSetting;
 import org.openstreetmap.josm.gui.preferences.PreferenceSetting;
 import org.openstreetmap.josm.gui.preferences.PreferenceSettingFactory;
@@ -30,10 +32,12 @@ import org.openstreetmap.josm.gui.preferences.PreferenceTabbedPane;
 import org.openstreetmap.josm.gui.preferences.PreferenceTabbedPane.PreferencePanel;
 import org.openstreetmap.josm.gui.preferences.PreferenceTabbedPane.ValidationListener;
 import org.openstreetmap.josm.gui.preferences.SourceEditor;
+import org.openstreetmap.josm.gui.tagging.presets.TaggingPreset;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPresetReader;
 import org.openstreetmap.josm.gui.tagging.presets.TaggingPresets;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.GBC;
+import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.Utils;
 import org.xml.sax.SAXException;
@@ -127,10 +131,8 @@ public final class TaggingPresetPreference extends DefaultTabPreferenceSetting {
                         }
                     }
                 sources.removeSources(sourcesToRemove);
-                return true;
-            } else {
-                return true;
             }
+            return true;
         }
     }
 
@@ -145,12 +147,13 @@ public final class TaggingPresetPreference extends DefaultTabPreferenceSetting {
     }
 
     private TaggingPresetPreference() {
-        super(null, tr("Tagging Presets"), tr("Tagging Presets"));
+        super("dialogs/propertiesdialog", tr("Tagging Presets"), tr("Tagging Presets"));
     }
 
     private static final List<SourceProvider> presetSourceProviders = new ArrayList<>();
 
     private SourceEditor sources;
+    private JCheckBox useValidator;
     private JCheckBox sortMenu;
 
     /**
@@ -168,24 +171,32 @@ public final class TaggingPresetPreference extends DefaultTabPreferenceSetting {
 
     @Override
     public void addGui(PreferenceTabbedPane gui) {
-        sortMenu = new JCheckBox(tr("Sort presets menu alphabetically"),
-                Config.getPref().getBoolean("taggingpreset.sortmenu", false));
+        useValidator = new JCheckBox(tr("Run data validator on user input"), TaggingPreset.USE_VALIDATOR.get());
+        sortMenu = new JCheckBox(tr("Sort presets menu alphabetically"), TaggingPresets.SORT_MENU.get());
 
         final JPanel panel = new JPanel(new GridBagLayout());
         panel.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
-        panel.add(sortMenu, GBC.eol().insets(5, 5, 5, 0));
+
+        panel.add(useValidator, GBC.std().insets(5, 5, 0, 0));
+        panel.add(new JLabel(ImageProvider.get("dialogs/validator")), GBC.eol().insets(5, 5, 0, 0));
+        panel.add(sortMenu, GBC.eol().insets(5, 0, 5, 0));
+
         sources = new TaggingPresetSourceEditor();
-        panel.add(sources, GBC.eol().fill(GBC.BOTH));
+        panel.add(sources, GBC.eol().fill(GridBagConstraints.BOTH));
         PreferencePanel preferencePanel = gui.createPreferenceTab(this);
-        preferencePanel.add(panel, GBC.eol().fill(GBC.BOTH));
+        preferencePanel.add(panel, GBC.eol().fill(GridBagConstraints.BOTH));
         sources.deferLoading(gui, preferencePanel);
         gui.addValidationListener(validationListener);
     }
 
+    /**
+     * An editor for what preset source locations are used
+     */
     public static class TaggingPresetSourceEditor extends SourceEditor {
 
-        private static final String ICONPREF = "taggingpreset.icon.sources";
-
+        /**
+         * Create a new {@link TaggingPresetSourceEditor} with the default providers
+         */
         public TaggingPresetSourceEditor() {
             super(SourceType.TAGGING_PRESET, Config.getUrls().getJOSMWebsite()+"/presets", presetSourceProviders, true);
         }
@@ -197,7 +208,7 @@ public final class TaggingPresetPreference extends DefaultTabPreferenceSetting {
 
         @Override
         public boolean finish() {
-            return doFinish(PresetPrefHelper.INSTANCE, ICONPREF);
+            return doFinish(PresetPrefHelper.INSTANCE, TaggingPresets.ICON_SOURCES.getKey());
         }
 
         @Override
@@ -207,7 +218,7 @@ public final class TaggingPresetPreference extends DefaultTabPreferenceSetting {
 
         @Override
         public Collection<String> getInitialIconPathsList() {
-            return Config.getPref().getList(ICONPREF, null);
+            return TaggingPresets.ICON_SOURCES.get();
         }
 
         @Override
@@ -247,8 +258,8 @@ public final class TaggingPresetPreference extends DefaultTabPreferenceSetting {
 
     @Override
     public boolean ok() {
-        if (sources.finish()
-                || Config.getPref().putBoolean("taggingpreset.sortmenu", sortMenu.getSelectedObjects() != null)) {
+        TaggingPreset.USE_VALIDATOR.put(useValidator.isSelected());
+        if (sources.finish() || TaggingPresets.SORT_MENU.put(sortMenu.isSelected())) {
             TaggingPresets.destroy();
             TaggingPresets.initialize();
         }
@@ -261,4 +272,8 @@ public final class TaggingPresetPreference extends DefaultTabPreferenceSetting {
         return false;
     }
 
+    @Override
+    public String getHelpContext() {
+        return HelpUtil.ht("/Preferences/TaggingPresetPreference");
+    }
 }
